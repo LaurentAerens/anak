@@ -1,0 +1,19 @@
+{
+  "versions": {
+    "v0.0.1": {
+      "version": "v0.0.1",
+      "date": "2026-10-19",
+      "estimated_elo": 1616,
+      "elo_margin": 215,
+      "baseline_opponent": "Stockfish 19 (1800 Elo)",
+      "score": "2 / 10",
+      "wins": 2,
+      "losses": 8,
+      "draws": 0,
+      "perf_percent": 20.0,
+      "tc": "3+0.05",
+      "pgn": "tools/fastchess/results/anak_vs_sf1800_20261019_230409.pgn",
+      "notes": "Initial release with MCTS, PUCT, Multi-Tier NNUE (Open/Closed/Micro watchdog), and tactical heuristics"
+    }
+  }
+}

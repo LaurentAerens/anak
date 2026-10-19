@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "tools\\fastchess\\results\\anak_vs_sf1800_20261019_230409.pgn",
+        "file": "tools\\fastchess\\results\\anak_dev_vs_v0.0.1_20261019_231401.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -60,7 +60,7 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 13846422427324717410,
+    "seed": 5313792044415383863,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -69,7 +69,7 @@
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 5,
+    "rounds": 1,
     "concurrency": 8,
     "force_concurrency": false,
     "recover": false,
@@ -89,7 +89,7 @@
     },
     "engines": [
         {
-            "name": "Anak",
+            "name": "Anak-Dev",
             "dir": "",
             "cmd": "tools\\fastchess\\bin\\anak\\anak.exe",
             "args": "",
@@ -108,7 +108,7 @@
                 "tc": {
                     "increment": 50,
                     "fixed_time": 0,
-                    "time": 3000,
+                    "time": 1000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -118,9 +118,9 @@
             "variant": 0
         },
         {
-            "name": "Stockfish-1800",
+            "name": "Anak-v0.0.1",
             "dir": "",
-            "cmd": "tools\\fastchess\\bin\\stockfish.exe",
+            "cmd": "tools\\fastchess\\baselines\\v0.0.1\\anak.exe",
             "args": "",
             "restart": false,
             "options": [
@@ -131,21 +131,13 @@
                 [
                     "Hash",
                     "64"
-                ],
-                [
-                    "UCI_LimitStrength",
-                    "true"
-                ],
-                [
-                    "UCI_Elo",
-                    "1800"
                 ]
             ],
             "limit": {
                 "tc": {
                     "increment": 50,
                     "fixed_time": 0,
-                    "time": 3000,
+                    "time": 1000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -156,16 +148,16 @@
         }
     ],
     "stats": {
-        "Anak vs Stockfish-1800": {
-            "wins": 2,
-            "losses": 8,
-            "draws": 0,
-            "penta_WW": 1,
+        "Anak-Dev vs Anak-v0.0.1": {
+            "wins": 0,
+            "losses": 0,
+            "draws": 2,
+            "penta_WW": 0,
             "penta_WD": 0,
             "penta_WL": 0,
-            "penta_DD": 0,
+            "penta_DD": 1,
             "penta_LD": 0,
-            "penta_LL": 4
+            "penta_LL": 0
         }
     }
 }

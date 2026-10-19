@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
 Anak Chess Engine — Automated Fast-Chess Elo Benchmark Runner (Windows / Cross-Platform)
-Measures Anak's Elo rating compared to calibrated Stockfish levels using fast-chess.
+Measures Anak's Elo rating compared to stored baselines (self-play regression/progression)
+or calibrated Stockfish levels using fast-chess.
 """
 
 import argparse
 import io
+import json
 import os
 import re
 import shutil
@@ -21,6 +23,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPT_DIR.parent.parent
 BIN_DIR = SCRIPT_DIR / "bin"
 RESULTS_DIR = SCRIPT_DIR / "results"
+BASELINES_DIR = SCRIPT_DIR / "baselines"
+RATINGS_FILE = SCRIPT_DIR / "ratings.json"
+BENCHMARKS_MD = REPO_ROOT / "BENCHMARKS.md"
 OPENINGS_FILE = SCRIPT_DIR / "openings.epd"
 ANAK_PUBLISH_DIR = BIN_DIR / "anak"
 ANAK_EXE = ANAK_PUBLISH_DIR / ("anak.exe" if os.name == "nt" else "anak")
@@ -29,6 +34,113 @@ STOCKFISH_EXE = BIN_DIR / ("stockfish.exe" if os.name == "nt" else "stockfish")
 
 FASTCHESS_WINDOWS_URL = "https://github.com/Disservin/fastchess/releases/download/v1.8.2-alpha/fastchess-windows-x86-64.zip"
 STOCKFISH_WINDOWS_URL = "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-x86-64-universal.zip"
+
+
+def load_ratings() -> dict:
+    if RATINGS_FILE.exists():
+        try:
+            with open(RATINGS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[!] Warning: Failed to load ratings.json ({e})")
+    return {"versions": {}}
+
+
+def save_ratings(data: dict):
+    RATINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(RATINGS_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    print(f"[+] Updated ratings registry: {RATINGS_FILE}")
+
+
+def update_benchmarks_md(ratings: dict):
+    if not BENCHMARKS_MD.exists():
+        return
+
+    try:
+        content = BENCHMARKS_MD.read_text(encoding="utf-8")
+        table_header = "| Version | Release Date | Estimated Elo | 95% CI | Reference Opponent | Score | W / L / D | TC | PGN Archive |\n| :--- | :---: | :---: | :---: | :--- | :---: | :---: | :---: | :--- |"
+        
+        rows = []
+        for ver, data in ratings.get("versions", {}).items():
+            tag = data.get("version", ver)
+            date = data.get("date", "-")
+            elo = data.get("estimated_elo", "-")
+            margin = data.get("elo_margin")
+            ci = f"&plusmn;{margin}" if margin is not None else "-"
+            opp = data.get("baseline_opponent", "-")
+            score = data.get("score", "-")
+            perf = f" ({data['perf_percent']}%)" if "perf_percent" in data else ""
+            score_str = f"{score}{perf}"
+            w = data.get("wins", 0)
+            l = data.get("losses", 0)
+            d = data.get("draws", 0)
+            wld = f"{w} / {l} / {d}"
+            tc = data.get("tc", "-")
+            pgn = data.get("pgn", "-")
+            pgn_str = f"[`{Path(pgn).name}`]({pgn})" if pgn != "-" else "-"
+            rows.append(f"| [**{tag}**](https://github.com/laerens/anak/releases/tag/{tag}) | {date} | **{elo}** | {ci} | {opp} | {score_str} | {wld} | {tc} | {pgn_str} |")
+
+        new_table = table_header + "\n" + "\n".join(rows) + "\n"
+        
+        # Replace existing table in BENCHMARKS.md between table header and next blank line / section
+        pattern = r"\| Version \| Release Date \| Estimated Elo \|.*?\n(?=\n|\Z|##)"
+        if re.search(pattern, content, re.DOTALL):
+            content = re.sub(pattern, new_table.strip(), content, flags=re.DOTALL)
+            BENCHMARKS_MD.write_text(content, encoding="utf-8")
+            print(f"[+] Updated benchmark markdown: {BENCHMARKS_MD}")
+    except Exception as e:
+        print(f"[!] Warning: Failed to update BENCHMARKS.md ({e})")
+
+
+def get_available_baselines() -> list[str]:
+    if not BASELINES_DIR.exists():
+        return []
+    baselines = []
+    for d in sorted(BASELINES_DIR.iterdir()):
+        if d.is_dir():
+            exe = d / ("anak.exe" if os.name == "nt" else "anak")
+            if exe.exists():
+                baselines.append(d.name)
+    return baselines
+
+
+def archive_baseline(version_tag: str, elo: int = None, margin: int = None, opponent: str = None, notes: str = ""):
+    target_dir = BASELINES_DIR / version_tag
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"[+] Archiving current Anak build as baseline '{version_tag}' in {target_dir} ...")
+    cmd = [
+        "dotnet",
+        "publish",
+        str(REPO_ROOT / "src" / "Anak.Protocol" / "Anak.Protocol.csproj"),
+        "-c",
+        "Release",
+        "-o",
+        str(target_dir),
+    ]
+    res = subprocess.run(cmd, cwd=str(REPO_ROOT))
+    if res.returncode != 0:
+        raise RuntimeError("Failed to build and archive baseline Anak binary.")
+
+    exe_path = target_dir / ("anak.exe" if os.name == "nt" else "anak")
+    if not exe_path.exists():
+        raise RuntimeError(f"Expected binary {exe_path} was not created.")
+
+    print(f"[+] Baseline '{version_tag}' archived successfully at: {exe_path}")
+
+    if elo is not None:
+        ratings = load_ratings()
+        ratings.setdefault("versions", {})[version_tag] = {
+            "version": version_tag,
+            "date": time.strftime("%Y-%m-%d"),
+            "estimated_elo": elo,
+            "elo_margin": margin,
+            "baseline_opponent": opponent or "Baseline",
+            "notes": notes,
+        }
+        save_ratings(ratings)
+        update_benchmarks_md(ratings)
 
 
 def download_and_extract_zip(url: str, dest_dir: Path, description: str):
@@ -61,7 +173,6 @@ def ensure_fastchess():
     if FASTCHESS_EXE.exists():
         return
 
-    # Check if unpacked in subdirectory
     subdirs = [p for p in BIN_DIR.glob("fastchess*") if p.is_dir()]
     for s in subdirs:
         candidate = s / ("fastchess.exe" if os.name == "nt" else "fastchess")
@@ -73,7 +184,6 @@ def ensure_fastchess():
     BIN_DIR.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
         download_and_extract_zip(FASTCHESS_WINDOWS_URL, BIN_DIR, "fast-chess for Windows")
-        # Find extracted fastchess.exe
         for candidate in BIN_DIR.rglob("fastchess.exe"):
             if candidate != FASTCHESS_EXE:
                 shutil.copy2(candidate, FASTCHESS_EXE)
@@ -86,7 +196,6 @@ def ensure_stockfish():
     if STOCKFISH_EXE.exists():
         return
 
-    # Check if unpacked in subdirectory
     subdirs = [p for p in BIN_DIR.glob("stockfish*") if p.is_dir()]
     for s in subdirs:
         for candidate in s.rglob("*.exe" if os.name == "nt" else "*"):
@@ -98,7 +207,6 @@ def ensure_stockfish():
     BIN_DIR.mkdir(parents=True, exist_ok=True)
     if os.name == "nt":
         download_and_extract_zip(STOCKFISH_WINDOWS_URL, BIN_DIR, "Stockfish 19 for Windows")
-        # Find extracted stockfish executable
         for candidate in BIN_DIR.rglob("*.exe"):
             if "stockfish" in candidate.name.lower() and candidate != STOCKFISH_EXE:
                 shutil.copy2(candidate, STOCKFISH_EXE)
@@ -130,19 +238,53 @@ def ensure_anak(force_rebuild: bool = False):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Anak Chess Engine — Fast-Chess Elo Benchmark Runner")
-    parser.add_argument("--elo", type=int, default=1800, help="Target Stockfish Elo rating (default: 1800, range: 1320-3190)")
-    parser.add_argument("--rounds", type=int, default=10, help="Number of opening rounds (each played twice with swapped colors, default: 10 = 20 games)")
-    parser.add_argument("--tc", type=str, default="10+0.1", help="Time control base+inc in seconds (default: 10+0.1)")
-    parser.add_argument("--concurrency", type=int, default=min(8, max(1, os.cpu_count() or 2)), help="Number of concurrent games (default: CPU cores)")
-    parser.add_argument("--hash", type=int, default=64, help="Transposition Table Hash in MB per engine (default: 64)")
-    parser.add_argument("--threads", type=int, default=1, help="Search threads per engine (default: 1)")
-    parser.add_argument("--quick", action="store_true", help="Quick smoke test: 5 rounds (10 games) at 3+0.05 time control")
-    parser.add_argument("--rebuild", action="store_true", help="Force rebuild of Anak before benchmark")
+    parser.add_argument("--opponent", type=str, choices=["baseline", "stockfish"], default=None,
+                        help="Benchmark opponent type ('baseline' or 'stockfish'). Defaults to 'baseline' if a baseline is archived, else 'stockfish'.")
+    parser.add_argument("--baseline", type=str, default="latest",
+                        help="Specific baseline version to benchmark against (default: 'latest')")
+    parser.add_argument("--elo", type=int, default=1800,
+                        help="Target Stockfish Elo rating when benchmarking against Stockfish (default: 1800, range: 1320-3190)")
+    parser.add_argument("--rounds", type=int, default=10,
+                        help="Number of opening pairs (each played twice with swapped colors, default: 10 = 20 games)")
+    parser.add_argument("--tc", type=str, default="10+0.1",
+                        help="Time control base+inc in seconds (default: 10+0.1)")
+    parser.add_argument("--concurrency", type=int, default=min(8, max(1, os.cpu_count() or 2)),
+                        help="Number of concurrent games (default: CPU cores)")
+    parser.add_argument("--hash", type=int, default=64,
+                        help="Transposition Table Hash in MB per engine (default: 64)")
+    parser.add_argument("--threads", type=int, default=1,
+                        help="Search threads per engine (default: 1)")
+    parser.add_argument("--quick", action="store_true",
+                        help="Quick smoke test: 5 rounds (10 games) at 3+0.05 time control")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="Force rebuild of Anak (candidate build) before benchmark")
+    parser.add_argument("--archive-baseline", type=str, default=None, metavar="TAG",
+                        help="Archive the current engine build as a named baseline (e.g. 'v0.0.1') and exit")
+    parser.add_argument("--record", type=str, default=None, metavar="VERSION_TAG",
+                        help="Record benchmark results into ratings.json & BENCHMARKS.md under the given version tag")
+    parser.add_argument("--notes", type=str, default="",
+                        help="Optional notes when archiving or recording a version")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+
+    # Handle --archive-baseline mode
+    if args.archive_baseline:
+        archive_baseline(args.archive_baseline, elo=args.elo if "--elo" in sys.argv else None, notes=args.notes)
+        return
+
+    available_baselines = get_available_baselines()
+
+    # Determine opponent
+    if args.opponent is None:
+        args.opponent = "baseline" if available_baselines else "stockfish"
+
+    if args.opponent == "baseline" and not available_baselines:
+        print("[!] No baseline versions found in tools/fastchess/baselines/.")
+        print("    Falling back to Stockfish-1800. (Archive a baseline with --archive-baseline <version>)")
+        args.opponent = "stockfish"
 
     if args.quick:
         args.rounds = 5
@@ -150,11 +292,39 @@ def main():
         print("[!] Quick mode enabled: 5 rounds (10 games) at 3+0.05")
 
     total_games = args.rounds * 2
+    ratings = load_ratings()
+
+    # Resolve baseline details if applicable
+    baseline_tag = None
+    baseline_exe = None
+    baseline_elo = 1600
+    if args.opponent == "baseline":
+        if args.baseline == "latest":
+            baseline_tag = available_baselines[-1]
+        else:
+            baseline_tag = args.baseline
+            if baseline_tag not in available_baselines:
+                print(f"[!] Error: Baseline '{baseline_tag}' not found in tools/fastchess/baselines/.")
+                print(f"    Available baselines: {', '.join(available_baselines)}")
+                sys.exit(1)
+
+        baseline_exe = BASELINES_DIR / baseline_tag / ("anak.exe" if os.name == "nt" else "anak")
+        if not baseline_exe.exists():
+            print(f"[!] Error: Baseline executable {baseline_exe} does not exist.")
+            sys.exit(1)
+
+        # Lookup baseline's known Elo from ratings.json
+        version_meta = ratings.get("versions", {}).get(baseline_tag, {})
+        baseline_elo = version_meta.get("estimated_elo", 1616)
+        opponent_label = f"Anak {baseline_tag} (Known Elo: {baseline_elo})"
+    else:
+        opponent_label = f"Stockfish 19 (Calibrated Elo: {args.elo})"
 
     print("=" * 70)
-    print("  ANAK CHESS ENGINE — ELO RATING EVALUATION (FAST-CHESS)")
+    print("                    ANAK ELO BENCHMARK RUNNER")
     print("=" * 70)
-    print(f"  Reference Opponent:   Stockfish 19 (Calibrated Elo: {args.elo})")
+    print(f"  Candidate:            Anak (Current Dev Build)")
+    print(f"  Opponent:             {opponent_label}")
     print(f"  Rounds:               {args.rounds} opening pairs ({total_games} total games)")
     print(f"  Time Control:         {args.tc} (seconds + increment)")
     print(f"  Concurrency:          {args.concurrency} parallel games")
@@ -162,37 +332,51 @@ def main():
     print(f"  Opening Suite:        {OPENINGS_FILE.name}")
     print("=" * 70)
 
-    # 1. Ensure dependencies
+    # Ensure required binaries
     ensure_anak(force_rebuild=args.rebuild)
     ensure_fastchess()
-    ensure_stockfish()
+    if args.opponent == "stockfish":
+        ensure_stockfish()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    pgn_output = RESULTS_DIR / f"anak_vs_sf{args.elo}_{timestamp}.pgn"
+    
+    if args.opponent == "baseline":
+        pgn_output = RESULTS_DIR / f"anak_dev_vs_{baseline_tag}_{timestamp}.pgn"
+        opp_cmd_rel = str(os.path.relpath(baseline_exe, REPO_ROOT))
+        opp_name = f"Anak-{baseline_tag}"
+        opp_options = [
+            f"option.Threads={args.threads}",
+            f"option.Hash={args.hash}",
+        ]
+    else:
+        pgn_output = RESULTS_DIR / f"anak_vs_sf{args.elo}_{timestamp}.pgn"
+        opp_cmd_rel = str(os.path.relpath(STOCKFISH_EXE, REPO_ROOT))
+        opp_name = f"Stockfish-{args.elo}"
+        opp_options = [
+            f"option.Threads={args.threads}",
+            f"option.Hash={args.hash}",
+            "option.UCI_LimitStrength=true",
+            f"option.UCI_Elo={args.elo}",
+        ]
 
-    # Use paths relative to REPO_ROOT to avoid spaces in paths breaking fastchess CLI parsing
     fastchess_cmd = str(os.path.relpath(FASTCHESS_EXE, REPO_ROOT))
     anak_cmd = str(os.path.relpath(ANAK_EXE, REPO_ROOT))
-    stockfish_cmd = str(os.path.relpath(STOCKFISH_EXE, REPO_ROOT))
     openings_path = str(os.path.relpath(OPENINGS_FILE, REPO_ROOT))
     pgn_path = str(os.path.relpath(pgn_output, REPO_ROOT))
 
-    # 2. Build fast-chess command
+    # Build fast-chess command
     cmd = [
         fastchess_cmd,
         "-engine",
         f"cmd={anak_cmd}",
-        "name=Anak",
+        "name=Anak-Dev",
         f"option.Threads={args.threads}",
         f"option.Hash={args.hash}",
         "-engine",
-        f"cmd={stockfish_cmd}",
-        f"name=Stockfish-{args.elo}",
-        f"option.Threads={args.threads}",
-        f"option.Hash={args.hash}",
-        "option.UCI_LimitStrength=true",
-        f"option.UCI_Elo={args.elo}",
+        f"cmd={opp_cmd_rel}",
+        f"name={opp_name}",
+    ] + opp_options + [
         "-each",
         f"tc={args.tc}",
         "-openings",
@@ -220,7 +404,7 @@ def main():
     print("\n[+] Launching fast-chess match ...")
     print(f"[+] PGN output will be saved to: {pgn_output}\n")
 
-    # 3. Execute fast-chess and stream output
+    # Execute fast-chess and stream output
     proc = subprocess.Popen(
         cmd,
         cwd=str(REPO_ROOT),
@@ -239,12 +423,10 @@ def main():
         print(line, end="")
         full_output.append(line)
 
-        # Regex match: Elo: +42.3 +/- 55.1 or Elo: -12.0 +/- 48.0
         m_elo = re.search(r"Elo:\s*([+-]?\d+(?:\.\d+)?)\s*\+/-\s*(\d+(?:\.\d+)?)", line)
         if m_elo:
             elo_match = (float(m_elo.group(1)), float(m_elo.group(2)))
 
-        # Regex match: Games: 20, Wins: 11, Losses: 5, Draws: 4
         m_games = re.search(r"Games:\s*(\d+),\s*Wins:\s*(\d+),\s*Losses:\s*(\d+),\s*Draws:\s*(\d+)", line)
         if m_games:
             games_match = (
@@ -256,12 +438,17 @@ def main():
 
     proc.wait()
 
-    # 4. Display Final Summary Report
+    # Display Final Summary Report
+    reference_elo = baseline_elo if args.opponent == "baseline" else args.elo
+    estimated_elo = None
+    err_margin = None
+
     print("\n" + "=" * 70)
     print("                    ANAK ELO EVALUATION REPORT")
     print("=" * 70)
-    print(f"  Reference Opponent:       Stockfish 19 (Calibrated Elo: {args.elo})")
+    print(f"  Reference Opponent:       {opponent_label}")
 
+    w, l, d, pts, pct = 0, 0, 0, 0.0, 0.0
     if games_match:
         g, w, l, d = games_match
         pts = w + (0.5 * d)
@@ -272,16 +459,38 @@ def main():
 
     if elo_match:
         delta_elo, err = elo_match
-        estimated_elo = round(args.elo + delta_elo)
+        err_margin = round(err)
+        estimated_elo = round(reference_elo + delta_elo)
         print(f"  Elo Difference:           {delta_elo:+0.1f} +/- {err:.1f} (95% CI)")
         print("  " + "-" * 66)
-        print(f"  >>> ESTIMATED ANAK ELO:   {estimated_elo} +/- {round(err)} <<<")
+        print(f"  >>> ESTIMATED ANAK ELO:   {estimated_elo} +/- {err_margin} <<<")
         print("  " + "-" * 66)
     else:
         print("  Elo Rating:               Calculated in tournament log above")
 
     print(f"  PGN Game Archive:         {pgn_output}")
     print("=" * 70 + "\n")
+
+    # Record result if requested
+    if args.record and estimated_elo is not None:
+        tag = args.record
+        ratings.setdefault("versions", {})[tag] = {
+            "version": tag,
+            "date": time.strftime("%Y-%m-%d"),
+            "estimated_elo": estimated_elo,
+            "elo_margin": err_margin,
+            "baseline_opponent": opponent_label,
+            "score": f"{pts:g} / {games_match[0]}",
+            "wins": w,
+            "losses": l,
+            "draws": d,
+            "perf_percent": round(pct, 2),
+            "tc": args.tc,
+            "pgn": str(pgn_output.relative_to(REPO_ROOT)).replace("\\", "/"),
+            "notes": args.notes or f"Benchmarked against {opponent_label}",
+        }
+        save_ratings(ratings)
+        update_benchmarks_md(ratings)
 
 
 if __name__ == "__main__":
