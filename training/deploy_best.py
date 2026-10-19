@@ -55,7 +55,7 @@ def deploy_model(model_type: str, checkpoint_path: str, output_path: str):
     """Loads checkpoint, quantizes, and writes .nnue binary."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    if model_type in ("micro", "small"):
+    if model_type in ("micro", "small", "volatility"):
         net = MicroNNUE()
         net.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
         net.eval()
@@ -71,8 +71,13 @@ def main():
     parser = argparse.ArgumentParser(description="Deploy best trained checkpoints to Anak's networks/ folder")
     parser.add_argument("--checkpoints", type=str, default=None, help="Checkpoints directory")
     parser.add_argument("--output", type=str, default=None, help="Target networks directory")
-    parser.add_argument("--model", type=str, choices=["all", "open", "closed", "micro", "small"], default="all",
-                        help="Model to deploy (default: all)")
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["all", "open", "closed", "endgame", "queenless", "imbalance", "attack", "micro", "small", "volatility"],
+        default="all",
+        help="Model to deploy (default: all)",
+    )
     args = parser.parse_args()
 
     repo_root = find_repo_root()
@@ -82,16 +87,18 @@ def main():
 
     # Secondary target directories (e.g. build output if exists)
     secondary_dirs = [
+        os.path.join(repo_root, "training", "networks"),
         os.path.join(repo_root, "src", "Anak.Protocol", "bin", "Release", "net11.0", "networks"),
         os.path.join(repo_root, "src", "Anak.Protocol", "bin", "Debug", "net11.0", "networks"),
         os.path.join(repo_root, "tools", "Anak.UI", "bin", "Release", "net11.0-windows", "networks"),
         os.path.join(repo_root, "tools", "Anak.UI", "bin", "Debug", "net11.0-windows", "networks"),
         os.path.join(repo_root, "tools", "Anak.UI", "bin", "Release", "net11.0", "networks"),
         os.path.join(repo_root, "tools", "Anak.UI", "bin", "Debug", "net11.0", "networks"),
+        os.path.join(repo_root, "tools", "fastchess", "bin", "anak", "networks"),
     ]
 
     print("\n" + "=" * 70)
-    print("   ANAK MULTI-TIER NNUE MODEL DEPLOYMENT")
+    print("   ANAK MULTI-EXPERT 8-MODEL NNUE DEPLOYMENT")
     print("=" * 70)
     print(f"Checkpoint folders searched: {', '.join(checkpoint_dirs) if checkpoint_dirs else 'None found'}")
     print(f"Networks target:             {os.path.abspath(networks_dir)}")
@@ -100,7 +107,12 @@ def main():
     models_to_check = [
         ("open", ["open_best.pt", "open_latest.pt"], "open.nnue", "Standard Open-NNUE"),
         ("closed", ["closed_best.pt", "closed_latest.pt"], "closed.nnue", "Standard Closed-NNUE"),
+        ("endgame", ["endgame_best.pt", "endgame_latest.pt"], "endgame.nnue", "Standard Endgame-NNUE"),
+        ("queenless", ["queenless_best.pt", "queenless_latest.pt"], "queenless.nnue", "Standard Queenless-NNUE"),
+        ("imbalance", ["imbalance_best.pt", "imbalance_latest.pt"], "imbalance.nnue", "Standard Imbalance-NNUE"),
+        ("attack", ["attack_best.pt", "attack_latest.pt"], "attack.nnue", "Standard Attack-NNUE"),
         ("micro", ["small_best.pt", "micro_best.pt", "small_latest.pt", "micro_latest.pt"], "micro.nnue", "Small/Micro Tactical Watchdog"),
+        ("volatility", ["volatility_best.pt", "volatility_latest.pt"], "volatility.nnue", "Micro Volatility Predictor"),
     ]
 
     deployed_count = 0
@@ -138,10 +150,12 @@ def main():
             for s_dir in secondary_dirs:
                 if os.path.isdir(os.path.dirname(s_dir)):
                     os.makedirs(s_dir, exist_ok=True)
-                    shutil.copy2(target_file, os.path.join(s_dir, out_filename))
+                    dst_f = os.path.join(s_dir, out_filename)
+                    if os.path.abspath(target_file) != os.path.abspath(dst_f):
+                        shutil.copy2(target_file, dst_f)
         else:
             print(f"\n[--] {display_name}:")
-            print(f"     No checkpoint found in {checkpoints_dir}")
+            print(f"     No checkpoint found in {checkpoint_dirs}")
             print(f"     -> Train using: python train.py --model {m_type}")
 
     print("\n" + "=" * 70)

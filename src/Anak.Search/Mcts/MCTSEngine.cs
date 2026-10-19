@@ -23,6 +23,30 @@ public sealed class MCTSEngine
     public NodeArena Arena => _arena;
     public TimeManager TimeManager => _timeManager;
 
+    private int _threads = 1;
+    public int Threads
+    {
+        get => _threads;
+        set => _threads = Math.Max(1, value);
+    }
+
+    private readonly int[,,] _history = new int[2, 64, 64];
+
+    private void AgeHistory()
+    {
+        for (int c = 0; c < 2; c++)
+            for (int f = 0; f < 64; f++)
+                for (int t = 0; t < 64; t++)
+                    _history[c, f, t] /= 2;
+    }
+
+    public void ClearHistory()
+    {
+        Array.Clear(_history);
+    }
+
+
+
     /// <summary>
     /// Constructs a new MCTS engine instance.
     /// </summary>
@@ -83,6 +107,18 @@ public sealed class MCTSEngine
         IMultiTierEvaluator? multiTier = _evaluator as IMultiTierEvaluator;
         multiTier?.SetRootTopology(in rootBoard);
 
+        IIncrementalEvaluator? incrementalEvaluator = _evaluator as IIncrementalEvaluator;
+        incrementalEvaluator?.InitSearch(in rootBoard);
+        if (_tt.HashfullPermille() == 0)
+        {
+            ClearHistory();
+        }
+        else
+        {
+            AgeHistory();
+        }
+
+
         MoveList rootMoves = default;
         rootBoard.GenerateLegalMoves(ref rootMoves);
 
@@ -110,6 +146,25 @@ public sealed class MCTSEngine
             });
             return singleMove;
         }
+
+        // Launch Lazy SMP helper threads if Threads > 1
+        CancellationTokenSource? helperCts = null;
+        Task[]? helperTasks = null;
+        if (Threads > 1)
+        {
+            helperCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var helperToken = helperCts.Token;
+            int helperCount = Threads - 1;
+            helperTasks = new Task[helperCount];
+            Board workerBoard = board;
+            SearchLimits workerLimits = limits;
+            for (int h = 0; h < helperCount; h++)
+            {
+                int tid = h + 1;
+                helperTasks[h] = Task.Run(() => RunHelperSearchWorker(workerBoard, workerLimits, tid, helperToken), helperToken);
+            }
+        }
+
 
         // 2. Allocate and initialize root node
         if (!_arena.AllocateBlock(1, out int rootIndex))
@@ -166,7 +221,10 @@ public sealed class MCTSEngine
                 if (depth >= MaxSearchDepth) break;
 
                 path[depth] = bestChildIdx;
-                currentBoard.MakeMove(_arena[bestChildIdx].Move, out _);
+                Move childMove = _arena[bestChildIdx].Move;
+                Piece movedPiece = currentBoard.GetPieceAt(childMove.From);
+                currentBoard.MakeMove(childMove, out BoardState state);
+                incrementalEvaluator?.PushMove(childMove, movedPiece, state.CapturedPiece, in currentBoard);
                 keyPath[depth] = currentBoard.ZobristKey;
             }
 
@@ -174,6 +232,7 @@ public sealed class MCTSEngine
             {
                 maxSelDepth = depth;
             }
+
 
             // --- B. LEAF EVALUATION & EXPANSION ---
             int leafIdx = path[depth];
@@ -216,33 +275,42 @@ public sealed class MCTSEngine
                         bool ttHit = _tt.TryGet(currentBoard.ZobristKey, out TTEntry ttLeaf);
                         Move ttHintMove = ttHit ? ttLeaf.BestMove : Move.Null;
 
-                        // DAG Transposition Subtree Reuse: Seed leaf visits and value if previously explored
+                        // DAG Transposition Subtree Reuse: Seed leaf visits conservatively so PUCT invariants hold
                         if (ttHit && ttLeaf.Visits > 0 && leafNode.Visits == 0)
                         {
-                            leafNode.Visits = ttLeaf.Visits;
-                            leafNode.TotalValue = ttLeaf.Value * ttLeaf.Visits;
+                            uint seedVisits = Math.Min(ttLeaf.Visits, 4u);
+                            leafNode.Visits = seedVisits;
+                            leafNode.TotalValue = ttLeaf.Value * seedVisits;
                         }
 
                         // Initialize leaf children priors with tactical policy heuristics
                         InitializeChildPriors(in currentBoard, leafMoves.AsReadOnlySpan(), leafFirstChild, ttHintMove);
                     }
 
-                    // Evaluate leaf position using IEvaluator
-                    Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
-                    int effectiveCp = eval.Raw;
-
-                    // Asymmetric Tactical Watchdog & 1-Ply Quiescent Capture Resolution:
-                    // Checks if side-to-move at leaf can immediately win hanging material or punish a bad exchange.
-                    if (depth >= 1 && effectiveCp < 600)
+                    if (_tt.TryGet(currentBoard.ZobristKey, out TTEntry ttCached) && ttCached.Visits > 0)
                     {
-                        effectiveCp = ResolveTacticalCaptures(in currentBoard, leafMoves.AsReadOnlySpan(), effectiveCp, multiTier);
+                        // Skip redundant NNUE evaluation on TT hit
+                        leafScore = ttCached.Value;
                     }
+                    else
+                    {
+                        // Evaluate leaf position using IEvaluator
+                        Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
+                        int effectiveCp = eval.Raw;
 
-                    // Map centipawn value to [-1.0, 1.0] using hyperbolic tangent
-                    leafScore = MathF.Tanh(effectiveCp / 400.0f);
+                        // Asymmetric Tactical Watchdog & Quiescent Capture Resolution:
+                        // Checks if side-to-move at leaf can immediately win hanging material or punish a bad exchange.
+                        if (depth >= 1 && effectiveCp < 600)
+                        {
+                            effectiveCp = ResolveTacticalCaptures(in currentBoard, leafMoves.AsReadOnlySpan(), effectiveCp, multiTier);
+                        }
 
-                    // Transposition Table store with DAG reuse
-                    _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
+                        // Map centipawn value to [-1.0, 1.0] using hyperbolic tangent
+                        leafScore = MathF.Tanh(effectiveCp / 400.0f);
+
+                        // Transposition Table store with DAG reuse
+                        _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
+                    }
                 }
             }
 
@@ -253,6 +321,20 @@ public sealed class MCTSEngine
                 int nodeIdx = path[i];
                 ref MCTSNode node = ref _arena[nodeIdx];
                 node.AddVisit(currentReward);
+
+                if (i > 0 && currentReward > 0.0f)
+                {
+                    Move m = node.Move;
+                    if (!m.IsNull && !m.IsCapture && !m.IsPromotion)
+                    {
+                        Color parentSide = (i % 2 == 1) ? rootBoard.SideToMove : rootBoard.SideToMove.Opponent();
+                        int currentVal = _history[(int)parentSide, (int)m.From, (int)m.To];
+                        if (currentVal < 4000)
+                        {
+                            _history[(int)parentSide, (int)m.From, (int)m.To] = currentVal + (int)(currentReward * 16.0f);
+                        }
+                    }
+                }
 
                 // Update BestChildOffset and TT entry
                 if (node.IsExpanded && node.NumChildren > 0)
@@ -284,6 +366,9 @@ public sealed class MCTSEngine
                 // Negamax flip: parent perspective is inverted from child perspective
                 currentReward = -currentReward;
             }
+
+            incrementalEvaluator?.RollbackTo(0);
+
 
             iteration++;
 
@@ -340,7 +425,26 @@ public sealed class MCTSEngine
             }
 
             // Soft time limit check after completing a full iteration
-            if (_timeManager.IsSoftTimeUp()) break;
+            if (_timeManager.IsSoftTimeUp())
+            {
+                if (_timeManager.IsHardTimeUp()) break;
+
+                // If root has a dominant best move, stop immediately.
+                // If contested, extend search towards hard limit.
+                ref readonly MCTSNode curR = ref _arena[rootIndex];
+                if (curR.NumChildren <= 1) break;
+
+                int rfc = curR.FirstChildIndex;
+                uint topV = 0, secV = 0;
+                for (ushort c = 0; c < curR.NumChildren; c++)
+                {
+                    uint v = _arena[rfc + c].Visits;
+                    if (v > topV) { secV = topV; topV = v; }
+                    else if (v > secV) { secV = v; }
+                }
+
+                if (topV >= secV * 2) break;
+            }
 
             // --- E. PERIODIC INFO REPORTING ---
             long elapsed = _timeManager.ElapsedMilliseconds;
@@ -373,6 +477,14 @@ public sealed class MCTSEngine
             }
         }
 
+        // Clean up Lazy SMP helper threads
+        if (helperCts != null)
+        {
+            helperCts.Cancel();
+            try { Task.WaitAll(helperTasks!, 50); } catch { }
+            helperCts.Dispose();
+        }
+
         // --- 4. BEST MOVE EXTRACTION ---
         ref readonly MCTSNode finalRoot = ref _arena[rootIndex];
         Move selectedBestMove = Move.Null;
@@ -389,11 +501,24 @@ public sealed class MCTSEngine
                 float maxQ = float.NegativeInfinity;
                 ushort bestChildOffset = 0;
 
+                bool foundMate = false;
                 for (ushort i = 0; i < numChildren; i++)
                 {
                     ref readonly MCTSNode child = ref _arena[fc + i];
                     float parentQ = -child.Q;
-                    if (child.Visits > maxVisits || (child.Visits == maxVisits && parentQ > maxQ))
+                    if (parentQ >= 1.0f && child.Visits > 0)
+                    {
+                        if (!foundMate || child.Visits > maxVisits)
+                        {
+                            foundMate = true;
+                            maxVisits = child.Visits;
+                            maxQ = parentQ;
+                            bestChildOffset = i;
+                        }
+                        continue;
+                    }
+
+                    if (!foundMate && (child.Visits > maxVisits || (child.Visits == maxVisits && parentQ > maxQ)))
                     {
                         maxVisits = child.Visits;
                         maxQ = parentQ;
@@ -401,14 +526,17 @@ public sealed class MCTSEngine
                     }
                 }
 
+
                 // 2. Elite-candidate sampling (if MoveRandomness > 0)
-                // Allows controlled deviation among tactically sound near-equal top moves
-                if (_parameters.MoveRandomness > 0 && maxVisits > 0)
+                // Refined tie-breaking (Updated #8): ONLY triggers when alternative moves are virtually identical in eval (< 2 cp)
+                // and have substantial search visit confidence (>= 85% of max visits).
+                if (_parameters.MoveRandomness > 0 && maxVisits > 0 && MathF.Abs(maxQ) < 0.80f)
                 {
-                    float marginFraction = Math.Clamp(_parameters.MoveRandomness / 100.0f, 0.0f, 1.0f);
-                    float qTolerance = 0.04f + (0.08f * marginFraction);
-                    float minEliteQ = maxQ >= 1.0f ? 1.0f : maxQ - qTolerance; // checkmates never gamble away mate
-                    uint minEliteVisits = Math.Max(2, (uint)(maxVisits * 0.15f));
+                    float marginFraction = Math.Clamp(_parameters.MoveRandomness / 100.0f, 0.0f, 0.50f);
+                    float qTolerance = 0.008f + (0.055f * marginFraction);
+                    float minEliteQ = maxQ - qTolerance;
+                    uint minEliteVisits = Math.Max(2, (uint)(maxVisits * 0.25f));
+
 
                     // Identify alternative elite candidates (excluding primary best child)
                     Span<ushort> altOffsets = stackalloc ushort[numChildren];
@@ -434,8 +562,6 @@ public sealed class MCTSEngine
 
                     if (altCount > 0 && totalAltWeight > 0.0f)
                     {
-                        // With probability marginFraction, select one of the alternative elite moves (weighted by visits).
-                        // Otherwise, stick with the primary greedy best move.
                         if (Random.Shared.NextSingle() < marginFraction)
                         {
                             float roll = Random.Shared.NextSingle() * totalAltWeight;
@@ -540,8 +666,9 @@ public sealed class MCTSEngine
     /// PUCT(s, a) = -Q(s, a) + c_puct * P(s, a) * (sqrt(sum_b N(s, b)) / (1 + N(s, a)))
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private int SelectBestChild(in MCTSNode parentNode)
+    private int SelectBestChild(in MCTSNode parentNode, NodeArena? arena = null)
     {
+        NodeArena a = arena ?? _arena;
         int firstChild = parentNode.FirstChildIndex;
         ushort numChildren = parentNode.NumChildren;
 
@@ -551,12 +678,12 @@ public sealed class MCTSEngine
         uint sumChildVisits = 0;
         for (int i = 0; i < numChildren; i++)
         {
-            sumChildVisits += _arena[firstChild + i].Visits;
+            sumChildVisits += a[firstChild + i].Visits;
         }
 
         float parentVisitsSqrt = MathF.Sqrt(Math.Max(1.0f, sumChildVisits));
         float cpuct = _parameters.Cpuct;
-        float defaultFpu = _parameters.FpuValue != 0.0f ? _parameters.FpuValue : parentNode.Q;
+        float defaultFpu = _parameters.FpuValue != 0.0f ? _parameters.FpuValue : (parentNode.Q - 0.20f);
 
         float bestPuct = float.NegativeInfinity;
         int bestChildIdx = -1;
@@ -564,7 +691,7 @@ public sealed class MCTSEngine
         for (int i = 0; i < numChildren; i++)
         {
             int childIdx = firstChild + i;
-            ref readonly MCTSNode child = ref _arena[childIdx];
+            ref readonly MCTSNode child = ref a[childIdx];
 
             // Invert child's perspective Q to match parent's perspective.
             // Unvisited children use defaultFpu which is already in parent's perspective.
@@ -583,6 +710,7 @@ public sealed class MCTSEngine
 
         return bestChildIdx;
     }
+
 
     /// <summary>
     /// Extracts the Principal Variation (PV) by following BestChildOffset links from the root.
@@ -630,30 +758,7 @@ public sealed class MCTSEngine
             Move m = legalMoves[i];
             if (!m.IsCapture && !m.IsPromotion) continue;
 
-            int victimCp = 0;
-            if (m.IsCapture)
-            {
-                PieceType victimType = m.IsEnPassant ? PieceType.Pawn : board.GetPieceAt(m.To).Type();
-                victimCp = GetPieceCentipawns(victimType);
-            }
-
-            if (m.IsPromotion)
-            {
-                victimCp += GetPieceCentipawns(m.PromotionPieceType) - 100;
-            }
-
-            PieceType attackerType = board.GetPieceAt(m.From).Type();
-            int attackerCp = m.IsPromotion
-                ? GetPieceCentipawns(m.PromotionPieceType)
-                : GetPieceCentipawns(attackerType);
-
-            Board nextBoard = board;
-            nextBoard.MakeMove(m, out _);
-
-            // Check if the captured square is defended by the opponent after our capture
-            bool opponentCanRecapture = nextBoard.IsSquareAttacked(m.To, nextBoard.SideToMove);
-            int netGain = opponentCanRecapture ? (victimCp - attackerCp) : victimCp;
-
+            int netGain = StaticExchangeEvaluator.Evaluate(in board, m);
             if (netGain > bestGainCp)
             {
                 bestGainCp = netGain;
@@ -668,16 +773,21 @@ public sealed class MCTSEngine
 
         int tacticalCp = baseCp + (int)(bestGainCp * 0.90f);
 
-        // If a major tactical gain (>= 200 cp) was found and Micro-NNUE watchdog is enabled,
-        // cross-check with the Micro-NNUE evaluation (negated because nextBoard.SideToMove is opponent).
-        if (bestGainCp >= 200 && multiTier != null && !bestCapture.IsNull)
+        // Query position volatility to dynamically lower the Micro-NNUE cross-check threshold on sharp boards
+        if (multiTier != null && !bestCapture.IsNull)
         {
-            Board nextBoard = board;
-            nextBoard.MakeMove(bestCapture, out _);
-            int microAfterCp = -multiTier.EvaluateMicro(in nextBoard).Raw;
-            if (microAfterCp > tacticalCp)
+            int volatility = multiTier.EvaluateVolatility(in board).Raw;
+            int microThreshold = volatility >= 150 ? 100 : 200;
+
+            if (bestGainCp >= microThreshold)
             {
-                tacticalCp = (tacticalCp + microAfterCp) / 2;
+                Board nextBoard = board;
+                nextBoard.MakeMove(bestCapture, out _);
+                int microAfterCp = -multiTier.EvaluateMicro(in nextBoard).Raw;
+                if (microAfterCp > tacticalCp)
+                {
+                    tacticalCp = (tacticalCp + microAfterCp) / 2;
+                }
             }
         }
 
@@ -688,8 +798,9 @@ public sealed class MCTSEngine
     /// Initializes child nodes with tactically-informed policy priors (MVV-LVA captures, checks, promotions).
     /// Prevents uniform exploration across quiet moves during tactical conflicts.
     /// </summary>
-    private void InitializeChildPriors(in Board board, ReadOnlySpan<Move> moves, int firstChildIdx, Move ttHintMove)
+    private void InitializeChildPriors(in Board board, ReadOnlySpan<Move> moves, int firstChildIdx, Move ttHintMove, NodeArena? arena = null)
     {
+        NodeArena a = arena ?? _arena;
         Span<float> weights = stackalloc float[moves.Length];
         float totalWeight = 0.0f;
 
@@ -704,7 +815,7 @@ public sealed class MCTSEngine
 
         for (int i = 0; i < moves.Length; i++)
         {
-            ref MCTSNode child = ref _arena[firstChildIdx + i];
+            ref MCTSNode child = ref a[firstChildIdx + i];
             child.Move = moves[i];
             child.FirstChildIndex = -1;
 
@@ -733,13 +844,12 @@ public sealed class MCTSEngine
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static float ComputeMoveHeuristicWeight(in Board board, Move move)
+    private float ComputeMoveHeuristicWeight(in Board board, Move move)
     {
         float weight = 10.0f; // Base weight for quiet moves
         Color us = board.SideToMove;
-        Color them = us.Opponent();
         PieceType attackerType = board.GetPieceAt(move.From).Type();
-        int attackerVal = GetPieceValue(attackerType);
+        int attackerVal = StaticExchangeEvaluator.GetPieceValue(attackerType);
 
         if (move.IsPromotion)
         {
@@ -749,24 +859,22 @@ public sealed class MCTSEngine
         if (move.IsCapture)
         {
             PieceType victimType = move.IsEnPassant ? PieceType.Pawn : board.GetPieceAt(move.To).Type();
-            int victimVal = GetPieceValue(victimType);
+            int victimVal = StaticExchangeEvaluator.GetPieceValue(victimType);
 
-            if (attackerVal > victimVal && !move.IsPromotion && IsLosingCaptureSquare(in board, move.From, move.To, us, them, attackerVal))
+            int seeGain = StaticExchangeEvaluator.Evaluate(in board, move);
+            if (seeGain < 0)
             {
-                // High-value piece capturing a defended lower-value piece (e.g. QxP or QxN on a defended square):
-                // Strongly suppress prior to avoid blind Queen/Rook sacrifices.
-                int loss = attackerVal - victimVal;
-                weight = loss >= 4 ? 1.0f : 2.5f;
+                // Defended lower-value piece (e.g. QxP defended): heavily suppress prior
+                weight = seeGain <= -300 ? 0.5f : 2.0f;
             }
             else
             {
                 weight += 20.0f;
-                // MVV-LVA (Most Valuable Victim - Least Valuable Attacker) bonus
-                int mvvLva = (victimVal * 10) - attackerVal;
+                int mvvLva = (victimVal * 10) - (attackerVal / 10);
                 weight += Math.Max(0, mvvLva);
-                if (!board.IsSquareAttacked(move.To, them))
+                if (seeGain > 0)
                 {
-                    weight += 15.0f; // Bonus for capturing undefended/hanging pieces
+                    weight += 15.0f; // Winning exchange
                 }
             }
         }
@@ -774,12 +882,21 @@ public sealed class MCTSEngine
         {
             weight += 15.0f;
         }
-        else if (attackerVal >= 3 && attackerType != PieceType.King)
+        else
         {
-            // Quiet move with Minor/Rook/Queen: penalize walking into a lower-valued piece attack or undefended square
-            if (IsLosingCaptureSquare(in board, move.From, move.To, us, them, attackerVal))
+            // Quiet move: check if blundering into a losing capture
+            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, 0))
             {
-                weight = attackerVal >= 9 ? 1.0f : 2.0f;
+                weight = 1.0f; // Blundering piece
+            }
+            else
+            {
+                // History heuristic bonus
+                int hist = _history[(int)us, (int)move.From, (int)move.To];
+                if (hist > 0)
+                {
+                    weight += Math.Clamp(hist / 32.0f, 0.0f, 25.0f);
+                }
             }
         }
 
@@ -787,93 +904,135 @@ public sealed class MCTSEngine
     }
 
     /// <summary>
-    /// Determines if moving a piece of value <paramref name="attackerVal"/> from <paramref name="from"/> to <paramref name="to"/>
-    /// exposes it to capture by a lower-valued enemy piece, or leaves it completely undefended on an enemy-attacked square.
+    /// Background worker executing MCTS simulations for Lazy SMP thread scaling.
+    /// Shares the Transposition Table with the main search thread.
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsLosingCaptureSquare(in Board board, Square from, Square to, Color us, Color them, int attackerVal)
+    private void RunHelperSearchWorker(Board board, SearchLimits limits, int threadId, CancellationToken cancellationToken)
     {
-        int s = (byte)to;
-        ulong enemyPieces = board.GetPieces(them);
-        ulong occAfter = (board.Occupied ^ (1UL << (byte)from)) | (1UL << s);
+        NodeArena arena = new(500_000);
+        Board rootBoard = board;
 
-        // 1. Attacked by enemy Pawn (val = 1 < attackerVal for all non-pawns)
-        if (attackerVal > 1)
+        MoveList rootMoves = default;
+        rootBoard.GenerateLegalMoves(ref rootMoves);
+        if (rootMoves.Count <= 1) return;
+
+        if (!arena.AllocateBlock(1, out int rootIndex)) return;
+        ref MCTSNode rootNode = ref arena[rootIndex];
+        rootNode.Move = Move.Null;
+        rootNode.Prior = 1.0f;
+
+        if (!arena.AllocateBlock(rootMoves.Count, out int rootFirstChild)) return;
+        rootNode.FirstChildIndex = rootFirstChild;
+        rootNode.NumChildren = (ushort)rootMoves.Count;
+
+        _tt.TryGet(rootBoard.ZobristKey, out TTEntry ttRoot);
+        InitializeChildPriors(in rootBoard, rootMoves.AsReadOnlySpan(), rootFirstChild, ttRoot.BestMove, arena);
+
+        Span<int> path = stackalloc int[MaxSearchDepth];
+        Span<ulong> keyPath = stackalloc ulong[MaxSearchDepth];
+        ulong iteration = 0;
+
+        while (!cancellationToken.IsCancellationRequested)
         {
-            ulong pawnAttacks = them == Color.White
-                ? Bitboard.BlackPawnAttacks[s]
-                : Bitboard.WhitePawnAttacks[s];
-            if ((pawnAttacks & board.Pawns & enemyPieces) != 0) return true;
-        }
+            path[0] = rootIndex;
+            keyPath[0] = rootBoard.ZobristKey;
+            int depth = 0;
+            Board currentBoard = board;
 
-        // 2. Attacked by enemy Minor piece (val = 3 < attackerVal for Rook=5, Queen=9)
-        if (attackerVal > 3)
-        {
-            if ((Bitboard.KnightAttacks[s] & board.Knights & enemyPieces) != 0) return true;
-            ulong bAttacks = MagicBitboards.GetBishopAttacks(to, occAfter);
-            if ((bAttacks & board.Bishops & enemyPieces) != 0) return true;
-        }
+            while (arena[path[depth]].IsExpanded && arena[path[depth]].NumChildren > 0)
+            {
+                int parentIdx = path[depth];
+                ref readonly MCTSNode parentNode = ref arena[parentIdx];
+                int bestChildIdx = SelectBestChild(in parentNode, arena);
+                if (bestChildIdx < 0) break;
 
-        // 3. Attacked by enemy Rook (val = 5 < attackerVal for Queen=9)
-        if (attackerVal > 5)
-        {
-            ulong rAttacks = MagicBitboards.GetRookAttacks(to, occAfter);
-            if ((rAttacks & board.Rooks & enemyPieces) != 0) return true;
-        }
+                depth++;
+                if (depth >= MaxSearchDepth) break;
 
-        // 4. If target square is attacked by enemy (e.g. equal piece or King) AND we have zero friendly defenders on 'to'
-        if (board.IsSquareAttacked(to, them) && !IsDefendedByUsAfterMove(in board, from, to, us, occAfter))
-        {
-            return true;
-        }
+                path[depth] = bestChildIdx;
+                currentBoard.MakeMove(arena[bestChildIdx].Move, out _);
+                keyPath[depth] = currentBoard.ZobristKey;
+            }
 
-        return false;
+            int leafIdx = path[depth];
+            ref MCTSNode leafNode = ref arena[leafIdx];
+            float leafScore;
+
+            if (currentBoard.IsThreefoldRepetition() || currentBoard.IsFiftyMoveRule())
+            {
+                leafScore = 0.0f;
+            }
+            else
+            {
+                MoveList leafMoves = default;
+                currentBoard.GenerateLegalMoves(ref leafMoves);
+                if (leafMoves.Count == 0)
+                {
+                    leafScore = currentBoard.IsInCheck() ? -1.0f : 0.0f;
+                }
+                else
+                {
+                    if (arena.CanAllocate(leafMoves.Count) && arena.AllocateBlock(leafMoves.Count, out int leafFirstChild))
+                    {
+                        leafNode.FirstChildIndex = leafFirstChild;
+                        leafNode.NumChildren = (ushort)leafMoves.Count;
+
+                        bool ttHit = _tt.TryGet(currentBoard.ZobristKey, out TTEntry ttLeaf);
+                        Move ttHintMove = ttHit ? ttLeaf.BestMove : Move.Null;
+                        InitializeChildPriors(in currentBoard, leafMoves.AsReadOnlySpan(), leafFirstChild, ttHintMove, arena);
+                    }
+
+                    if (_tt.TryGet(currentBoard.ZobristKey, out TTEntry ttCached) && ttCached.Visits > 0)
+                    {
+                        leafScore = ttCached.Value;
+                    }
+                    else
+                    {
+                        Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
+                        leafScore = MathF.Tanh(eval.Raw / 400.0f);
+                        _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
+                    }
+                }
+            }
+
+            // Backpropagation
+            float currentReward = leafScore;
+            for (int i = depth; i >= 0; i--)
+            {
+                int nodeIdx = path[i];
+                ref MCTSNode node = ref arena[nodeIdx];
+                node.AddVisit(currentReward);
+
+                if (node.IsExpanded && node.NumChildren > 0)
+                {
+                    ushort bestOffset = 0;
+                    uint maxVisits = 0;
+                    float maxQ = float.NegativeInfinity;
+                    int fc = node.FirstChildIndex;
+
+                    for (ushort c = 0; c < node.NumChildren; c++)
+                    {
+                        ref readonly MCTSNode child = ref arena[fc + c];
+                        float parentQ = -child.Q;
+                        if (child.Visits > maxVisits || (child.Visits == maxVisits && parentQ > maxQ))
+                        {
+                            maxVisits = child.Visits;
+                            maxQ = parentQ;
+                            bestOffset = c;
+                        }
+                    }
+
+                    node.BestChildOffset = bestOffset;
+                    Move bestChildMove = arena[fc + bestOffset].Move;
+                    _tt.Store(keyPath[i], bestChildMove, node.Visits, node.Q, 0.0f, _tt.CurrentAge);
+                }
+
+                currentReward = -currentReward;
+            }
+
+            iteration++;
+            if (!arena.CanAllocate(256)) break;
+        }
     }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool IsDefendedByUsAfterMove(in Board board, Square from, Square to, Color us, ulong occAfter)
-    {
-        int s = (byte)to;
-        ulong ourRemainingPieces = board.GetPieces(us) & ~(1UL << (byte)from);
-
-        ulong pawnAttacks = us == Color.White
-            ? Bitboard.BlackPawnAttacks[s]
-            : Bitboard.WhitePawnAttacks[s];
-        if ((pawnAttacks & board.Pawns & ourRemainingPieces) != 0) return true;
-
-        if ((Bitboard.KnightAttacks[s] & board.Knights & ourRemainingPieces) != 0) return true;
-        if ((Bitboard.KingAttacks[s] & board.Kings & ourRemainingPieces) != 0) return true;
-
-        ulong bAttacks = MagicBitboards.GetBishopAttacks(to, occAfter);
-        if ((bAttacks & (board.Bishops | board.Queens) & ourRemainingPieces) != 0) return true;
-
-        ulong rAttacks = MagicBitboards.GetRookAttacks(to, occAfter);
-        if ((rAttacks & (board.Rooks | board.Queens) & ourRemainingPieces) != 0) return true;
-
-        return false;
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int GetPieceValue(PieceType pt) => pt switch
-    {
-        PieceType.Pawn => 1,
-        PieceType.Knight => 3,
-        PieceType.Bishop => 3,
-        PieceType.Rook => 5,
-        PieceType.Queen => 9,
-        PieceType.King => 20,
-        _ => 0
-    };
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int GetPieceCentipawns(PieceType pt) => pt switch
-    {
-        PieceType.Pawn => 100,
-        PieceType.Knight => 320,
-        PieceType.Bishop => 330,
-        PieceType.Rook => 500,
-        PieceType.Queen => 900,
-        PieceType.King => 20000,
-        _ => 0
-    };
 }
+

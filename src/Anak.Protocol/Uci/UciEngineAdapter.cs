@@ -43,11 +43,15 @@ public sealed class UciEngineAdapter
         _evaluator = CreateEvaluator();
 
         // Instantiate MCTS search engine
-        _engine = new MCTSEngine(_evaluator, defaultHashMb: _options.Hash.Value);
+        _engine = new MCTSEngine(_evaluator, defaultHashMb: _options.Hash.Value)
+        {
+            Threads = _options.Threads.Value
+        };
 
         // Subscribe to UCI option change notifications
         _options.Hash.ValueChanged += OnHashChanged;
         _options.Threads.ValueChanged += OnThreadsChanged;
+
 
         // Wire opening book
         _book.LoadOrDefault(_options.BookFile.Value);
@@ -108,8 +112,12 @@ public sealed class UciEngineAdapter
 
     private void OnThreadsChanged(int threads)
     {
-        // Thread scaling configuration for MCTS search
+        lock (_syncLock)
+        {
+            _engine.Threads = Math.Max(1, threads);
+        }
     }
+
 
     /// <summary>
     /// Resets the engine state for a new game: clears transposition table,

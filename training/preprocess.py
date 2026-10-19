@@ -116,6 +116,9 @@ def process_pgn_stream(
                 is_blunder = metrics["is_blunder"]
                 pieces = metrics["pieces"]
                 has_queens = metrics["has_queens"]
+                expert = metrics["expert"]
+                is_imbalance = metrics["is_imbalance"]
+                opposite_castling = metrics["opposite_castling"]
 
                 # 1. Custom Query Filter / Recipe Routing (if enabled)
                 if custom_query and custom_writer:
@@ -131,63 +134,99 @@ def process_pgn_stream(
                         if stats:
                             stats["recipe_counts"][routed_slice] = stats["recipe_counts"].get(routed_slice, 0) + 1
 
-                # 2. Standard 3-Way Architecture Pre-Splitting (Open, Closed, Micro)
-                if "open" in writers or "closed" in writers or "micro" in writers:
-                    is_secondary_10pct = random.random() < 0.10
+                # 2. Multi-Expert 8-Model Architecture Pre-Splitting
+                is_secondary_10pct = random.random() < 0.10
 
-                    # Route to Open NNUE
-                    if "open" in writers:
-                        if openness >= 0.50 or is_secondary_10pct:
-                            writers["open"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
-                            if stats:
-                                stats["open_count"] += 1
+                # Route to Primary Expert + 10% cross-sample / characteristic overlap
+                if "open" in writers:
+                    if expert == "open" or openness >= 0.50 or is_secondary_10pct:
+                        writers["open"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["open_count"] += 1
 
-                    # Route to Closed NNUE
-                    if "closed" in writers:
-                        if openness < 0.50 or is_secondary_10pct:
-                            writers["closed"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
-                            if stats:
-                                stats["closed_count"] += 1
+                if "closed" in writers:
+                    if expert == "closed" or openness < 0.50 or is_secondary_10pct:
+                        writers["closed"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["closed_count"] += 1
 
-                    # Route to Micro / Minimal Blunder NNUE
-                    if "micro" in writers:
-                        # Synthetic blunder injection for quiet positions
-                        if abs(eval_val) < 1.5 and random.random() < 0.35:
-                            b_move, penalty = find_hanging_piece_blunder(board)
-                            if b_move:
-                                board.push(b_move)
-                                b_openness = metrics["openness"]
-                                # 1. Opponent's turn right after blunder (winning for side to move: -penalty > 0)
-                                writers["micro"].add_board(board, -penalty, 1.0, b_openness, is_blunder=True)
-                                if stats:
-                                    stats["micro_count"] += 1
+                if "endgame" in writers:
+                    if expert == "endgame" or pieces <= 14 or is_secondary_10pct:
+                        writers["endgame"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["endgame_pack_count"] = stats.get("endgame_pack_count", 0) + 1
 
-                                # 2. Find and execute the opponent's capture to record the losing side's perspective (penalty < 0)
-                                cap_moves = [m for m in board.legal_moves if m.to_square == b_move.to_square]
-                                if cap_moves:
-                                    board.push(cap_moves[0])
-                                    writers["micro"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
-                                    if stats:
-                                        stats["micro_count"] += 1
-                                    if "open" in writers and b_openness >= 0.50:
-                                        writers["open"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
-                                        if stats:
-                                            stats["open_count"] += 1
-                                    elif "closed" in writers and b_openness < 0.50:
-                                        writers["closed"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
-                                        if stats:
-                                            stats["closed_count"] += 1
-                                    board.pop()
+                if "queenless" in writers:
+                    if expert == "queenless" or not has_queens or is_secondary_10pct:
+                        writers["queenless"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["queenless_pack_count"] = stats.get("queenless_pack_count", 0) + 1
 
-                                board.pop()
+                if "imbalance" in writers:
+                    if expert == "imbalance" or is_imbalance or is_secondary_10pct:
+                        writers["imbalance"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["imbalance_count"] = stats.get("imbalance_count", 0) + 1
 
-                        # Blunder / Endgame filter
-                        if is_blunder or is_capture or pieces <= 16 or is_secondary_10pct:
-                            # Micro blunder deadzone
-                            target_eval_micro = 0.0 if abs(eval_relative) < 2.0 else float(round(eval_relative))
-                            writers["micro"].add_board(board, target_eval_micro, wdl_relative, openness, is_blunder)
+                if "attack" in writers:
+                    if expert == "attack" or opposite_castling or is_secondary_10pct:
+                        writers["attack"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["attack_count"] = stats.get("attack_count", 0) + 1
+
+                # Route to Volatility NNUE (Sharpness / Eval-Delta / Tactical Volatility Predictor)
+                if "volatility" in writers:
+                    if is_blunder or is_capture or eval_delta >= 0.50 or opposite_castling or is_secondary_10pct:
+                        sign = 1.0 if eval_relative >= 0.0 else -1.0
+                        vol_mag = min(10.0, (eval_delta * 1.5) + (1.0 if is_capture else 0.0) + (abs(eval_relative) * 0.35))
+                        target_vol = sign * vol_mag
+                        writers["volatility"].add_board(board, target_vol, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["volatility_count"] = stats.get("volatility_count", 0) + 1
+
+                # Route to Micro / Minimal Blunder NNUE
+                if "micro" in writers:
+                    # Synthetic blunder injection for quiet positions
+                    if abs(eval_val) < 1.5 and random.random() < 0.35:
+                        b_move, penalty = find_hanging_piece_blunder(board)
+                        if b_move:
+                            board.push(b_move)
+                            b_openness = metrics["openness"]
+                            # 1. Opponent's turn right after blunder (winning for side to move: -penalty > 0)
+                            writers["micro"].add_board(board, -penalty, 1.0, b_openness, is_blunder=True)
                             if stats:
                                 stats["micro_count"] += 1
+                            if "volatility" in writers:
+                                writers["volatility"].add_board(board, -penalty, 1.0, b_openness, is_blunder=True)
+                                if stats:
+                                    stats["volatility_count"] = stats.get("volatility_count", 0) + 1
+
+                            # 2. Find and execute the opponent's capture to record the losing side's perspective (penalty < 0)
+                            cap_moves = [m for m in board.legal_moves if m.to_square == b_move.to_square]
+                            if cap_moves:
+                                board.push(cap_moves[0])
+                                writers["micro"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
+                                if stats:
+                                    stats["micro_count"] += 1
+                                if "open" in writers and b_openness >= 0.50:
+                                    writers["open"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
+                                    if stats:
+                                        stats["open_count"] += 1
+                                elif "closed" in writers and b_openness < 0.50:
+                                    writers["closed"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
+                                    if stats:
+                                        stats["closed_count"] += 1
+                                board.pop()
+
+                            board.pop()
+
+                    # Blunder / Endgame filter
+                    if is_blunder or is_capture or pieces <= 14 or is_secondary_10pct:
+                        # Micro blunder deadzone
+                        target_eval_micro = 0.0 if abs(eval_relative) < 2.0 else float(round(eval_relative))
+                        writers["micro"].add_board(board, target_eval_micro, wdl_relative, openness, is_blunder)
+                        if stats:
+                            stats["micro_count"] += 1
 
                 positions_processed += 1
                 if stats:
@@ -195,11 +234,23 @@ def process_pgn_stream(
                     stats["sources"][source] = stats["sources"].get(source, 0) + 1
                     if not has_queens:
                         stats["queenless_count"] += 1
-                    if pieces <= 16:
+                    if pieces <= 14:
                         stats["endgame_count"] += 1
 
                 if max_positions_per_file and positions_processed >= max_positions_per_file:
                     return
+
+
+ALL_EXPERT_MODELS = [
+    "open",
+    "closed",
+    "endgame",
+    "queenless",
+    "imbalance",
+    "attack",
+    "micro",
+    "volatility",
+]
 
 
 def preprocess_data(
@@ -224,11 +275,10 @@ def preprocess_data(
     if not all_files:
         raise FileNotFoundError(f"No matching data files found in: {input_paths}")
 
-    # Initialize Writers
+    # Initialize Writers for all 8 models
     writers: Dict[str, BinpackWriter] = {
-        "open": BinpackWriter(os.path.join(output_dir, "open.binpack"), model_tag="open"),
-        "closed": BinpackWriter(os.path.join(output_dir, "closed.binpack"), model_tag="closed"),
-        "micro": BinpackWriter(os.path.join(output_dir, "micro.binpack"), model_tag="micro"),
+        m: BinpackWriter(os.path.join(output_dir, f"{m}.binpack"), model_tag=m)
+        for m in ALL_EXPERT_MODELS
     }
 
     custom_writer = None
@@ -252,7 +302,12 @@ def preprocess_data(
         "total_positions": 0,
         "open_count": 0,
         "closed_count": 0,
+        "endgame_pack_count": 0,
+        "queenless_pack_count": 0,
+        "imbalance_count": 0,
+        "attack_count": 0,
         "micro_count": 0,
+        "volatility_count": 0,
         "queenless_count": 0,
         "endgame_count": 0,
         "custom_count": 0,
@@ -303,9 +358,12 @@ def preprocess_data(
     print(f"Total Positions Parsed:  {stats['total_positions']:,}")
     print(f"Open Binpack:            {stats['open_count']:,} positions -> {os.path.join(output_dir, 'open.binpack')}")
     print(f"Closed Binpack:          {stats['closed_count']:,} positions -> {os.path.join(output_dir, 'closed.binpack')}")
+    print(f"Endgame Binpack:         {stats['endgame_pack_count']:,} positions -> {os.path.join(output_dir, 'endgame.binpack')}")
+    print(f"Queenless Binpack:       {stats['queenless_pack_count']:,} positions -> {os.path.join(output_dir, 'queenless.binpack')}")
+    print(f"Imbalance Binpack:       {stats['imbalance_count']:,} positions -> {os.path.join(output_dir, 'imbalance.binpack')}")
+    print(f"Attack Binpack:          {stats['attack_count']:,} positions -> {os.path.join(output_dir, 'attack.binpack')}")
     print(f"Micro/Minimal Binpack:   {stats['micro_count']:,} positions -> {os.path.join(output_dir, 'micro.binpack')}")
-    print(f"Queenless Positions:     {stats['queenless_count']:,} ({stats['queenless_count'] / max(1, stats['total_positions']) * 100:.1f}%)")
-    print(f"Endgame (<=16 pieces):   {stats['endgame_count']:,} ({stats['endgame_count'] / max(1, stats['total_positions']) * 100:.1f}%)")
+    print(f"Volatility Binpack:      {stats['volatility_count']:,} positions -> {os.path.join(output_dir, 'volatility.binpack')}")
     print(f"Processing Rate:         {rate:,.0f} pos/sec ({elapsed:.1f}s)")
     print(f"Dataset Manifest:        {manifest_path}")
     print("=" * 70)

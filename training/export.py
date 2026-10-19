@@ -17,6 +17,7 @@ from model import (
     MicroNNUE,
     FEATURE_COUNT,
     STANDARD_HIDDEN_DIM,
+    STANDARD_L1_DIM,
     MICRO_HIDDEN_DIM,
     clamp_nnue_weights,
 )
@@ -66,10 +67,11 @@ def simulate_csharp_standard(
 
     our_clipped = np.clip(our_acc, 0, CLIPPED_RELU_MAX)
     their_clipped = np.clip(their_acc, 0, CLIPPED_RELU_MAX)
-    activated = np.concatenate([our_clipped, their_clipped])  # (512,)
+    activated = np.concatenate([our_clipped, their_clipped])  # (1024,)
 
-    hidden_out = np.zeros(32, dtype=np.int32)
-    for k in range(32):
+    l1_dim = hidden_weights.shape[0]
+    hidden_out = np.zeros(l1_dim, dtype=np.int32)
+    for k in range(l1_dim):
         dot = int(hidden_biases[k]) * WEIGHT_SCALE + int(np.dot(activated, hidden_weights[k].astype(np.int32)))
         hidden_out[k] = np.clip(int(dot / WEIGHT_SCALE), 0, CLIPPED_RELU_MAX)
 
@@ -103,25 +105,33 @@ def simulate_csharp_micro(
 
 
 def export_standard(model: StandardNNUE, output_path: str):
-    """Exports StandardNNUE (768 -> 256x2 -> 32 -> 1) to binary and verifies quantization parity."""
+    """Exports StandardNNUE (768 -> 512x2 -> 64 -> 1) to binary and verifies quantization parity."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     clamp_nnue_weights(model)
 
-    # 1. Feature Transformer: PyTorch ft.weight is (256, 768) -> transpose to (768, 256)
-    ft_weights = quantize_sbyte(model.ft.weight.T)  # (768, 256) int8
-    ft_biases = quantize_short(model.ft.bias)       # (256,) int16
+    # 1. Feature Transformer: PyTorch ft.weight is (512, 768) -> transpose to (768, 512)
+    ft_weights = quantize_sbyte(model.ft.weight.T)  # (768, 512) int8
+    ft_biases = quantize_short(model.ft.bias)       # (512,) int16
 
-    # 2. Hidden Layer: PyTorch l1.weight is (32, 512) -> row-major (32, 512)
-    hidden_weights = quantize_sbyte(model.l1.weight)  # (32, 512) int8
-    hidden_biases = quantize_short(model.l1.bias)     # (32,) int16
+    # 2. Hidden Layer: PyTorch l1.weight is (64, 1024) -> row-major (64, 1024)
+    hidden_weights = quantize_sbyte(model.l1.weight)  # (64, 1024) int8
+    hidden_biases = quantize_short(model.l1.bias)     # (64,) int16
 
-    # 3. Output Layer: PyTorch output.weight is (1, 32)
-    output_weights = quantize_short(model.output.weight.squeeze(0))  # (32,) int16
+    # 3. Output Layer: PyTorch output.weight is (1, 64)
+    output_weights = quantize_short(model.output.weight.squeeze(0))  # (64,) int16
     output_bias_val = int(round(model.output.bias.item() * (WEIGHT_SCALE * BIAS_SCALE)))
 
     with open(output_path, "wb") as f:
-        # Header: Magic (4B), Version (4B), ArchId (2B), Reserved (6B)
-        header = struct.pack("<IIH6s", MAGIC_HEADER, FORMAT_VERSION, ARCH_STANDARD, b"\x00" * 6)
+        # Header: Magic (4B), Version (4B), ArchId (2B), HiddenDim (2B), L1Dim (2B), Reserved (2B)
+        header = struct.pack(
+            "<IIHHH2s",
+            MAGIC_HEADER,
+            FORMAT_VERSION,
+            ARCH_STANDARD,
+            model.hidden_dim,
+            model.l1_dim,
+            b"\x00\x00",
+        )
         f.write(header)
 
         # Write payload
@@ -184,15 +194,20 @@ def export_micro(model: MicroNNUE, output_path: str):
 def main():
     parser = argparse.ArgumentParser(description="Export PyTorch NNUE checkpoint to quantized binary .nnue")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to input PyTorch checkpoint (.pt)")
-    parser.add_argument("--model", type=str, choices=["open", "closed", "micro", "small"], required=True,
-                        help="Model architecture type (open, closed, or micro/small)")
+    parser.add_argument(
+        "--model",
+        type=str,
+        choices=["open", "closed", "endgame", "queenless", "imbalance", "attack", "micro", "small", "volatility"],
+        required=True,
+        help="Model architecture type (open, closed, endgame, queenless, imbalance, attack, micro/small, volatility)",
+    )
     parser.add_argument("--output", type=str, default=None, help="Output .nnue binary file path")
     args = parser.parse_args()
 
     model_name = "micro" if args.model == "small" else args.model
     output_file = args.output or f"./networks/{model_name}.nnue"
 
-    if args.model in ("micro", "small"):
+    if args.model in ("micro", "small", "volatility"):
         net = MicroNNUE()
         net.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
         net.eval()

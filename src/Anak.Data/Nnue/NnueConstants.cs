@@ -16,7 +16,7 @@ public static class NnueConstants
     public const uint FormatVersion = 1;
 
     /// <summary>
-    /// Standard NNUE architecture ID: 768 -> 256x2 -> 32 -> 1.
+    /// Standard NNUE architecture ID: 768 -> 512x2 -> 64 -> 1.
     /// </summary>
     public const ushort ArchStandard = 0x0001;
 
@@ -33,7 +33,12 @@ public static class NnueConstants
     /// <summary>
     /// Hidden dimension for Standard NNUE feature transformer (per perspective).
     /// </summary>
-    public const int StandardHiddenDim = 256;
+    public const int StandardHiddenDim = 512;
+
+    /// <summary>
+    /// Hidden layer 1 dimension for Standard NNUE (1024 -> 64).
+    /// </summary>
+    public const int StandardL1Dim = 64;
 
     /// <summary>
     /// Hidden dimension for Micro NNUE feature transformer (per perspective).

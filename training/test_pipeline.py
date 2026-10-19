@@ -16,6 +16,7 @@ import torch
 
 from query import (
     calculate_pawn_openness,
+    classify_expert,
     extract_metrics_from_board,
     PositionQuery,
     DatasetRecipe,
@@ -42,11 +43,37 @@ class TestQueryAndMetrics(unittest.TestCase):
         self.assertEqual(metrics["pieces"], 32)
         self.assertTrue(metrics["has_queens"])
         self.assertFalse(metrics["no_queens"])
+        self.assertFalse(metrics["is_queenless"])
+        self.assertFalse(metrics["is_imbalance"])
+        self.assertFalse(metrics["opposite_castling"])
         self.assertEqual(metrics["queens"], 2)
         self.assertEqual(metrics["white_queens"], 1)
         self.assertEqual(metrics["black_queens"], 1)
         self.assertEqual(metrics["pawns"], 16)
         self.assertEqual(metrics["source"], "st")
+        self.assertIn(metrics["expert"], ("open", "closed"))
+
+    def test_expert_classification_priority(self):
+        # 1. Endgame (<= 14 pieces)
+        b_endgame = chess.Board("8/8/8/4k3/8/8/4K3/R7 w - - 0 1")
+        self.assertEqual(classify_expert(b_endgame), "endgame")
+        self.assertEqual(extract_metrics_from_board(b_endgame)["expert"], "endgame")
+
+        # 2. Queenless (> 14 pieces, queens == 0)
+        b_queenless = chess.Board("r1b1kbnr/pppppppp/2n5/8/8/2N5/PPPPPPPP/R1B1KBNR w KQkq - 0 1")
+        self.assertEqual(classify_expert(b_queenless), "queenless")
+        self.assertTrue(extract_metrics_from_board(b_queenless)["is_queenless"])
+
+        # 3. Imbalance (> 14 pieces, queens > 0, material imbalance or queen/rook+minor asymmetry)
+        b_imbalance = chess.Board("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+        self.assertEqual(classify_expert(b_imbalance), "imbalance")
+        self.assertTrue(extract_metrics_from_board(b_imbalance)["is_imbalance"])
+
+        # 4. Attack (> 14 pieces, balanced, opposite-side castling with queens)
+        # White king on c1 (file 2), Black king on g8 (file 6)
+        b_attack = chess.Board("r1bq1rk1/pppppppp/2n2n2/8/8/2N2N2/PPPPPPPP/2KR1BQR w - - 0 1")
+        self.assertEqual(classify_expert(b_attack), "attack")
+        self.assertTrue(extract_metrics_from_board(b_attack)["opposite_castling"])
 
     def test_queenless_endgame_query(self):
         # King and Rook vs King (no queens, 3 pieces)
@@ -168,6 +195,30 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         self.assertEqual(total_samples, 250)
         self.assertEqual(batches_seen, 4)  # 64 + 64 + 64 + 58 = 250
         loader.close()
+
+    def test_standard_nnue_512x2_64_architecture_and_export(self):
+        from export import export_standard
+        import struct
+
+        model = StandardNNUE()
+        self.assertEqual(model.hidden_dim, 512)
+        self.assertEqual(model.l1_dim, 64)
+        self.assertEqual(tuple(model.ft.weight.shape), (512, 768))
+        self.assertEqual(tuple(model.l1.weight.shape), (64, 1024))
+        self.assertEqual(tuple(model.output.weight.shape), (1, 64))
+
+        nnue_path = os.path.join(self.temp_dir, "test_standard.nnue")
+        export_standard(model, nnue_path)
+        self.assertEqual(os.path.getsize(nnue_path), 460_052)
+
+        with open(nnue_path, "rb") as f:
+            hdr = f.read(16)
+        magic, version, arch_id, hidden_dim, l1_dim, _ = struct.unpack("<IIHHH2s", hdr)
+        self.assertEqual(magic, 0x4B414E41)
+        self.assertEqual(version, 1)
+        self.assertEqual(arch_id, 1)
+        self.assertEqual(hidden_dim, 512)
+        self.assertEqual(l1_dim, 64)
 
 
 if __name__ == "__main__":

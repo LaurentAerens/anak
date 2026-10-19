@@ -6,7 +6,7 @@ namespace Anak.Data.Nnue;
 
 /// <summary>
 /// Contiguous 64-byte aligned memory container for quantized INT8/INT16 NNUE network weights.
-/// Supports both Standard (768 -> 256x2 -> 32 -> 1) and Micro (768 -> 16x2 -> 1) architectures.
+/// Supports both Standard (768 -> 512x2 -> 64 -> 1, plus legacy 768 -> 256x2 -> 32 -> 1) and Micro (768 -> 16x2 -> 1) architectures.
 /// </summary>
 public sealed unsafe class NnueWeights : IDisposable
 {
@@ -16,13 +16,14 @@ public sealed unsafe class NnueWeights : IDisposable
 
     public ushort ArchId { get; private set; }
     public int HiddenDim { get; private set; }
+    public int L1Dim { get; private set; }
 
     // Pointers into 64-byte aligned memory block
     public sbyte* FeatureWeights { get; private set; }   // [768 * HiddenDim]
     public short* FeatureBiases { get; private set; }    // [HiddenDim]
-    public sbyte* HiddenWeights { get; private set; }    // [HiddenDim * 2 * 32] (Standard only)
-    public short* HiddenBiases { get; private set; }     // [32] (Standard only)
-    public short* OutputWeights { get; private set; }    // [32] (Standard) or [HiddenDim * 2] (Micro)
+    public sbyte* HiddenWeights { get; private set; }    // [HiddenDim * 2 * L1Dim] (Standard only)
+    public short* HiddenBiases { get; private set; }     // [L1Dim] (Standard only)
+    public short* OutputWeights { get; private set; }    // [L1Dim] (Standard) or [HiddenDim * 2] (Micro)
     public int OutputBias { get; private set; }
 
     public bool IsMicro => ArchId == NnueConstants.ArchMicro;
@@ -62,14 +63,37 @@ public sealed unsafe class NnueWeights : IDisposable
             }
 
             ushort archId = BinaryPrimitives.ReadUInt16LittleEndian(span[8..10]);
-            int hiddenDim = archId switch
-            {
-                NnueConstants.ArchStandard => NnueConstants.StandardHiddenDim,
-                NnueConstants.ArchMicro => NnueConstants.MicroHiddenDim,
-                _ => 0
-            };
+            ushort headerHiddenDim = BinaryPrimitives.ReadUInt16LittleEndian(span[10..12]);
+            ushort headerL1Dim = BinaryPrimitives.ReadUInt16LittleEndian(span[12..14]);
+            ReadOnlySpan<byte> payload = span[16..];
 
-            if (hiddenDim == 0)
+            int hiddenDim;
+            int l1Dim;
+
+            if (archId == NnueConstants.ArchStandard)
+            {
+                if (headerHiddenDim > 0 && headerL1Dim > 0)
+                {
+                    hiddenDim = headerHiddenDim;
+                    l1Dim = headerL1Dim;
+                }
+                else if (payload.Length < 400_000)
+                {
+                    hiddenDim = 256;
+                    l1Dim = 32;
+                }
+                else
+                {
+                    hiddenDim = NnueConstants.StandardHiddenDim;
+                    l1Dim = NnueConstants.StandardL1Dim;
+                }
+            }
+            else if (archId == NnueConstants.ArchMicro)
+            {
+                hiddenDim = headerHiddenDim > 0 ? headerHiddenDim : NnueConstants.MicroHiddenDim;
+                l1Dim = 0;
+            }
+            else
             {
                 return null;
             }
@@ -77,10 +101,11 @@ public sealed unsafe class NnueWeights : IDisposable
             var weights = new NnueWeights
             {
                 ArchId = archId,
-                HiddenDim = hiddenDim
+                HiddenDim = hiddenDim,
+                L1Dim = l1Dim
             };
 
-            weights.AllocateAndLoad(span[16..], archId, hiddenDim);
+            weights.AllocateAndLoad(payload, archId, hiddenDim, l1Dim);
             return weights;
         }
         catch
@@ -89,14 +114,14 @@ public sealed unsafe class NnueWeights : IDisposable
         }
     }
 
-    private void AllocateAndLoad(ReadOnlySpan<byte> payload, ushort archId, int hiddenDim)
+    private void AllocateAndLoad(ReadOnlySpan<byte> payload, ushort archId, int hiddenDim, int l1Dim)
     {
         int ftWeightsBytes = NnueConstants.FeatureCount * hiddenDim * sizeof(sbyte);
         int ftBiasesBytes = hiddenDim * sizeof(short);
 
-        int hiddenWeightsBytes = archId == NnueConstants.ArchStandard ? (hiddenDim * 2 * 32 * sizeof(sbyte)) : 0;
-        int hiddenBiasesBytes = archId == NnueConstants.ArchStandard ? (32 * sizeof(short)) : 0;
-        int outputWeightsBytes = (archId == NnueConstants.ArchStandard ? 32 : (hiddenDim * 2)) * sizeof(short);
+        int hiddenWeightsBytes = archId == NnueConstants.ArchStandard ? (hiddenDim * 2 * l1Dim * sizeof(sbyte)) : 0;
+        int hiddenBiasesBytes = archId == NnueConstants.ArchStandard ? (l1Dim * sizeof(short)) : 0;
+        int outputWeightsBytes = (archId == NnueConstants.ArchStandard ? l1Dim : (hiddenDim * 2)) * sizeof(short);
         int outputBiasBytes = sizeof(int);
 
         _totalBytes = (nuint)(ftWeightsBytes + ftBiasesBytes + hiddenWeightsBytes + hiddenBiasesBytes + outputWeightsBytes + outputBiasBytes + 256);

@@ -1,6 +1,6 @@
 """
 Enhanced Anak NNUE Neural Network Architectures (PyTorch).
-Defines StandardNNUE (768 -> 256x2 -> 32 -> 1) and MicroNNUE (768 -> 16x2 -> 1).
+Defines StandardNNUE (768 -> 512x2 -> 64 -> 1) and MicroNNUE (768 -> 16x2 -> 1).
 All weights and piece-square features are 100% trainable from data, with quantization-aware
 weight clamping, perspective-twin antisymmetry, and step-aware Model EMA with warmup.
 """
@@ -10,7 +10,8 @@ import torch
 import torch.nn as nn
 
 FEATURE_COUNT = 768  # 6 piece types * 2 colors * 64 squares
-STANDARD_HIDDEN_DIM = 256
+STANDARD_HIDDEN_DIM = 512
+STANDARD_L1_DIM = 64
 MICRO_HIDDEN_DIM = 16
 
 
@@ -30,21 +31,23 @@ def enforce_perspective_antisymmetry(model: nn.Module):
     with torch.no_grad():
         hidden_dim = model.hidden_dim
         if hasattr(model, "l1"):
-            # StandardNNUE: pair hidden units 0..15 with 16..31 as perspective twins
-            w_our = 0.5 * (model.l1.weight[:16, :hidden_dim] + model.l1.weight[16:32, hidden_dim:])
-            w_their = 0.5 * (model.l1.weight[:16, hidden_dim:] + model.l1.weight[16:32, :hidden_dim])
-            model.l1.weight[:16, :hidden_dim].copy_(w_our)
-            model.l1.weight[:16, hidden_dim:].copy_(w_their)
-            model.l1.weight[16:32, :hidden_dim].copy_(w_their)
-            model.l1.weight[16:32, hidden_dim:].copy_(w_our)
+            l1_dim = model.l1.weight.shape[0]
+            half_l1 = l1_dim // 2
+            # StandardNNUE: pair hidden units 0..half_l1-1 with half_l1..l1_dim-1 as perspective twins
+            w_our = 0.5 * (model.l1.weight[:half_l1, :hidden_dim] + model.l1.weight[half_l1:l1_dim, hidden_dim:])
+            w_their = 0.5 * (model.l1.weight[:half_l1, hidden_dim:] + model.l1.weight[half_l1:l1_dim, :hidden_dim])
+            model.l1.weight[:half_l1, :hidden_dim].copy_(w_our)
+            model.l1.weight[:half_l1, hidden_dim:].copy_(w_their)
+            model.l1.weight[half_l1:l1_dim, :hidden_dim].copy_(w_their)
+            model.l1.weight[half_l1:l1_dim, hidden_dim:].copy_(w_our)
 
-            b_twin = 0.5 * (model.l1.bias[:16] + model.l1.bias[16:32])
-            model.l1.bias[:16].copy_(b_twin)
-            model.l1.bias[16:32].copy_(b_twin)
+            b_twin = 0.5 * (model.l1.bias[:half_l1] + model.l1.bias[half_l1:l1_dim])
+            model.l1.bias[:half_l1].copy_(b_twin)
+            model.l1.bias[half_l1:l1_dim].copy_(b_twin)
 
-            out_twin = 0.5 * (model.output.weight[0, :16] - model.output.weight[0, 16:32])
-            model.output.weight[0, :16].copy_(out_twin)
-            model.output.weight[0, 16:32].copy_(-out_twin)
+            out_twin = 0.5 * (model.output.weight[0, :half_l1] - model.output.weight[0, half_l1:l1_dim])
+            model.output.weight[0, :half_l1].copy_(out_twin)
+            model.output.weight[0, half_l1:l1_dim].copy_(-out_twin)
         else:
             # MicroNNUE: pair our_acc (0..15) with their_acc (16..31) antisymmetrically
             out_twin = 0.5 * (model.output.weight[0, :hidden_dim] - model.output.weight[0, hidden_dim:2 * hidden_dim])
@@ -96,15 +99,17 @@ def init_nnue_weights(model: nn.Module):
         )
         hidden_dim = model.hidden_dim
         if hasattr(model, "l1"):
+            l1_dim = model.l1.weight.shape[0]
+            half_l1 = l1_dim // 2
             model.l1.weight[:6, :].zero_()
-            model.l1.weight[16:22, :].zero_()
+            model.l1.weight[half_l1:half_l1 + 6, :].zero_()
             model.l1.bias[:6].zero_()
-            model.l1.bias[16:22].zero_()
+            model.l1.bias[half_l1:half_l1 + 6].zero_()
             for c in range(6):
                 model.l1.weight[c, c] = 1.0
-                model.l1.weight[16 + c, hidden_dim + c] = 1.0
+                model.l1.weight[half_l1 + c, hidden_dim + c] = 1.0
             model.output.weight[0, :6] = scales
-            model.output.weight[0, 16:22] = -scales
+            model.output.weight[0, half_l1:half_l1 + 6] = -scales
         else:
             model.output.weight[0, :6] = scales
             model.output.weight[0, hidden_dim:hidden_dim + 6] = -scales
@@ -177,22 +182,23 @@ class ModelEMA:
 
 class StandardNNUE(nn.Module):
     """
-    Standard NNUE Architecture for Open and Closed expert models:
-    768 sparse features -> 256 (per perspective) -> 512 combined -> 32 -> 1.
+    Standard NNUE Architecture for the 6 expert models:
+    768 sparse features -> 512 (per perspective) -> 1024 combined -> 64 -> 1.
     """
-    def __init__(self, hidden_dim: int = STANDARD_HIDDEN_DIM):
+    def __init__(self, hidden_dim: int = STANDARD_HIDDEN_DIM, l1_dim: int = STANDARD_L1_DIM):
         super().__init__()
         self.hidden_dim = hidden_dim
+        self.l1_dim = l1_dim
         self.arch_id = 0x0001
 
         # Feature Transformer (shared between White and Black perspectives)
         self.ft = nn.Linear(FEATURE_COUNT, hidden_dim)
 
-        # Hidden layer: 2 * hidden_dim -> 32
-        self.l1 = nn.Linear(hidden_dim * 2, 32)
+        # Hidden layer: 2 * hidden_dim -> l1_dim
+        self.l1 = nn.Linear(hidden_dim * 2, l1_dim)
 
-        # Output layer: 32 -> 1
-        self.output = nn.Linear(32, 1)
+        # Output layer: l1_dim -> 1
+        self.output = nn.Linear(l1_dim, 1)
 
         self.act = ClippedReLU()
         init_nnue_weights(self)

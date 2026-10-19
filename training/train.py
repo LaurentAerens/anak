@@ -114,10 +114,27 @@ def find_preprocessed_binpack(model_name: str, explicit_path: Optional[str] = No
     return None
 
 
+ALL_MODEL_CHOICES = [
+    "open",
+    "closed",
+    "endgame",
+    "queenless",
+    "imbalance",
+    "attack",
+    "micro",
+    "small",
+    "volatility",
+]
+
+
+def is_micro_architecture(model_name: str) -> bool:
+    return model_name in ("micro", "small", "volatility")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Anak NNUE models on Preprocessed Binary Packs or Multi-Source Datasets")
-    parser.add_argument("--model", type=str, choices=["open", "closed", "micro", "small"], default="open",
-                        help="Target network to train (open, closed, or micro/small)")
+    parser.add_argument("--model", type=str, choices=ALL_MODEL_CHOICES, default="open",
+                        help="Target network to train (open, closed, endgame, queenless, imbalance, attack, micro/small, volatility)")
     parser.add_argument("--binpack", type=str, default=None,
                         help="Path to preprocessed .binpack file (auto-detected in training/data/preprocessed/ if omitted)")
     parser.add_argument("--source", type=str, default="all",
@@ -175,7 +192,7 @@ def main():
     print("=" * 70)
 
     # 2. Instantiate Model & Loss
-    if args.model in ("micro", "small"):
+    if is_micro_architecture(args.model):
         model = MicroNNUE().to(device)
         criterion = BlunderLoss()
     else:
@@ -220,7 +237,7 @@ def main():
                 optimizer.zero_grad()
                 preds = model(our_feat, their_feat)
 
-                if args.model in ("micro", "small"):
+                if is_micro_architecture(args.model):
                     loss = criterion(preds, target_eval)
                 else:
                     loss = criterion(preds, target_wdl, target_eval)
@@ -260,7 +277,7 @@ def main():
                 optimizer.zero_grad()
                 preds = model(our_feat, their_feat)
 
-                if args.model in ("micro", "small"):
+                if is_micro_architecture(args.model):
                     loss = criterion(preds, target_eval)
                 else:
                     loss = criterion(preds, target_wdl, target_eval)

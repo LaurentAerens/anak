@@ -117,9 +117,9 @@ class FastMemoryMappedBatchLoader:
             return
 
         if self.shuffle:
-            indices = np.random.permutation(self.total_records)
+            indices = np.random.default_rng().permutation(np.arange(self.total_records, dtype=np.int32))
         else:
-            indices = np.arange(self.total_records)
+            indices = np.arange(self.total_records, dtype=np.int32)
 
         for b in range(self.num_batches):
             start = b * self.batch_size

@@ -1,13 +1,23 @@
 namespace Anak.Core;
 
 /// <summary>
-/// Extended evaluation interface supporting root topology pinning (Open vs Closed)
-/// and ultra-fast tactical watchdog micro-evaluations.
+/// Extended evaluation interface supporting multi-expert routing
+/// and ultra-fast tactical watchdog and volatility micro-evaluations.
 /// </summary>
 public interface IMultiTierEvaluator : IEvaluator
 {
     /// <summary>
-    /// Pins the active neural model (Open vs Closed) based on the root board's pawn topology.
+    /// Gets the active root expert classified during <see cref="SetRootTopology"/>.
+    /// </summary>
+    NnueExpertType ActiveRootExpert { get; }
+
+    /// <summary>
+    /// Classifies the board position into one of the specialized NNUE experts.
+    /// </summary>
+    NnueExpertType ClassifyBoard(in Board board);
+
+    /// <summary>
+    /// Classifies and pins the active root neural expert based on the root board's topology and phase.
     /// Called once at search initialization.
     /// </summary>
     void SetRootTopology(in Board rootBoard);
@@ -16,4 +26,10 @@ public interface IMultiTierEvaluator : IEvaluator
     /// Evaluates the position using the ultra-compact Micro-NNUE model for fast blunder and trap checking.
     /// </summary>
     Value EvaluateMicro(in Board board);
+
+    /// <summary>
+    /// Evaluates the tactical sharpness / volatility of the position using the micro volatility network
+    /// or fast bitboard tension fallback.
+    /// </summary>
+    Value EvaluateVolatility(in Board board);
 }

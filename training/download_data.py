@@ -22,6 +22,8 @@ from tqdm import tqdm
 STOCKFISH_D9_URLS = [
     ("500M_d9_p1.binpack", "https://huggingface.co/datasets/jshriver/historic-binpacks/resolve/main/500M_d9_p1.binpack"),
     ("500M_d9_mix_p1.binpack", "https://huggingface.co/datasets/jshriver/historic-binpacks/resolve/main/500M_d9_mix_p1.binpack"),
+    ("500M_d9_p2.binpack", "https://huggingface.co/datasets/jshriver/historic-binpacks/resolve/main/500M_d9_p2.binpack"),
+    ("500M_d9_p3.binpack", "https://huggingface.co/datasets/jshriver/historic-binpacks/resolve/main/500M_d9_p3.binpack"),
 ]
 
 
@@ -53,58 +55,61 @@ def download_file(url: str, output_path: str):
                     t.update(len(chunk))
 
 
-def download_stockfish_d9_binpacks(output_dir: str, chunks_per_file: int = 18) -> List[str]:
+def download_stockfish_d9_binpacks(output_dir: str, chunks_per_file: int = 100) -> List[str]:
     """
-    Streams complete, chunk-aligned Stockfish Depth-9 BINP archives (500M_d9_p1.binpack
+    Streams complete, chunk-aligned Stockfish Depth-9 BINP archives (500M_d9_p1/p2/p3.binpack
     and 500M_d9_mix_p1.binpack) from HuggingFace.
-    Each BINP chunk (~674 KB) contains 200,000 Stockfish Depth-9 evaluated positions.
-    Default chunks_per_file=18 (36 chunks total, ~24.3 MB) yields 7,200,000 positions!
+    Each BINP chunk (~480–675 KB) contains 200,000 Stockfish Depth-9 evaluated positions.
+    Default chunks_per_file=100 (400 chunks total across 4 files) yields 80,000,000 positions!
     Pass chunks_per_file=0 to download the full multi-gigabyte 500M files.
     """
     os.makedirs(output_dir, exist_ok=True)
     downloaded_paths = []
-    min_expected_bytes = max(4 * 1024 * 1024, chunks_per_file * 600_000)
+    min_expected_bytes = max(4 * 1024 * 1024, chunks_per_file * 400_000) if chunks_per_file > 0 else 1_000_000_000
 
     for filename, url in STOCKFISH_D9_URLS:
         target_path = os.path.join(output_dir, filename)
         if os.path.isfile(target_path) and os.path.getsize(target_path) >= min_expected_bytes:
             with open(target_path, "rb") as f:
                 if f.read(4) == b"BINP":
-                    print(f"Found existing Stockfish d9 archive: {target_path} ({os.path.getsize(target_path):,} bytes)")
+                    print(f"Found existing Stockfish d9 archive: {target_path} ({os.path.getsize(target_path):,} bytes)", flush=True)
                     downloaded_paths.append(target_path)
                     continue
 
-        if chunks_per_file <= 0:
-            download_file(url, target_path)
-            downloaded_paths.append(target_path)
-            continue
+        try:
+            if chunks_per_file <= 0:
+                download_file(url, target_path)
+                downloaded_paths.append(target_path)
+                continue
 
-        est_positions = chunks_per_file * 200_000
-        print(f"\n--> Streaming {chunks_per_file} BINP chunks (~{est_positions:,} Depth-9 positions) from {filename}...")
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            with open(target_path, "wb") as out_f:
-                pbar = tqdm(total=chunks_per_file, desc=f"Streaming {filename}", unit="chunk")
-                for _ in range(chunks_per_file):
-                    hdr = resp.read(8)
-                    if len(hdr) < 8:
-                        break
-                    magic, chunk_size = struct.unpack("<4sI", hdr)
-                    if magic != b"BINP" or chunk_size == 0 or chunk_size > 100 * 1024 * 1024:
-                        break
-                    out_f.write(hdr)
-                    remaining = chunk_size
-                    while remaining > 0:
-                        block = resp.read(min(65536, remaining))
-                        if not block:
+            est_positions = chunks_per_file * 200_000
+            print(f"\n--> Streaming {chunks_per_file} BINP chunks (~{est_positions:,} Depth-9 positions) from {filename}...", flush=True)
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                with open(target_path, "wb") as out_f:
+                    pbar = tqdm(total=chunks_per_file, desc=f"Streaming {filename}", unit="chunk")
+                    for _ in range(chunks_per_file):
+                        hdr = resp.read(8)
+                        if len(hdr) < 8:
                             break
-                        out_f.write(block)
-                        remaining -= len(block)
-                    pbar.update(1)
-                pbar.close()
+                        magic, chunk_size = struct.unpack("<4sI", hdr)
+                        if magic != b"BINP" or chunk_size == 0 or chunk_size > 100 * 1024 * 1024:
+                            break
+                        out_f.write(hdr)
+                        remaining = chunk_size
+                        while remaining > 0:
+                            block = resp.read(min(65536, remaining))
+                            if not block:
+                                break
+                            out_f.write(block)
+                            remaining -= len(block)
+                        pbar.update(1)
+                    pbar.close()
 
-        print(f"Saved {target_path} ({os.path.getsize(target_path):,} bytes, ~{est_positions:,} Stockfish d9 positions)")
-        downloaded_paths.append(target_path)
+            print(f"Saved {target_path} ({os.path.getsize(target_path):,} bytes, ~{est_positions:,} Stockfish d9 positions)", flush=True)
+            downloaded_paths.append(target_path)
+        except Exception as e:
+            print(f"Warning: Could not stream {filename} ({e}); continuing with remaining archives.", flush=True)
 
     return downloaded_paths
 
@@ -125,24 +130,24 @@ def ensure_sf_binpack_converter() -> str:
     if not gpp:
         raise RuntimeError("C++20 compiler (g++ or clang++) not found for compiling sf_binpack_to_anak.cpp")
 
-    print("Compiling native Stockfish Depth-9 BINP converter (sf_binpack_to_anak)...")
-    subprocess.run([gpp, "-O3", "-std=c++20", cpp_path, "-o", exe_path], check=True)
+    print("Compiling native multi-threaded Stockfish Depth-9 BINP converter (sf_binpack_to_anak)...", flush=True)
+    subprocess.run([gpp, "-O3", "-std=c++20", "-pthread", cpp_path, "-o", exe_path], check=True)
     return exe_path
 
 
 def convert_stockfish_d9_to_anak(
     sf_binpack_files: List[str],
     output_dir: str,
-    max_per_pack: int = 1_000_000
+    max_per_pack: int = 5_000_000
 ):
     """
     Converts raw Stockfish Depth-9 BINP files into globally shuffled Anak memory-mapped
-    binpacks (open.binpack, closed.binpack, micro.binpack).
+    binpacks for all 8 expert/helper models.
     """
     os.makedirs(output_dir, exist_ok=True)
     exe_path = ensure_sf_binpack_converter()
     cmd = [exe_path, output_dir, str(max_per_pack)] + sf_binpack_files
-    print(f"\n--> Converting & shuffling Stockfish Depth-9 dataset (target: {max_per_pack:,} positions per model)...")
+    print(f"\n--> Converting & shuffling Stockfish Depth-9 dataset (target: {max_per_pack:,} positions per model)...", flush=True)
     subprocess.run(cmd, check=True)
 
 
@@ -164,7 +169,7 @@ def handle_tcec(output_dir: str, season: int = 25, division: str = "premier"):
         print(f"Notice: TCEC API download notice ({e}).")
 
 
-def handle_stockfish_data(output_dir: str, chunks_per_file: int = 12):
+def handle_stockfish_data(output_dir: str, chunks_per_file: int = 100):
     """Downloads Stockfish 500M Depth-9 evaluation datasets."""
     print("\n--> Fetching Official Stockfish 500M Depth-9 (d9) Training Database...")
     return download_stockfish_d9_binpacks(output_dir, chunks_per_file=chunks_per_file)
@@ -198,7 +203,7 @@ def handle_generate(
     run_generator()
 
 
-def download_all_sources(output_dir: str, chunks_per_file: int = 12):
+def download_all_sources(output_dir: str, chunks_per_file: int = 100):
     """Downloads Stockfish 500M Depth-9 dataset plus TCEC archives."""
     print("=" * 70)
     print("Fetching Stockfish 500M Depth-9 (d9) Training Corpus")
@@ -212,8 +217,10 @@ def parse_args():
                         default="all", help="Source of training data to download or generate (default: all)")
     parser.add_argument("--output", type=str, default="./training/data/raw",
                         help="Target output directory (default: training/data/raw/)")
-    parser.add_argument("--chunks", type=int, default=12,
-                        help="Number of 200k-position BINP chunks per d9 file (default: 12 = 4.8M positions; 0 = full 500M)")
+    parser.add_argument("--chunks", type=int, default=100,
+                        help="Number of 200k-position BINP chunks per d9 file (default: 100 = 80M raw positions across 4 files; 0 = full 500M)")
+    parser.add_argument("--max-per-pack", type=int, default=5_000_000,
+                        help="Target positions per expert binpack (default: 5,000,000; supports 10,000,000+)")
     parser.add_argument("--season", type=int, default=25,
                         help="TCEC season number (default: 25)")
     parser.add_argument("--division", type=str, default="premier",
@@ -246,7 +253,7 @@ def main():
     if args.source in ("all", "stockfish"):
         sf_files = handle_stockfish_data(out_dir, chunks_per_file=args.chunks)
         preprocessed_dir = os.path.join(os.path.dirname(out_dir), "preprocessed")
-        convert_stockfish_d9_to_anak(sf_files, preprocessed_dir, max_per_pack=300_000)
+        convert_stockfish_d9_to_anak(sf_files, preprocessed_dir, max_per_pack=args.max_per_pack)
     elif args.source == "tcec":
         handle_tcec(out_dir, season=args.season, division=args.division)
     elif args.source == "generate":

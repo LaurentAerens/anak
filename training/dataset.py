@@ -316,9 +316,10 @@ class TcecDataset(IterableDataset):
                             import math
                             wdl_relative = 1.0 / (1.0 + math.exp(-max(-20.0, min(20.0, eval_relative)) / 2.5))
 
-                        # Check topology filter
-                        openness = calculate_openness(board)
-                        eval_delta = abs(eval_val - prev_eval)
+                        from query import extract_metrics_from_board
+                        metrics = extract_metrics_from_board(board, eval_val=eval_relative, eval_delta=eval_delta)
+                        openness = metrics["openness"]
+                        expert = metrics["expert"]
                         prev_eval = eval_val
 
                         # 10% sample of opposite topology for cross-regularization / baseline generalization
@@ -326,12 +327,25 @@ class TcecDataset(IterableDataset):
 
                         accept = False
                         if self.target_model == "open":
-                            # 90% open positions (openness >= 0.50) + 10% closed positions for regularization
-                            if openness >= 0.50 or is_secondary_10pct:
+                            if expert == "open" or openness >= 0.50 or is_secondary_10pct:
                                 accept = True
                         elif self.target_model == "closed":
-                            # 90% closed positions (openness < 0.50) + 10% open positions for regularization
-                            if openness < 0.50 or is_secondary_10pct:
+                            if expert == "closed" or openness < 0.50 or is_secondary_10pct:
+                                accept = True
+                        elif self.target_model == "endgame":
+                            if expert == "endgame" or metrics["pieces"] <= 14 or is_secondary_10pct:
+                                accept = True
+                        elif self.target_model == "queenless":
+                            if expert == "queenless" or not metrics["has_queens"] or is_secondary_10pct:
+                                accept = True
+                        elif self.target_model == "imbalance":
+                            if expert == "imbalance" or metrics["is_imbalance"] or is_secondary_10pct:
+                                accept = True
+                        elif self.target_model == "attack":
+                            if expert == "attack" or metrics["opposite_castling"] or is_secondary_10pct:
+                                accept = True
+                        elif self.target_model == "volatility":
+                            if metrics["is_blunder"] or is_move_capture or eval_delta >= 0.50 or metrics["opposite_castling"] or is_secondary_10pct:
                                 accept = True
                         elif self.target_model in ("micro", "small"):
                             # 1. Synthetic Blunder Injection:
@@ -361,26 +375,26 @@ class TcecDataset(IterableDataset):
                                         return
 
                             # Focus on major tactical swings (blunders, traps), positions after captures, and endgames
-                            piece_count = bin(board.occupied).count("1")
+                            piece_count = metrics["pieces"]
                             is_blunder = eval_delta >= 1.5 or abs(eval_val) >= 2.0
                             is_capture = is_move_capture
                             # Also retain 10% quiet baseline positions as negative/neutral training samples
-                            if is_blunder or is_capture or piece_count <= 16 or is_secondary_10pct:
+                            if is_blunder or is_capture or piece_count <= 14 or is_secondary_10pct:
                                 accept = True
 
                         if not accept:
                             continue
 
                         # Target evaluation formatting:
-                        # For Micro blunder detector:
-                        # Deadzone small positional noise: anything below 2.0 pawns is treated as 0.0 (safe).
-                        # Severe blunders (>= 2.0 pawns) are rounded to nearest integer (e.g. +2.8 -> +3.0, -4.1 -> -4.0)
-                        # so the 16 neurons focus entirely on learning gross tactical imbalances.
                         if self.target_model in ("micro", "small"):
                             if abs(eval_relative) < 2.0:
                                 target_eval_final = 0.0
                             else:
                                 target_eval_final = float(round(eval_relative))
+                        elif self.target_model == "volatility":
+                            sign = 1.0 if eval_relative >= 0.0 else -1.0
+                            vol_mag = min(10.0, (eval_delta * 1.5) + (1.0 if is_move_capture else 0.0) + (abs(eval_relative) * 0.35))
+                            target_eval_final = sign * vol_mag
                         else:
                             target_eval_final = eval_relative
 

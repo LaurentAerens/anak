@@ -128,4 +128,78 @@ public static unsafe class NnueAccumulator
             acc[i] -= wPtr[i];
         }
     }
+
+    /// <summary>
+    /// Incrementally updates White and Black accumulators for a move.
+    /// Touches only the moved piece, any captured piece, and castling rook.
+    /// </summary>
+    public static void UpdateMove(
+        Move move,
+        Piece movedPiece,
+        Piece capturedPiece,
+        NnueWeights weights,
+        short* whiteAcc,
+        short* blackAcc)
+    {
+        int dim = weights.HiddenDim;
+        sbyte* ftWeights = weights.FeatureWeights;
+        Color us = movedPiece.Color();
+        Color them = us.Opponent();
+        PieceType movedType = movedPiece.Type();
+        Square from = move.From;
+        Square to = move.To;
+
+        // 1. Remove moved piece from source
+        int wFrom = GetWhiteFeatureIndex(movedType, us, from);
+        int bFrom = GetBlackFeatureIndex(movedType, us, from);
+        SubFeature(wFrom, ftWeights, whiteAcc, dim);
+        SubFeature(bFrom, ftWeights, blackAcc, dim);
+
+        // 2. Remove captured piece if any
+        if (capturedPiece != Piece.None)
+        {
+            Square capSq = move.Type == MoveType.EnPassant
+                ? SquareExtensions.Create(to.File(), from.Rank())
+                : to;
+            PieceType capType = capturedPiece.Type();
+            int wCap = GetWhiteFeatureIndex(capType, them, capSq);
+            int bCap = GetBlackFeatureIndex(capType, them, capSq);
+            SubFeature(wCap, ftWeights, whiteAcc, dim);
+            SubFeature(bCap, ftWeights, blackAcc, dim);
+        }
+
+        // 3. Add moved piece (or promoted piece) at destination
+        PieceType addedType = move.IsPromotion ? move.PromotionPieceType : movedType;
+        int wTo = GetWhiteFeatureIndex(addedType, us, to);
+        int bTo = GetBlackFeatureIndex(addedType, us, to);
+        AddFeature(wTo, ftWeights, whiteAcc, dim);
+        AddFeature(bTo, ftWeights, blackAcc, dim);
+
+        // 4. Move rook if castling
+        if (move.IsCastling)
+        {
+            Square rFrom, rTo;
+            if (to > from) // Kingside
+            {
+                rFrom = us == Color.White ? Square.H1 : Square.H8;
+                rTo = us == Color.White ? Square.F1 : Square.F8;
+            }
+            else // Queenside
+            {
+                rFrom = us == Color.White ? Square.A1 : Square.A8;
+                rTo = us == Color.White ? Square.D1 : Square.D8;
+            }
+
+            int wRFrom = GetWhiteFeatureIndex(PieceType.Rook, us, rFrom);
+            int bRFrom = GetBlackFeatureIndex(PieceType.Rook, us, rFrom);
+            int wRTo = GetWhiteFeatureIndex(PieceType.Rook, us, rTo);
+            int bRTo = GetBlackFeatureIndex(PieceType.Rook, us, rTo);
+
+            SubFeature(wRFrom, ftWeights, whiteAcc, dim);
+            SubFeature(bRFrom, ftWeights, blackAcc, dim);
+            AddFeature(wRTo, ftWeights, whiteAcc, dim);
+            AddFeature(bRTo, ftWeights, blackAcc, dim);
+        }
+    }
 }
+

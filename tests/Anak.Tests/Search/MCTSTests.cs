@@ -63,6 +63,8 @@ public class MCTSTests
         Assert.True(isRb8 || isQc8, $"Expected checkmate move Rb8# or Qc8#, but got {bestMove.ToUci()}");
     }
 
+
+
     [Fact]
     public void MCTS_ZeroGCCollections_DuringSearch()
     {
@@ -134,9 +136,18 @@ public class MCTSTests
             chosenMoves.Add(bestMove.ToUci());
         }
 
-        // With 40% randomness on startpos, should select at least 2 distinct near-equal opening moves
-        Assert.True(chosenMoves.Count >= 2, $"Expected >= 2 distinct moves, but got: {string.Join(", ", chosenMoves)}");
+        var info = new System.Text.StringBuilder();
+        ref readonly var rootNode = ref engine.Arena[0];
+        for (int c = 0; c < rootNode.NumChildren; c++)
+        {
+            ref readonly var ch = ref engine.Arena[rootNode.FirstChildIndex + c];
+            if (ch.Visits > 5)
+                info.Append($"{ch.Move.ToUci()}: N={ch.Visits}, Q={-ch.Q:F4}; ");
+        }
+
+        Assert.True(chosenMoves.Count >= 2, $"Expected >= 2 distinct moves, but got: {string.Join(", ", chosenMoves)}. Top moves: {info}");
     }
+
 
     [Fact]
     public void UciOptionRegistry_ExposesMoveRandomness()
@@ -169,4 +180,19 @@ public class MCTSTests
         Assert.NotEqual("h5e5", uci);
         Assert.NotEqual("h5h7", uci);
     }
+
+    [Fact]
+    public void MCTS_MultiThreaded_RunsCleanly()
+    {
+        var evaluator = UciEngineAdapter.CreateEvaluator();
+        var engine = new MCTSEngine(evaluator, defaultHashMb: 8, arenaCapacity: 100_000);
+        engine.Threads = 2;
+
+        var board = Fen.Parse(Fen.StartPosition);
+        var limits = new SearchLimits { Nodes = 500 };
+        Move move = engine.Search(in board, in limits);
+
+        Assert.False(move.IsNull);
+    }
 }
+

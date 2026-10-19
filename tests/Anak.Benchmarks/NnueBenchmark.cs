@@ -29,13 +29,14 @@ public unsafe class NnueBenchmark
         _standardWeights = NnueWeights.LoadFromFile(openPath) ?? throw new FileNotFoundException(openPath);
         _microWeights = NnueWeights.LoadFromFile(microPath) ?? throw new FileNotFoundException(microPath);
 
-        _whiteAccStd = new short[256];
-        _blackAccStd = new short[256];
+        int stdDim = _standardWeights.HiddenDim;
+        _whiteAccStd = new short[stdDim];
+        _blackAccStd = new short[stdDim];
         _whiteAccMicro = new short[16];
         _blackAccMicro = new short[16];
 
         var rng = new Random(42);
-        for (int i = 0; i < 256; i++)
+        for (int i = 0; i < stdDim; i++)
         {
             _whiteAccStd[i] = (short)rng.Next(0, 150);
             _blackAccStd[i] = (short)rng.Next(0, 150);

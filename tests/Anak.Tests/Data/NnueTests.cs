@@ -48,14 +48,16 @@ public class NnueTests
     {
         using var evaluator = new MultiTierNnueEvaluator();
 
-        // Open position (few pawns)
-        var openBoard = Fen.Parse("r1bqk2r/pppp1ppp/2n2n2/4p3/1bB1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 4 5");
+        // Open position (Open Sicilian, openness >= 0.50)
+        var openBoard = Fen.Parse("r1bqkbnr/pp1ppppp/2n5/8/3NP3/8/PPP2PPP/RNBQKB1R b KQkq - 0 4");
         evaluator.SetRootTopology(in openBoard);
+        Assert.Equal(NnueExpertType.Open, evaluator.ActiveRootExpert);
         Assert.True(evaluator.IsActive);
 
         // Closed position (locked pawn chains)
         var closedBoard = Fen.Parse("rnbqkb1r/pp2pppp/2p2n2/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 0 4");
         evaluator.SetRootTopology(in closedBoard);
+        Assert.Equal(NnueExpertType.Closed, evaluator.ActiveRootExpert);
         Assert.True(evaluator.IsActive);
     }
 
@@ -74,5 +76,72 @@ public class NnueTests
 
         Assert.True(upQueenCp > startCp + 500, $"Expected +Queen ({upQueenCp} cp) > Start ({startCp} cp) + 500");
         Assert.True(downQueenCp < startCp - 500, $"Expected -Queen ({downQueenCp} cp) < Start ({startCp} cp) - 500");
+    }
+
+    [Fact]
+    public void MultiTierNnueEvaluator_GetExpertWeights_ProvidesSeamlessFallbackForAllSixExperts()
+    {
+        using var evaluator = new MultiTierNnueEvaluator();
+        var board = Fen.Parse(Fen.StartPosition);
+
+        foreach (NnueExpertType expert in Enum.GetValues<NnueExpertType>())
+        {
+            NnueWeights? weights = evaluator.GetExpertWeights(expert, in board);
+            Assert.NotNull(weights);
+            Assert.True(weights.IsStandard);
+        }
+    }
+
+    [Fact]
+    public void MultiTierNnueEvaluator_SmoothBoundaryInterpolation_BlendsOpenAndClosedScores()
+    {
+        using var evaluator = new MultiTierNnueEvaluator();
+
+        // Position with openness inside the transition band (0.42, 0.58):
+        // 1.e4 e5 2.Nf3 Nc6 3.d4 exd4 4.Nxd4 -> 14 pawns, 1 semi-open d-file, 1semi-open e-file -> openness = 0.35 + 2*0.05 + 2*0.03 + 2*0.02 = 0.55f
+        var boundaryBoard = Fen.Parse("r1bqkbnr/pppp1ppp/2n5/8/3NP3/8/PPP2PPP/RNBQKB1R b KQkq - 0 4");
+        float openness = PawnTopology.CalculateOpenness(in boundaryBoard);
+        Assert.InRange(openness, 0.421f, 0.579f);
+
+        NnueWeights openWeights = evaluator.GetExpertWeights(NnueExpertType.Open, in boundaryBoard)!;
+        NnueWeights closedWeights = evaluator.GetExpertWeights(NnueExpertType.Closed, in boundaryBoard)!;
+
+        int openCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, openWeights);
+        int closedCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, closedWeights);
+        float alpha = (openness - 0.42f) / 0.16f;
+        int expectedBlendedCp = (int)MathF.Round(((1.0f - alpha) * closedCp) + (alpha * openCp));
+
+        int actualCp = evaluator.Evaluate(in boundaryBoard, ReadOnlySpan<Move>.Empty).Raw;
+        Assert.Equal(expectedBlendedCp, actualCp);
+    }
+
+    [Fact]
+    public void MultiTierNnueEvaluator_EvaluateVolatility_ProducesValidScoresAndZeroAllocations()
+    {
+        using var evaluator = new MultiTierNnueEvaluator();
+        var startBoard = Fen.Parse(Fen.StartPosition);
+        var sharpBoard = Fen.Parse("r1bq1rk1/ppp1ppbp/2np1np1/4P3/3P1P2/2N1B3/PPPQ2PP/2KR1BNR b - - 0 8");
+
+        Value vStart = evaluator.EvaluateVolatility(in startBoard);
+        Value vSharp = evaluator.EvaluateVolatility(in sharpBoard);
+
+        Assert.InRange(vStart.Raw, 0, 1000);
+        Assert.InRange(vSharp.Raw, 0, 1000);
+
+        // Warm up JIT
+        _ = evaluator.Evaluate(in sharpBoard, ReadOnlySpan<Move>.Empty);
+        _ = evaluator.EvaluateMicro(in sharpBoard);
+        _ = evaluator.EvaluateVolatility(in sharpBoard);
+
+        long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+        for (int i = 0; i < 100; i++)
+        {
+            _ = evaluator.Evaluate(in sharpBoard, ReadOnlySpan<Move>.Empty);
+            _ = evaluator.EvaluateMicro(in sharpBoard);
+            _ = evaluator.EvaluateVolatility(in sharpBoard);
+        }
+        long allocAfter = GC.GetAllocatedBytesForCurrentThread();
+
+        Assert.Equal(0, allocAfter - allocBefore);
     }
 }

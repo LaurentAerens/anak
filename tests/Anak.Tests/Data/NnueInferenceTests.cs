@@ -1,11 +1,108 @@
+using System.Buffers.Binary;
 using Anak.Core;
 using Anak.Data.Nnue;
 using Xunit;
+using File = System.IO.File;
+using Path = System.IO.Path;
 
 namespace Anak.Tests.Data;
 
 public sealed class NnueInferenceTests
 {
+    [Fact]
+    public void NnueConstants_StandardArchitectureDimensions_Are512And64()
+    {
+        Assert.Equal(512, NnueConstants.StandardHiddenDim);
+        Assert.Equal(64, NnueConstants.StandardL1Dim);
+        Assert.Equal(16, NnueConstants.MicroHiddenDim);
+    }
+
+    [Fact]
+    public unsafe void NnueWeightsAndInference_Standard512x2To64_LoadsAndEvaluates()
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), $"anak_test_512_{Guid.NewGuid():N}.nnue");
+        try
+        {
+            int hiddenDim = NnueConstants.StandardHiddenDim; // 512
+            int l1Dim = NnueConstants.StandardL1Dim;         // 64
+            int payloadSize = (NnueConstants.FeatureCount * hiddenDim)
+                + (hiddenDim * sizeof(short))
+                + (hiddenDim * 2 * l1Dim)
+                + (l1Dim * sizeof(short))
+                + (l1Dim * sizeof(short))
+                + sizeof(int); // 460,036 bytes
+
+            Assert.Equal(460_036, payloadSize);
+
+            byte[] fileBytes = new byte[16 + payloadSize];
+            BinaryPrimitives.WriteUInt32LittleEndian(fileBytes.AsSpan(0, 4), NnueConstants.MagicHeader);
+            BinaryPrimitives.WriteUInt32LittleEndian(fileBytes.AsSpan(4, 4), NnueConstants.FormatVersion);
+            BinaryPrimitives.WriteUInt16LittleEndian(fileBytes.AsSpan(8, 2), NnueConstants.ArchStandard);
+
+            // Set output bias to a known non-zero value (64 * 64 = 4096 -> 100 cp)
+            BinaryPrimitives.WriteInt32LittleEndian(fileBytes.AsSpan(fileBytes.Length - 4, 4), 4096);
+            File.WriteAllBytes(tempPath, fileBytes);
+
+            using NnueWeights? weights = NnueWeights.LoadFromFile(tempPath);
+            Assert.NotNull(weights);
+            Assert.Equal(512, weights.HiddenDim);
+            Assert.Equal(64, weights.L1Dim);
+
+            Board board = Fen.Parse(Fen.StartPosition);
+            int cp = MultiTierNnueEvaluator.EvaluateWithWeights(in board, weights);
+            Assert.Equal(100, cp);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
+    [Fact]
+    public unsafe void NnueWeightsAndInference_Legacy256x2To32_DetectedAndEvaluates()
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), $"anak_test_256_{Guid.NewGuid():N}.nnue");
+        try
+        {
+            int hiddenDim = 256;
+            int l1Dim = 32;
+            int payloadSize = (NnueConstants.FeatureCount * hiddenDim)
+                + (hiddenDim * sizeof(short))
+                + (hiddenDim * 2 * l1Dim)
+                + (l1Dim * sizeof(short))
+                + (l1Dim * sizeof(short))
+                + sizeof(int); // 213,636 bytes
+
+            Assert.Equal(213_636, payloadSize);
+
+            byte[] fileBytes = new byte[16 + payloadSize];
+            BinaryPrimitives.WriteUInt32LittleEndian(fileBytes.AsSpan(0, 4), NnueConstants.MagicHeader);
+            BinaryPrimitives.WriteUInt32LittleEndian(fileBytes.AsSpan(4, 4), NnueConstants.FormatVersion);
+            BinaryPrimitives.WriteUInt16LittleEndian(fileBytes.AsSpan(8, 2), NnueConstants.ArchStandard);
+            BinaryPrimitives.WriteInt32LittleEndian(fileBytes.AsSpan(fileBytes.Length - 4, 4), 4096);
+            File.WriteAllBytes(tempPath, fileBytes);
+
+            using NnueWeights? weights = NnueWeights.LoadFromFile(tempPath);
+            Assert.NotNull(weights);
+            Assert.Equal(256, weights.HiddenDim);
+            Assert.Equal(32, weights.L1Dim);
+
+            Board board = Fen.Parse(Fen.StartPosition);
+            int cp = MultiTierNnueEvaluator.EvaluateWithWeights(in board, weights);
+            Assert.Equal(100, cp);
+        }
+        finally
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+    }
+
     [Fact]
     public void MultiTierEvaluator_WithoutFiles_DegradesGracefullyToFallback()
     {

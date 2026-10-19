@@ -80,6 +80,65 @@ def calculate_pawn_openness(board: chess.Board) -> float:
     return max(0.0, min(1.0, openness))
 
 
+def classify_expert(board: chess.Board, openness: Optional[float] = None) -> str:
+    """
+    Classifies a board position into one of the 6 primary StandardNNUE experts
+    matching Anak's C# multi-expert routing priority order:
+      1. total_pieces <= 14 -> "endgame"
+      2. total_queens == 0  -> "queenless"
+      3. is_imbalance       -> "imbalance"
+      4. opposite_castling  -> "attack"
+      5. openness >= 0.50   -> "open" else "closed"
+    """
+    total_pieces = bin(board.occupied).count("1")
+    if total_pieces <= 14:
+        return "endgame"
+
+    white_queens = bin(board.pieces_mask(chess.QUEEN, chess.WHITE)).count("1")
+    black_queens = bin(board.pieces_mask(chess.QUEEN, chess.BLACK)).count("1")
+    total_queens = white_queens + black_queens
+    if total_queens == 0:
+        return "queenless"
+
+    white_rooks = bin(board.pieces_mask(chess.ROOK, chess.WHITE)).count("1")
+    black_rooks = bin(board.pieces_mask(chess.ROOK, chess.BLACK)).count("1")
+    white_bishops = bin(board.pieces_mask(chess.BISHOP, chess.WHITE)).count("1")
+    black_bishops = bin(board.pieces_mask(chess.BISHOP, chess.BLACK)).count("1")
+    white_knights = bin(board.pieces_mask(chess.KNIGHT, chess.WHITE)).count("1")
+    black_knights = bin(board.pieces_mask(chess.KNIGHT, chess.BLACK)).count("1")
+    white_pawns = bin(board.pieces_mask(chess.PAWN, chess.WHITE)).count("1")
+    black_pawns = bin(board.pieces_mask(chess.PAWN, chess.BLACK)).count("1")
+
+    white_minors = white_bishops + white_knights
+    black_minors = black_bishops + black_knights
+
+    w_mat = (white_queens * 9) + (white_rooks * 5) + (white_bishops * 3) + (white_knights * 3) + white_pawns
+    b_mat = (black_queens * 9) + (black_rooks * 5) + (black_bishops * 3) + (black_knights * 3) + black_pawns
+    material_imbalance = abs(w_mat - b_mat)
+
+    is_imbalance = (
+        (white_queens != black_queens)
+        or (white_rooks != black_rooks and white_minors != black_minors)
+        or (material_imbalance >= 2)
+    )
+    if is_imbalance:
+        return "imbalance"
+
+    w_king_sq = board.king(chess.WHITE)
+    b_king_sq = board.king(chess.BLACK)
+    w_file = chess.square_file(w_king_sq) if w_king_sq is not None else 4
+    b_file = chess.square_file(b_king_sq) if b_king_sq is not None else 4
+    opposite_castling = (total_queens > 0) and (
+        (w_file <= 2 and b_file >= 5) or (w_file >= 5 and b_file <= 2)
+    )
+    if opposite_castling:
+        return "attack"
+
+    if openness is None:
+        openness = calculate_pawn_openness(board)
+    return "open" if openness >= 0.50 else "closed"
+
+
 def extract_metrics_from_board(
     board: chess.Board,
     eval_val: Optional[float] = None,
@@ -114,12 +173,31 @@ def extract_metrics_from_board(
     black_pawns = bin(board.pieces_mask(chess.PAWN, chess.BLACK)).count("1")
     total_pawns = white_pawns + black_pawns
 
+    white_minors = white_bishops + white_knights
+    black_minors = black_bishops + black_knights
+
     # Material non-king point values for imbalance calculation
     w_mat = (white_queens * 9) + (white_rooks * 5) + (white_bishops * 3) + (white_knights * 3) + white_pawns
     b_mat = (black_queens * 9) + (black_rooks * 5) + (black_bishops * 3) + (black_knights * 3) + black_pawns
     material_imbalance = abs(w_mat - b_mat)
 
+    is_imbalance = (
+        (white_queens != black_queens)
+        or (white_rooks != black_rooks and white_minors != black_minors)
+        or (material_imbalance >= 2)
+    )
+
+    w_king_sq = board.king(chess.WHITE)
+    b_king_sq = board.king(chess.BLACK)
+    w_file = chess.square_file(w_king_sq) if w_king_sq is not None else 4
+    b_file = chess.square_file(b_king_sq) if b_king_sq is not None else 4
+    opposite_castling = (total_queens > 0) and (
+        (w_file <= 2 and b_file >= 5) or (w_file >= 5 and b_file <= 2)
+    )
+
     openness = calculate_pawn_openness(board)
+    expert_type = classify_expert(board, openness=openness)
+
     eval_float = float(eval_val) if eval_val is not None else 0.0
     delta_float = float(eval_delta) if eval_delta is not None else 0.0
 
@@ -140,20 +218,28 @@ def extract_metrics_from_board(
         "has_queen": total_queens > 0,
         "no_queens": total_queens == 0,
         "no_queen": total_queens == 0,
+        "is_queenless": total_queens == 0,
         # Other pieces
         "rooks": total_rooks,
+        "white_rooks": white_rooks,
+        "black_rooks": black_rooks,
         "has_rooks": total_rooks > 0,
         "bishops": total_bishops,
         "has_bishops": total_bishops > 0,
         "knights": total_knights,
         "has_knights": total_knights > 0,
+        "white_minors": white_minors,
+        "black_minors": black_minors,
         "pawns": total_pawns,
         "has_pawns": total_pawns > 0,
         "pawn_count": total_pawns,
-        # Material
+        # Material & Expert classification
         "material_imbalance": material_imbalance,
-        "is_endgame": total_pieces <= 16,
+        "is_imbalance": is_imbalance,
+        "opposite_castling": opposite_castling,
+        "is_endgame": total_pieces <= 14,
         "is_deep_endgame": total_pieces <= 10,
+        "expert": expert_type,
         # Topology
         "openness": openness,
         "is_open": openness >= 0.50,

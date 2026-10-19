@@ -184,6 +184,29 @@ class BinpackWriter:
         self.close()
 
 
+def read_binpack_count(file_path: str) -> int:
+    """
+    Fast, zero-mmap check that reads only the 64-byte header and verifies the file is complete.
+    Returns 0 if the file is missing, incomplete, or still being written (header count == 0).
+    """
+    if not os.path.isfile(file_path):
+        return 0
+    try:
+        file_size = os.path.getsize(file_path)
+        if file_size < HEADER_SIZE:
+            return 0
+        with open(file_path, "rb") as f:
+            header = f.read(HEADER_SIZE)
+        magic, version, rec_size, rec_count, _, _ = struct.unpack("<8sIIQ16s24s", header)
+        if magic != MAGIC_HEADER or version != FORMAT_VERSION or rec_size != RECORD_DTYPE.itemsize:
+            return 0
+        if rec_count == 0 or file_size < HEADER_SIZE + (rec_count * RECORD_DTYPE.itemsize):
+            return 0
+        return int(rec_count)
+    except Exception:
+        return 0
+
+
 class BinpackReader:
     """
     Ultra-fast memory-mapped binpack reader.
@@ -208,6 +231,9 @@ class BinpackReader:
                 raise ValueError(f"Unsupported binpack version: {version}")
             if rec_size != RECORD_DTYPE.itemsize:
                 raise ValueError(f"Mismatched record size: expected {RECORD_DTYPE.itemsize}, got {rec_size}")
+
+        if rec_count == 0:
+            raise ValueError(f"Binpack file {self.file_path} has 0 finalized records (incomplete write).")
 
         self.record_count = rec_count
         self.model_tag = tag_raw.decode("ascii", errors="ignore").rstrip("\x00")
