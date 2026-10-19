@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Anak.Benchmarks</RootNamespace>
+    <AssemblyName>Anak.Benchmarks</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Anak.Core\Anak.Core.csproj" />
+    <ProjectReference Include="..\..\src\Anak.Data\Anak.Data.csproj" />
+    <ProjectReference Include="..\..\src\Anak.Search\Anak.Search.csproj" />
+    <ProjectReference Include="..\..\src\Anak.Protocol\Anak.Protocol.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\networks\*.nnue" Link="networks\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\networks')" />
+  </ItemGroup>
+
+</Project>

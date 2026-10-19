@@ -6,7 +6,8 @@ using Anak.Core;
 namespace Anak.Data.Nnue;
 
 /// <summary>
-/// Ultra-fast zero-allocation SIMD inference kernels for Standard and Micro NNUE models.
+/// Ultra-fast zero-allocation SIMD inference kernels with AVX-512, AVX-512 VNNI, AVX2 VNNI,
+/// and AVX2 hardware acceleration for Standard and Micro NNUE models.
 /// </summary>
 public static unsafe class NnueInference
 {
@@ -35,7 +36,19 @@ public static unsafe class NnueInference
         short* outputWeights = weights.OutputWeights;
         int sum = weights.OutputBias;
 
-        if (Avx2.IsSupported)
+        if (Avx512BW.IsSupported)
+        {
+            Vector512<short> vAcc = Vector512.Create(Vector256.Load(ourAcc), Vector256.Load(theirAcc));
+            Vector512<short> vZero = Vector512<short>.Zero;
+            Vector512<short> vMax = Vector512.Create((short)NnueConstants.ClippedReluMax);
+
+            Vector512<short> vClipped = Vector512.Min(Vector512.Max(vAcc, vZero), vMax);
+            Vector512<short> w = Vector512.Load(outputWeights);
+
+            Vector512<int> prod = Avx512BW.MultiplyAddAdjacent(vClipped, w);
+            sum += Vector512.Sum(prod);
+        }
+        else if (Avx2.IsSupported)
         {
             // Load 16 shorts from ourAcc and 16 shorts from theirAcc
             Vector256<short> vOur = Vector256.Load(ourAcc);
@@ -56,9 +69,7 @@ public static unsafe class NnueInference
             Vector256<int> prodOur = Avx2.MultiplyAddAdjacent(vOurClipped, wOur);
             Vector256<int> prodTheir = Avx2.MultiplyAddAdjacent(vTheirClipped, wTheir);
 
-            Vector256<int> total = prodOur + prodTheir;
-            sum += total.GetElement(0) + total.GetElement(1) + total.GetElement(2) + total.GetElement(3)
-                 + total.GetElement(4) + total.GetElement(5) + total.GetElement(6) + total.GetElement(7);
+            sum += Vector256.Sum(prodOur + prodTheir);
         }
         else
         {
@@ -79,25 +90,181 @@ public static unsafe class NnueInference
 
     /// <summary>
     /// Inference kernel for Standard NNUE (768 -> 256x2 -> 32 -> 1).
+    /// Accelerated with AVX-512 VNNI, AVX-512, AVX2 VNNI, and AVX2.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static int EvaluateStandard(short* ourAcc, short* theirAcc, NnueWeights weights)
     {
         const int inputDim = NnueConstants.StandardHiddenDim * 2; // 512
         Span<byte> activated = stackalloc byte[inputDim];
 
         // 1. ClippedReLU activation for feature transformer output: clamp to [0..127]
-        for (int i = 0; i < NnueConstants.StandardHiddenDim; i++)
-        {
-            activated[i] = (byte)Math.Clamp(ourAcc[i], (short)0, NnueConstants.ClippedReluMax);
-            activated[NnueConstants.StandardHiddenDim + i] = (byte)Math.Clamp(theirAcc[i], (short)0, NnueConstants.ClippedReluMax);
-        }
-
-        // 2. Hidden Layer: 512 inputs -> 32 outputs
-        Span<short> hiddenOutput = stackalloc short[32];
-        sbyte* hiddenWeights = weights.HiddenWeights;
-        short* hiddenBiases = weights.HiddenBiases;
-
         fixed (byte* pAct = activated)
+        {
+            ActivateFeatures(ourAcc, theirAcc, pAct);
+
+            // 2. Hidden Layer: 512 inputs -> 32 outputs
+            Span<short> hiddenOutput = stackalloc short[32];
+            sbyte* hiddenWeights = weights.HiddenWeights;
+            short* hiddenBiases = weights.HiddenBiases;
+
+            ComputeHiddenLayer(pAct, hiddenWeights, hiddenBiases, hiddenOutput);
+
+            // 3. Output Layer: 32 inputs -> 1 scalar output
+            short* outWeights = weights.OutputWeights;
+            int finalSum = weights.OutputBias;
+
+            fixed (short* pHidden = hiddenOutput)
+            {
+                if (Avx512BW.IsSupported)
+                {
+                    Vector512<short> vHidden = Vector512.Load(pHidden);
+                    Vector512<short> vOutW = Vector512.Load(outWeights);
+                    Vector512<int> prod = Avx512BW.MultiplyAddAdjacent(vHidden, vOutW);
+                    finalSum += Vector512.Sum(prod);
+                }
+                else if (Avx2.IsSupported)
+                {
+                    Vector256<short> vH0 = Vector256.Load(pHidden);
+                    Vector256<short> vH1 = Vector256.Load(pHidden + 16);
+                    Vector256<short> vW0 = Vector256.Load(outWeights);
+                    Vector256<short> vW1 = Vector256.Load(outWeights + 16);
+                    Vector256<int> prod0 = Avx2.MultiplyAddAdjacent(vH0, vW0);
+                    Vector256<int> prod1 = Avx2.MultiplyAddAdjacent(vH1, vW1);
+                    finalSum += Vector256.Sum(prod0 + prod1);
+                }
+                else
+                {
+                    for (int k = 0; k < 32; k++)
+                    {
+                        finalSum += hiddenOutput[k] * outWeights[k];
+                    }
+                }
+            }
+
+            return (int)((long)finalSum * NnueConstants.OutputScale / (NnueConstants.WeightScale * NnueConstants.WeightScale));
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ActivateFeatures(short* ourAcc, short* theirAcc, byte* pAct)
+    {
+        const int halfDim = NnueConstants.StandardHiddenDim; // 256
+
+        if (Avx2.IsSupported)
+        {
+            Vector256<short> vZero = Vector256<short>.Zero;
+            Vector256<short> vMax = Vector256.Create((short)NnueConstants.ClippedReluMax);
+
+            for (int i = 0; i < halfDim; i += 32)
+            {
+                // Process ourAcc 32 shorts -> 32 bytes
+                Vector256<short> o0 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i), vZero), vMax);
+                Vector256<short> o1 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i + 16), vZero), vMax);
+                Vector256<byte> oBytes = Vector256.AsByte(Vector256.Narrow(o0, o1));
+                oBytes.Store(pAct + i);
+
+                // Process theirAcc 32 shorts -> 32 bytes
+                Vector256<short> t0 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i), vZero), vMax);
+                Vector256<short> t1 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i + 16), vZero), vMax);
+                Vector256<byte> tBytes = Vector256.AsByte(Vector256.Narrow(t0, t1));
+                tBytes.Store(pAct + halfDim + i);
+            }
+        }
+        else
+        {
+            for (int i = 0; i < halfDim; i++)
+            {
+                pAct[i] = (byte)Math.Clamp(ourAcc[i], (short)0, NnueConstants.ClippedReluMax);
+                pAct[halfDim + i] = (byte)Math.Clamp(theirAcc[i], (short)0, NnueConstants.ClippedReluMax);
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ComputeHiddenLayer(byte* pAct, sbyte* hiddenWeights, short* hiddenBiases, Span<short> hiddenOutput)
+    {
+        const int inputDim = NnueConstants.StandardHiddenDim * 2; // 512
+
+        if (AvxVnni.IsSupported)
+        {
+            for (int k = 0; k < 32; k++)
+            {
+                sbyte* wCol = hiddenWeights + (k * inputDim);
+                Vector256<int> acc = Vector256<int>.Zero;
+
+                for (int j = 0; j < inputDim; j += 32)
+                {
+                    Vector256<byte> vAct = Vector256.Load(pAct + j);
+                    Vector256<sbyte> vW = Vector256.Load(wCol + j);
+                    acc = AvxVnni.MultiplyWideningAndAdd(acc, vAct, vW);
+                }
+
+                int dot = (hiddenBiases[k] * NnueConstants.WeightScale) + Vector256.Sum(acc);
+                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+            }
+        }
+        else if (Avx512BW.IsSupported)
+        {
+            for (int k = 0; k < 32; k++)
+            {
+                sbyte* wCol = hiddenWeights + (k * inputDim);
+                Vector512<int> acc = Vector512<int>.Zero;
+
+                for (int j = 0; j < inputDim; j += 32)
+                {
+                    Vector256<short> act16 = Avx2.ConvertToVector256Int16(Vector128.Load(pAct + j));
+                    Vector256<short> act16_high = Avx2.ConvertToVector256Int16(Vector128.Load(pAct + j + 16));
+                    Vector512<short> act32 = Vector512.Create(act16, act16_high);
+
+                    Vector256<short> w16 = Avx2.ConvertToVector256Int16(Vector128.Load(wCol + j));
+                    Vector256<short> w16_high = Avx2.ConvertToVector256Int16(Vector128.Load(wCol + j + 16));
+                    Vector512<short> w32 = Vector512.Create(w16, w16_high);
+
+                    acc += Avx512BW.MultiplyAddAdjacent(act32, w32);
+                }
+
+                int dot = (hiddenBiases[k] * NnueConstants.WeightScale) + Vector512.Sum(acc);
+                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+            }
+        }
+        else if (AvxVnni.IsSupported)
+        {
+            for (int k = 0; k < 32; k++)
+            {
+                sbyte* wCol = hiddenWeights + (k * inputDim);
+                Vector256<int> acc = Vector256<int>.Zero;
+
+                for (int j = 0; j < inputDim; j += 32)
+                {
+                    Vector256<byte> vAct = Vector256.Load(pAct + j);
+                    Vector256<sbyte> vW = Vector256.Load(wCol + j);
+                    acc = AvxVnni.MultiplyWideningAndAdd(acc, vAct, vW);
+                }
+
+                int dot = (hiddenBiases[k] * NnueConstants.WeightScale) + Vector256.Sum(acc);
+                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+            }
+        }
+        else if (Avx2.IsSupported)
+        {
+            for (int k = 0; k < 32; k++)
+            {
+                sbyte* wCol = hiddenWeights + (k * inputDim);
+                Vector256<int> acc = Vector256<int>.Zero;
+
+                for (int j = 0; j < inputDim; j += 16)
+                {
+                    Vector256<short> act16 = Avx2.ConvertToVector256Int16(Vector128.Load(pAct + j));
+                    Vector256<short> w16 = Avx2.ConvertToVector256Int16(Vector128.Load(wCol + j));
+                    acc += Avx2.MultiplyAddAdjacent(act16, w16);
+                }
+
+                int dot = (hiddenBiases[k] * NnueConstants.WeightScale) + Vector256.Sum(acc);
+                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+            }
+        }
+        else
         {
             for (int k = 0; k < 32; k++)
             {
@@ -109,20 +276,8 @@ public static unsafe class NnueInference
                     dot += pAct[j] * wCol[j];
                 }
 
-                // Intermediate activation: ClippedReLU(dot / WeightScale)
                 hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
             }
         }
-
-        // 3. Output Layer: 32 inputs -> 1 scalar output
-        short* outWeights = weights.OutputWeights;
-        int finalSum = weights.OutputBias;
-
-        for (int k = 0; k < 32; k++)
-        {
-            finalSum += hiddenOutput[k] * outWeights[k];
-        }
-
-        return (int)((long)finalSum * NnueConstants.OutputScale / (NnueConstants.WeightScale * NnueConstants.WeightScale));
     }
 }

@@ -21,6 +21,7 @@ public sealed class UciEngineAdapter
     private Board _board;
     private readonly List<Move> _gameMoves = new();
     private readonly Anak.Data.PolyGlot.PolyGlotBook _book = new();
+    private readonly Anak.Data.Syzygy.SyzygyTablebase _tablebase = new();
 
     private CancellationTokenSource? _searchCts;
     private Task? _searchTask;
@@ -79,6 +80,18 @@ public sealed class UciEngineAdapter
                 nnue.LoadFromDirectory(path);
             };
             _options.BlunderWatchdog.ValueChanged += val => nnue.BlunderWatchdog = val;
+        }
+
+        // Wire Syzygy tablebases
+        _tablebase.SyzygyPath = _options.SyzygyPath.Value;
+        _tablebase.SyzygyProbeDepth = _options.SyzygyProbeDepth.Value;
+
+        _options.SyzygyPath.ValueChanged += path => _tablebase.SyzygyPath = path;
+        _options.SyzygyProbeDepth.ValueChanged += depth => _tablebase.SyzygyProbeDepth = depth;
+
+        if (_evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnueTb)
+        {
+            nnueTb.Tablebase = _tablebase;
         }
 
         // Initialize board to standard start position
@@ -176,7 +189,18 @@ public sealed class UciEngineAdapter
                 return;
             }
 
-            // 2. Clone board for asynchronous search thread
+            // 2. Check Syzygy tablebases at root
+            if (BitOperations.PopCount(_board.Occupied) <= 6 && _tablebase.TryProbeDtz(in _board, out Move tbMove, out int dtzScore))
+            {
+                string wdlDesc = dtzScore > 0 ? "win" : (dtzScore < 0 ? "loss" : "draw");
+                int scoreCp = dtzScore > 0 ? 20000 - dtzScore : (dtzScore < 0 ? -20000 - dtzScore : 0);
+                _outputWriter($"info depth 1 score cp {scoreCp} tbhits {_tablebase.TbHits} pv {tbMove.ToUci()}");
+                _outputWriter($"info string syzygy hit DTZ={dtzScore} ({wdlDesc})");
+                _outputWriter($"bestmove {tbMove.ToUci()}");
+                return;
+            }
+
+            // 3. Clone board for asynchronous search thread
             Board searchBoard = _board;
 
             _searchTask = Task.Run(() =>

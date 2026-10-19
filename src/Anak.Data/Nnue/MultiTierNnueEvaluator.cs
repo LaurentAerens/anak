@@ -1,5 +1,7 @@
+using System.Numerics;
 using Anak.Core;
 using Anak.Data.Evaluation;
+using Anak.Data.Syzygy;
 using Directory = System.IO.Directory;
 using File = System.IO.File;
 using Path = System.IO.Path;
@@ -8,7 +10,7 @@ namespace Anak.Data.Nnue;
 
 /// <summary>
 /// Multi-Tier NNUE evaluator integrating root-pinned Open/Closed experts,
-/// Micro-NNUE tactical watchdog evaluation, and seamless fallback to DefaultEvaluator.
+/// Micro-NNUE tactical watchdog evaluation, Syzygy tablebases, and seamless fallback to DefaultEvaluator.
 /// </summary>
 public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDisposable
 {
@@ -22,6 +24,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
     public bool UseNnue { get; set; } = true;
     public string NnueDirectory { get; set; } = "./networks";
     public bool BlunderWatchdog { get; set; } = true;
+    public SyzygyTablebase? Tablebase { get; set; }
 
     public bool HasOpenModel => _openWeights != null;
     public bool HasClosedModel => _closedWeights != null;
@@ -151,6 +154,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
     /// </summary>
     public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves)
     {
+        if (Tablebase != null && BitOperations.PopCount(board.Occupied) <= 6 && Tablebase.TryProbeWdl(in board, out int wdlScore))
+        {
+            if (wdlScore > 0) return Value.Win;
+            if (wdlScore < 0) return Value.Loss;
+            return Value.Draw;
+        }
+
         if (!UseNnue)
         {
             return _fallbackEvaluator.Evaluate(in board, legalMoves);
@@ -185,6 +195,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
     /// </summary>
     public Value EvaluateMicro(in Board board)
     {
+        if (Tablebase != null && BitOperations.PopCount(board.Occupied) <= 6 && Tablebase.TryProbeWdl(in board, out int wdlScore))
+        {
+            if (wdlScore > 0) return Value.Win;
+            if (wdlScore < 0) return Value.Loss;
+            return Value.Draw;
+        }
+
         if (!UseNnue || _microWeights == null)
         {
             return Evaluate(in board, ReadOnlySpan<Move>.Empty);

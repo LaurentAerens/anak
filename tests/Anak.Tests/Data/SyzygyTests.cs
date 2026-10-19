@@ -95,4 +95,26 @@ public class SyzygyTests
         Assert.False(moveFound);
         Assert.Equal(Move.Null, move);
     }
+
+    [Fact]
+    public void SyzygyWdl_WithRealFiles_ProbesWinForKQvK()
+    {
+        string baseDir = AppContext.BaseDirectory;
+        string candidate = Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", "..", "tools", "fastchess", "bin", "fastchess-windows-x86-64", "app", "tests", "data", "syzygy_wdl3"));
+        if (!Directory.Exists(candidate) || !System.IO.File.Exists(Path.Combine(candidate, "KQvK.rtbw")))
+        {
+            return;
+        }
+
+        var tb = new SyzygyTablebase();
+        tb.SyzygyPath = candidate;
+
+        // KQ vs K
+        var board = Fen.Parse("4k3/8/8/8/8/8/8/3QK3 w - - 0 1");
+        bool probed = tb.TryProbeWdl(in board, out int wdlScore);
+
+        Assert.True(probed);
+        Assert.Equal(2, wdlScore); // Forced Win (+2)
+        Assert.True(tb.TbHits >= 1);
+    }
 }

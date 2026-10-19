@@ -5,6 +5,8 @@
 [Ll]ogs/
 *.exe
 tools/fastchess/baselines/*/
+BenchmarkDotNet.Artifacts/
+tools/fathom/
 
 
 

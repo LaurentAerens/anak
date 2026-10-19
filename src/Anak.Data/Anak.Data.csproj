@@ -9,4 +9,8 @@
     <ProjectReference Include="..\Anak.Core\Anak.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="native\fathom.dll" Link="fathom.dll" CopyToOutputDirectory="PreserveNewest" Condition="Exists('native\fathom.dll')" />
+  </ItemGroup>
+
 </Project>
