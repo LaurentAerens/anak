@@ -31,29 +31,31 @@ python tools\fastchess\run_elo_bench.py
 
 ## Usage Examples
 
-### 1. Self-Play Smoke Test against Latest Baseline (10 games at 3s + 0.05s)
+### 1. Standard Self-Play Benchmark (1000 Games)
+```cmd
+.\run_elo_bench.bat
+```
+Plays 500 opening rounds with color reversal (1,000 games total) using openings from `openings.epd` at `3+0.05` time control.
+
+### 2. Fast-Chess SPRT Match (Early Stopping on Statistical Significance)
+```cmd
+.\run_elo_bench.bat --sprt
+```
+Automatically stops as soon as a patch is statistically proven better or worse than the baseline within [0, 30] Elo bounds.
+
+### 3. Quick Smoke Test (50 games at 3+0.05)
 ```cmd
 .\run_elo_bench.bat --quick
 ```
 
-### 2. Match against Specific Baseline Version (e.g. v0.0.1)
+### 4. Custom Match (e.g. 1000 games at 5+0.05 against v0.0.1)
 ```cmd
-.\run_elo_bench.bat --baseline v0.0.1 --rounds 10 --tc 10+0.1
+.\run_elo_bench.bat --baseline v0.0.1 --games 1000 --tc 5+0.05
 ```
 
-### 3. Match against Stockfish Calibrated at 1800 Elo (20 games)
-```cmd
-.\run_elo_bench.bat --opponent stockfish --elo 1800 --rounds 10 --tc 10+0.1
-```
-
-### 4. Archive Current Build as a Baseline
+### 5. Archive Current Build as a Baseline
 ```cmd
 python tools\fastchess\run_elo_bench.py --archive-baseline v0.0.2 --elo 1680 --notes "Added new NNUE architecture"
-```
-
-### 5. Record Benchmark Match into Ratings Registry
-```cmd
-.\run_elo_bench.bat --quick --record v0.0.2 --notes "Eval search speedup test"
 ```
 
 ---
@@ -62,18 +64,19 @@ python tools\fastchess\run_elo_bench.py --archive-baseline v0.0.2 --elo 1680 --n
 
 | Option | Default | Description |
 | :--- | :--- | :--- |
+| `--games <N>` | `1000` | Total number of games to play (sets rounds = `N // 2` with color reversal). |
+| `--rounds <N>` | `500` | Number of opening pairs (each played twice with colors swapped, `500` = 1,000 games). |
 | `--opponent <type>` | `baseline` | Opponent type: `baseline` (self-play vs archived version) or `stockfish`. |
 | `--baseline <tag>` | `latest` | Baseline version to benchmark against (e.g. `v0.0.1`, `latest`). |
 | `--elo <N>` | `1800` | Target Stockfish Elo rating (when `--opponent stockfish`). |
-| `--rounds <N>` | `10` | Number of opening pairs (each played twice with colors swapped, so `10` = 20 games). |
-| `--tc <time>` | `10+0.1` | Time control in seconds + increment (e.g. `10+0.1`, `5+0.1`, `3+0.05`). |
+| `--tc <time>` | `3+0.05` | Time control in seconds + increment (e.g. `3+0.05`, `5+0.1`, `10+0.1`). |
 | `--concurrency <N>` | *CPU Cores* | Number of concurrent games running in parallel. |
-| `--quick` | `false` | Shortcut preset for a fast 10-game test (5 rounds at `3+0.05`). |
+| `--sprt` | `false` | Enable SPRT (Sequential Probability Ratio Test) [0, 30] Elo for early stopping. |
+| `--quick` | `false` | Quick smoke test preset (25 rounds = 50 games at `3+0.05`). |
 | `--hash <N>` | `64` | Transposition table hash size in MB per engine. |
 | `--threads <N>` | `1` | Search threads per engine. |
 | `--rebuild` | `false` | Force a rebuild of candidate `anak.exe` before the match. |
-| `--archive-baseline <TAG>`| `None` | Archive the current engine build into `tools/fastchess/baselines/<TAG>` and exit. |
-| `--record <TAG>` | `None` | Record match results into `ratings.json` and `BENCHMARKS.md` under `<TAG>`. |
+| `--archive-baseline <TAG>`| `None` | Archive current build into `tools/fastchess/baselines/<TAG>` and exit. |
 | `--notes <text>` | `""` | Notes when archiving or recording a version. |
 
 ---

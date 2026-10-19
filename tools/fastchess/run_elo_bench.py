@@ -244,10 +244,12 @@ def parse_args():
                         help="Specific baseline version to benchmark against (default: 'latest')")
     parser.add_argument("--elo", type=int, default=1800,
                         help="Target Stockfish Elo rating when benchmarking against Stockfish (default: 1800, range: 1320-3190)")
-    parser.add_argument("--rounds", type=int, default=10,
-                        help="Number of opening pairs (each played twice with swapped colors, default: 10 = 20 games)")
-    parser.add_argument("--tc", type=str, default="10+0.1",
-                        help="Time control base+inc in seconds (default: 10+0.1)")
+    parser.add_argument("--games", type=int, default=None,
+                        help="Total number of games to play (default: 1000). Sets rounds = games // 2 with color reversal.")
+    parser.add_argument("--rounds", type=int, default=None,
+                        help="Number of opening pairs (each played twice with swapped colors, default: 500 = 1000 games)")
+    parser.add_argument("--tc", type=str, default="3+0.05",
+                        help="Time control base+inc in seconds (default: 3+0.05 for high-volume 1000-game matches)")
     parser.add_argument("--concurrency", type=int, default=min(8, max(1, os.cpu_count() or 2)),
                         help="Number of concurrent games (default: CPU cores)")
     parser.add_argument("--hash", type=int, default=64,
@@ -255,7 +257,9 @@ def parse_args():
     parser.add_argument("--threads", type=int, default=1,
                         help="Search threads per engine (default: 1)")
     parser.add_argument("--quick", action="store_true",
-                        help="Quick smoke test: 5 rounds (10 games) at 3+0.05 time control")
+                        help="Quick smoke test: 25 rounds (50 games) at 3+0.05 time control")
+    parser.add_argument("--sprt", action="store_true",
+                        help="Enable SPRT (Sequential Probability Ratio Test) with bounds [0, 30] Elo for early stopping")
     parser.add_argument("--rebuild", action="store_true",
                         help="Force rebuild of Anak (candidate build) before benchmark")
     parser.add_argument("--archive-baseline", type=str, default=None, metavar="TAG",
@@ -286,10 +290,14 @@ def main():
         print("    Falling back to Stockfish-1800. (Archive a baseline with --archive-baseline <version>)")
         args.opponent = "stockfish"
 
+    # Determine number of rounds (1 round = 2 games with color reversal)
     if args.quick:
-        args.rounds = 5
-        args.tc = "3+0.05"
-        print("[!] Quick mode enabled: 5 rounds (10 games) at 3+0.05")
+        args.rounds = 25
+        print("[!] Quick smoke mode enabled: 25 rounds (50 games) at 3+0.05")
+    elif args.games is not None:
+        args.rounds = max(1, args.games // 2)
+    elif args.rounds is None:
+        args.rounds = 500  # Default: 500 rounds = 1000 games!
 
     total_games = args.rounds * 2
     ratings = load_ratings()
@@ -396,10 +404,13 @@ def main():
         "movecount=3",
         "score=600",
         "-ratinginterval",
-        "1",
+        "10" if args.rounds >= 50 else "1",
         "-pgnout",
         f"file={pgn_path}",
     ]
+
+    if args.sprt:
+        cmd.extend(["-sprt", "elo0=0", "elo1=30", "alpha=0.05", "beta=0.05"])
 
     print("\n[+] Launching fast-chess match ...")
     print(f"[+] PGN output will be saved to: {pgn_output}\n")

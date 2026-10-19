@@ -20,20 +20,23 @@ To measure improvements or prevent regressions, Anak benchmarks current developm
 
 ### Run Self-Play Benchmark (Current vs Latest Baseline)
 ```cmd
-# Run benchmark against the latest baseline (e.g. v0.0.1)
+# Standard full match (1000 games: 500 opening pairs with color reversal)
 .\run_elo_bench.bat
 
-# Fast smoke test against latest baseline (10 games at 3+0.05)
+# Standard match with SPRT early stopping (elo0=0, elo1=30)
+.\run_elo_bench.bat --sprt
+
+# Quick smoke test (50 games at 3+0.05)
 .\run_elo_bench.bat --quick
 
-# Specify an exact baseline version
-.\run_elo_bench.bat --baseline v0.0.1 --rounds 10 --tc 10+0.1
+# Custom game count and baseline
+.\run_elo_bench.bat --baseline v0.0.1 --games 1000 --tc 3+0.05
 ```
 
 ### Calibrate against Stockfish
 To re-calibrate against a fixed reference engine (Stockfish 19 with UCI limit strength):
 ```cmd
-.\run_elo_bench.bat --opponent stockfish --elo 1800 --rounds 10
+.\run_elo_bench.bat --opponent stockfish --elo 1800 --games 1000
 ```
 
 ---
