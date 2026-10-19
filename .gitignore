@@ -4,6 +4,8 @@
 [Ll]og/
 [Ll]ogs/
 *.exe
+tools/fastchess/baselines/*/
+
 
 
 ## Visual Studio / Roslyn / MSBuild
