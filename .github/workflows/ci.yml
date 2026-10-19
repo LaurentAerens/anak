@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build & Test (.NET 11)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET SDK 11
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      - name: dotnet restore
+        run: dotnet restore
+
+      - name: dotnet format --verify-no-changes
+        run: dotnet format --verify-no-changes
+
+      - name: dotnet build -c Release --no-restore
+        run: dotnet build -c Release --no-restore
+
+      - name: dotnet test -c Release --no-build --verbosity normal
+        run: dotnet test -c Release --no-build --verbosity normal
+
+      - name: Perft sanity check
+        run: dotnet run --project src/Anak.Protocol -c Release -- --perft 4

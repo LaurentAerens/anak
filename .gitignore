@@ -1,0 +1,114 @@
+## Build and Output Directories
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio / Roslyn / MSBuild
+.vs/
+*.user
+*.userosscache
+*.suo
+*.userprefs
+*.sln.docstates
+*.ide/
+*.suo.tmp
+
+## JetBrains Rider / Resharper
+.idea/
+*.DotSettings.user
+_ReSharper*/
+
+## Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+## Test and Coverage Results
+[Tt]est[Rr]esult*/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+*.cobertura.xml
+
+## NuGet Packages
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+packages/
+project.lock.json
+project.assets.json
+
+## Chess Assets & Large Binaries
+# PolyGlot Opening Books (.bin)
+*.bin
+books/
+*.pgn
+*.epd
+
+# Syzygy Endgame Tablebases (.rtbw, .rtbz, .ctbw, .ctbz)
+*.rtbw
+*.rtbz
+*.ctbw
+*.ctbz
+syzygy/
+tablebases/
+
+# NNUE Network Binaries & Machine Learning Checkpoints
+*.nnue
+*.pt
+*.pth
+*.onnx
+checkpoints/
+networks/*.nnue
+/data/
+/training/data/
+!tests/**/Data/
+
+# Python Virtual Environments, Bytecode & Tooling
+.venv/
+venv/
+env/
+ENV/
+training/.venv/
+__pycache__/
+*/__pycache__/
+*.py[cod]
+*$py.class
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+.ipynb_checkpoints/
+
+# Temporary / Scratch Files
+scratch/
+tmp/
+temp/
+*.tmp
+*.temp
+*.bak
+*.swp
+*~
+
+## OS-generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+[Dd]esktop.ini

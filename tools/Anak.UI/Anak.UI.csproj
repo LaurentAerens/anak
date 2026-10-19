@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anak.UI</RootNamespace>
+    <AssemblyName>Anak.UI</AssemblyName>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net11.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="!$([MSBuild]::IsOSPlatform('Windows'))">
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net11.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Anak.Core\Anak.Core.csproj" />
+    <ProjectReference Include="..\..\src\Anak.Search\Anak.Search.csproj" />
+    <ProjectReference Include="..\..\src\Anak.Data\Anak.Data.csproj" />
+    <ProjectReference Include="..\..\src\Anak.Protocol\Anak.Protocol.csproj" />
+  </ItemGroup>
+
+</Project>

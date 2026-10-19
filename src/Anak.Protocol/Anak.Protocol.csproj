@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Anak.Protocol</RootNamespace>
+    <AssemblyName>anak</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anak.Core\Anak.Core.csproj" />
+    <ProjectReference Include="..\Anak.Search\Anak.Search.csproj" />
+    <ProjectReference Include="..\Anak.Data\Anak.Data.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Anak.Search</RootNamespace>
+    <AssemblyName>Anak.Search</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Anak.Core\Anak.Core.csproj" />
+  </ItemGroup>
+
+</Project>
