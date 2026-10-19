@@ -499,6 +499,11 @@ public sealed class MCTSEngine
         {
             long elapsed = Math.Max(1, _timeManager.ElapsedMilliseconds);
             List<Move> pv = ExtractPv(rootIndex);
+            if (!selectedBestMove.IsNull)
+            {
+                if (pv.Count > 0) pv[0] = selectedBestMove;
+                else pv.Add(selectedBestMove);
+            }
             ulong nps = (iteration * 1000UL) / (ulong)elapsed;
 
             infoCallback(new SearchStatistics

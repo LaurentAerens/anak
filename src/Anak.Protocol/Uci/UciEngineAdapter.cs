@@ -169,6 +169,7 @@ public sealed class UciEngineAdapter
             // 1. Check opening book if enabled
             if (_options.OwnBook.Value && _book.TryGetMove(in _board, out Move bookMove))
             {
+                _outputWriter($"info depth 1 score cp 0 pv {bookMove.ToUci()}");
                 _outputWriter($"info string book hit {bookMove.ToUci()}");
                 _outputWriter($"bestmove {bookMove.ToUci()}");
                 return;

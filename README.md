@@ -255,6 +255,25 @@ The move generator is strictly validated against canonical Perft leaf nodes:
 
 ---
 
+## Elo Rating Benchmark (Fast-Chess & Stockfish)
+
+An automated tournament benchmark tool using [`fast-chess`](https://github.com/Disservin/fastchess) is pre-configured in `tools/fastchess/` to evaluate Anak's Elo rating compared to calibrated levels of **Stockfish 19**:
+
+```cmd
+# Run standard Elo rating match on Windows (20 games vs Stockfish-1800)
+.\run_elo_bench.bat
+
+# Fast smoke test (10 games at 3+0.05)
+.\run_elo_bench.bat --quick
+
+# Custom calibrated opponent (e.g. Stockfish 1600 or 2000 Elo)
+.\run_elo_bench.bat --elo 1600 --rounds 10 --tc 10+0.1
+```
+
+The runner automatically compiles `anak.exe`, fetches official Windows builds of `fast-chess` and `Stockfish 19`, runs a tournament match using the balanced 50-opening suite in `openings.epd` with color swapping, and calculates Anak's estimated Elo rating with 95% confidence intervals and PGN archives. See [tools/fastchess/README.md](tools/fastchess/README.md) for details.
+
+---
+
 ## Developer Tools & Visualizer
 
 For local engine debugging, interactive analysis, and development, an integrated visualizer tool is available in `tools/Anak.UI`:

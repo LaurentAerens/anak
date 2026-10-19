@@ -51,6 +51,7 @@ project.assets.json
 books/
 *.pgn
 *.epd
+!tools/fastchess/openings.epd
 
 # Syzygy Endgame Tablebases (.rtbw, .rtbz, .ctbw, .ctbz)
 *.rtbw
