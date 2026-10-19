@@ -24,8 +24,9 @@
 |            Anak.Search            |   |               Anak.Data               |
 |  - Zero-GC MCTS Node Arena        |   |  - PolyGlot (.bin) Book Reader        |
 |  - PUCT Selection & Expansion     |   |  - Syzygy (EGTB) WDL & DTZ Probing    |
-|  - 64-Byte Cacheline TT           |   |  - Heuristic / Material Evaluator     |
-|  - DAG Transposition Subtree Reuse|   |  - Pluggable IEvaluator Pipeline      |
+|  - 64-Byte Cacheline TT           |   |  - Multi-Tier NNUE Evaluation Pipeline|
+|  - DAG Transposition Subtree Reuse|   |    * Open-NNUE & Closed-NNUE Experts  |
+|  - Tactical Watchdog Burst Engine |   |    * Small/Micro-NNUE Tactical Watchdog|
 +-------------------+---------------+   +-------------------+-------------------+
                     |                                       |
                     +-------------------+-------------------+
@@ -39,6 +40,7 @@
 |  - 16-bit Compact Move Struct & InlineArray MoveBuffer                        |
 |  - 64-bit Zobrist Hash Keys & Rolling History (Threefold Repetition, 50-move) |
 |  - FEN Parser & Serializer, Terminal Game State Detection                     |
+|  - Zero-Allocation Pawn Topology Classifier (Open vs Closed Structures)       |
 +-------------------------------------------------------------------------------+
 ```
 
@@ -46,9 +48,10 @@
 - **.NET 11 & C# 14/15 Modern Runtime**: Built on cutting-edge .NET features, utilizing `System.Runtime.Intrinsics.X86.Bmi2`, `Popcnt`, and `BitOperations` for accelerated bitboard processing.
 - **Zero-GC Allocation Discipline**: Move generation and search loops are designed to allocate zero heap memory during live analysis and search, relying on `InlineArray`, compact 16-bit structs, and pre-allocated node arenas.
 - **Magic Bitboards & PEXT**: Sliding piece attacks (Rook, Bishop, Queen) are generated via PEXT instructions on supported hardware, falling back to Plain/Fancy Magic Bitboard hash tables.
+- **Multi-Tier NNUE Architecture**: Root-pinned Open-NNUE and Closed-NNUE experts evaluated via AVX2 SIMD dot products, paired with an ultra-compact Small/Micro-NNUE (1-SIMD register, ~20–30M NPS) tactical blunder and trap watchdog.
 - **Monte Carlo Tree Search (MCTS)**: Employs PUCT (Predictor Upper Confidence bounds applied to Trees), progressive widening, transposition table DAG reuse, and adaptive time management.
 - **Endgame Tablebases (Syzygy)**: Native probing of Syzygy WDL (Win-Draw-Loss) and DTZ (Distance-to-Zero) tables for flawless endgame play.
-- **PolyGlot Opening Books**: Direct binary reading of `.bin` books with Zobrist position hashing.
+- **PolyGlot Opening Books**: Direct binary reading of `.bin` books with weighted random roulette-wheel move selection.
 
 ---
 
@@ -118,10 +121,40 @@ Anak communicates using the standard Universal Chess Interface (UCI) protocol an
 |---|---|---|---|
 | `Hash` | spin | `64` | Transposition Table size in megabytes (1 to 65536 MB). |
 | `Threads` | spin | `1` | Number of worker threads for parallel search. |
-| `SyzygyPath` | string | `""` | Directory path containing Syzygy `.rtbw` and `.rtbz` files. |
+| `UseNnue` | check | `true` | Enables Multi-Tier NNUE neural network evaluation. |
+| `NnuePath` | string | `"./networks"` | Directory containing `open.nnue`, `closed.nnue`, and `micro.nnue`. |
+| `BlunderWatchdog` | check | `true` | Enables Small/Micro-NNUE tactical watchdog bursts on deep candidate leaves. |
+| `OwnBook` | check | `true` | Enables PolyGlot opening book probing. |
 | `BookPath` | string | `""` | Path to PolyGlot `.bin` opening book file. |
+| `BookMode` | combo | `WeightedRandom` | Opening book move picker: `WeightedRandom`, `BestMove`, `UniformRandom`. |
+| `SyzygyPath` | string | `""` | Directory path containing Syzygy `.rtbw` and `.rtbz` files. |
 | `MCTS_Cpuct` | spin | `140` | Exploration constant $C_{puct}$ scaled by 100 (1.40 default). |
 | `MCTS_Temperature` | spin | `100` | Softmax temperature for move selection scaled by 100 (1.0 default). |
+
+---
+
+## Multi-Tier NNUE Evaluation & Training Pipeline
+
+Anak features a multi-expert neural architecture paired with a tactical watchdog to eliminate evaluation jitter:
+
+1. **Open-NNUE** (`open.nnue`): Standard expert ($768 \to 256\times 2 \to 32 \to 1$) trained on open positions ($\ge 0.50$ pawn openness score).
+2. **Closed-NNUE** (`closed.nnue`): Standard expert ($768 \to 256\times 2 \to 32 \to 1$) trained on locked pawn chains and closed maneuvering.
+3. **Small / Micro-NNUE** (`micro.nnue`): Ultra-fast 1-SIMD register model ($768 \to 16\times 2 \to 1$, ~20–30M NPS) deployed as a deep tree tactical watchdog for blunder and trap verification.
+
+### Quickstart: Training or Generating Networks
+See the complete [**Training Documentation & Pipeline Guide**](training/README.md) for full instructions on training models from TCEC archives or generating synthetic development baselines:
+
+```bash
+# 1. Generate instant baseline networks for testing:
+python training/generate_synthetic.py
+
+# 2. Or train models on TCEC tournament games:
+cd training
+python download_tcec.py --season 25 --division all
+python train.py --model open --epochs 40 --batch-size 4096
+python train.py --model closed --epochs 40 --batch-size 4096
+python train.py --model small --epochs 30 --batch-size 8192
+```
 
 ---
 

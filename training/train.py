@@ -5,39 +5,113 @@ Supports training Open, Closed, and Micro networks with Cosine Annealing and ear
 
 import argparse
 import os
+import sys
+from typing import List, Optional
 import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from model import StandardNNUE, MicroNNUE
-from dataset import TcecDataset
+from dataset import TcecDataset, find_pgn_files
 from loss import TcecBlendedLoss, BlunderLoss
+
+
+def resolve_data_files(data_arg: Optional[str] = None) -> List[str]:
+    """
+    Intelligently locates PGN training data files across workspace/relative directories.
+    Handles explicit files, directories, and auto-discovers ./data or training/data.
+    """
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+
+    if data_arg:
+        candidates = [
+            data_arg,
+            os.path.join(cwd, data_arg),
+            os.path.join(script_dir, data_arg),
+        ]
+        parent = os.path.dirname(data_arg)
+        if parent and parent not in ("/", "\\", ".") and not (len(parent) <= 3 and ":" in parent):
+            candidates.extend([
+                parent,
+                os.path.join(cwd, parent),
+                os.path.join(script_dir, parent),
+            ])
+
+        for c in candidates:
+            if os.path.exists(c):
+                files = find_pgn_files(c)
+                if files:
+                    return files
+        return []
+
+    # Fallback to standard locations when --data is omitted
+    default_dirs = [
+        os.path.join(cwd, "training", "data"),
+        os.path.join(cwd, "data"),
+        os.path.join(script_dir, "data"),
+        os.path.join(os.path.dirname(script_dir), "training", "data"),
+    ]
+
+    for d in default_dirs:
+        if os.path.exists(d):
+            files = find_pgn_files(d)
+            if files:
+                return files
+
+    return []
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Anak NNUE models on TCEC datasets")
-    parser.add_argument("--model", type=str, choices=["open", "closed", "micro"], default="open",
-                        help="Target network to train (open, closed, or micro)")
-    parser.add_argument("--data", type=str, required=True,
-                        help="Path to TCEC PGN or PGN.GZ file")
+    parser.add_argument("--model", type=str, choices=["open", "closed", "micro", "small"], default="open",
+                        help="Target network to train (open, closed, or micro/small)")
+    parser.add_argument("--data", type=str, default=None,
+                        help="Path to TCEC PGN file or data directory (defaults to auto-discovering ./data or training/data)")
     parser.add_argument("--epochs", type=int, default=40, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=4096, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--lambda-wdl", type=float, default=0.40, help="WDL loss weight factor")
     parser.add_argument("--output", type=str, default="./checkpoints", help="Output directory for checkpoints")
     parser.add_argument("--max-samples", type=int, default=None, help="Limit number of samples per epoch")
+    parser.add_argument("--deploy", action="store_true", default=True,
+                        help="Automatically quantize and deploy best checkpoint to networks/ upon completion (default: True)")
+    parser.add_argument("--no-deploy", dest="deploy", action="store_false",
+                        help="Disable automatic deployment to networks/")
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
-    os.makedirs(args.output, exist_ok=True)
 
+    # 1. Resolve Data Files
+    data_files = resolve_data_files(args.data)
+    if not data_files:
+        print("\n" + "=" * 70)
+        print("ERROR: No PGN training data files found!")
+        if args.data:
+            print(f"Specified target: '{args.data}' (file or directory does not contain .pgn / .pgn.gz)")
+        print("\nSearched standard locations:")
+        print(f"  - {os.path.abspath('data')}")
+        print(f"  - {os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))}")
+        print("\nTo automatically download TCEC game archives, run:")
+        print("  python download_tcec.py --season 25 --division all --output ./data")
+        print("\nOr manually provide a PGN file or directory via:")
+        print("  python train.py --data <path/to/archive.pgn>")
+        print("=" * 70 + "\n")
+        sys.exit(1)
+
+    os.makedirs(args.output, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"=== Training Anak NNUE: {args.model.upper()} Model on {device} ===")
+    print(f"Found {len(data_files)} PGN file(s):")
+    for f in data_files[:5]:
+        print(f"  - {f} ({os.path.getsize(f):,} bytes)")
+    if len(data_files) > 5:
+        print(f"  ... and {len(data_files) - 5} more files")
 
-    # 1. Instantiate Model & Loss
-    if args.model == "micro":
+    # 2. Instantiate Model & Loss
+    if args.model in ("micro", "small"):
         model = MicroNNUE().to(device)
         criterion = BlunderLoss()
     else:
@@ -49,10 +123,10 @@ def main():
 
     best_loss = float("inf")
 
-    # 2. Training Loop
+    # 3. Training Loop
     for epoch in range(1, args.epochs + 1):
         dataset = TcecDataset(
-            pgn_path=args.data,
+            pgn_path=data_files,
             target_model=args.model,
             max_samples=args.max_samples
         )
@@ -72,7 +146,7 @@ def main():
             optimizer.zero_grad()
             preds = model(our_feat, their_feat)
 
-            if args.model == "micro":
+            if args.model in ("micro", "small"):
                 loss = criterion(preds, target_eval)
             else:
                 loss = criterion(preds, target_wdl, target_eval)
@@ -88,17 +162,35 @@ def main():
         avg_loss = total_loss / max(1, batch_count)
         print(f"Epoch {epoch} Completed | Average Loss: {avg_loss:.4f} | LR: {scheduler.get_last_lr()[0]:.6f}")
 
-        # Save checkpoint
-        checkpoint_path = os.path.join(args.output, f"{args.model}_latest.pt")
-        torch.save(model.state_dict(), checkpoint_path)
+        # Save checkpoint (save both micro and small names if small/micro)
+        names = ["micro", "small"] if args.model in ("micro", "small") else [args.model]
+        for name in names:
+            checkpoint_path = os.path.join(args.output, f"{name}_latest.pt")
+            torch.save(model.state_dict(), checkpoint_path)
 
         if avg_loss < best_loss:
             best_loss = avg_loss
-            best_path = os.path.join(args.output, f"{args.model}_best.pt")
-            torch.save(model.state_dict(), best_path)
-            print(f"--> Saved new best checkpoint: {best_path}")
+            for name in names:
+                best_path = os.path.join(args.output, f"{name}_best.pt")
+                torch.save(model.state_dict(), best_path)
+            print(f"--> Saved new best checkpoint: {os.path.join(args.output, f'{args.model}_best.pt')}")
 
     print("Training finished successfully!")
+
+    # 4. Automatic Model Deployment
+    if args.deploy and best_loss < float("inf"):
+        print("\n--> Auto-deploying best checkpoint to networks/...")
+        try:
+            from deploy_best import deploy_model, find_repo_root
+            repo_root = find_repo_root()
+            net_dir = os.path.join(repo_root, "networks")
+            out_name = "micro.nnue" if args.model in ("micro", "small") else f"{args.model}.nnue"
+            target_path = os.path.join(net_dir, out_name)
+            best_ckpt = os.path.join(args.output, f"{args.model}_best.pt")
+            deploy_model(args.model, best_ckpt, target_path)
+            print(f"--> Deployed to {target_path} successfully!")
+        except Exception as e:
+            print(f"Notice: Auto-deploy skipped ({e})")
 
 
 if __name__ == "__main__":

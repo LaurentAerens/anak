@@ -44,15 +44,16 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
     /// </summary>
     public bool LoadFromDirectory(string directoryPath)
     {
-        if (!Directory.Exists(directoryPath))
+        string? resolvedDir = ResolveDirectory(directoryPath);
+        if (resolvedDir == null)
         {
             return false;
         }
 
-        NnueDirectory = directoryPath;
+        NnueDirectory = resolvedDir;
 
         // Try load open network
-        string openPath = Path.Combine(directoryPath, "open.nnue");
+        string openPath = Path.Combine(resolvedDir, "open.nnue");
         if (File.Exists(openPath))
         {
             _openWeights?.Dispose();
@@ -60,7 +61,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
         }
 
         // Try load closed network
-        string closedPath = Path.Combine(directoryPath, "closed.nnue");
+        string closedPath = Path.Combine(resolvedDir, "closed.nnue");
         if (File.Exists(closedPath))
         {
             _closedWeights?.Dispose();
@@ -68,7 +69,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
         }
 
         // If a generic anak.nnue exists, load it as fallback for both open/closed
-        string genericPath = Path.Combine(directoryPath, "anak.nnue");
+        string genericPath = Path.Combine(resolvedDir, "anak.nnue");
         if (_openWeights == null && _closedWeights == null && File.Exists(genericPath))
         {
             _openWeights = NnueWeights.LoadFromFile(genericPath);
@@ -76,7 +77,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
         }
 
         // Try load micro watchdog network
-        string microPath = Path.Combine(directoryPath, "micro.nnue");
+        string microPath = Path.Combine(resolvedDir, "micro.nnue");
         if (File.Exists(microPath))
         {
             _microWeights?.Dispose();
@@ -87,6 +88,40 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
         _activeFullWeights = _openWeights ?? _closedWeights;
 
         return _openWeights != null || _closedWeights != null || _microWeights != null;
+    }
+
+    private static string? ResolveDirectory(string directoryPath)
+    {
+        if (Directory.Exists(directoryPath))
+        {
+            return Path.GetFullPath(directoryPath);
+        }
+
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        string candidate = Path.Combine(baseDir, directoryPath);
+        if (Directory.Exists(candidate))
+        {
+            return Path.GetFullPath(candidate);
+        }
+
+        candidate = Path.Combine(baseDir, "networks");
+        if (Directory.Exists(candidate))
+        {
+            return Path.GetFullPath(candidate);
+        }
+
+        string? parent = baseDir;
+        for (int i = 0; i < 5 && parent != null; i++)
+        {
+            candidate = Path.Combine(parent, "networks");
+            if (Directory.Exists(candidate))
+            {
+                return Path.GetFullPath(candidate);
+            }
+            parent = Directory.GetParent(parent)?.FullName;
+        }
+
+        return null;
     }
 
     /// <summary>

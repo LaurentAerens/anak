@@ -373,9 +373,10 @@ public sealed class MCTSEngine
 
             if (_parameters.Temperature <= 0.0f)
             {
-                // Greedy selection: pick child with highest visits (tie-break by Q)
+                // 1. Identify maximum visits and primary greedy best child
                 uint maxVisits = 0;
                 float maxQ = float.NegativeInfinity;
+                ushort bestChildOffset = 0;
 
                 for (ushort i = 0; i < numChildren; i++)
                 {
@@ -385,8 +386,66 @@ public sealed class MCTSEngine
                     {
                         maxVisits = child.Visits;
                         maxQ = parentQ;
-                        selectedBestMove = child.Move;
+                        bestChildOffset = i;
                     }
+                }
+
+                // 2. Elite-candidate sampling (if MoveRandomness > 0)
+                // Allows controlled deviation among tactically sound near-equal top moves
+                if (_parameters.MoveRandomness > 0 && maxVisits > 0)
+                {
+                    float marginFraction = Math.Clamp(_parameters.MoveRandomness / 100.0f, 0.0f, 1.0f);
+                    float qTolerance = 0.02f + (0.04f * marginFraction);
+                    float minEliteQ = maxQ >= 1.0f ? 1.0f : maxQ - qTolerance; // checkmates never gamble away mate
+                    uint minEliteVisits = Math.Max(2, (uint)(maxVisits * 0.20f));
+
+                    // Identify alternative elite candidates (excluding primary best child)
+                    Span<ushort> altOffsets = stackalloc ushort[numChildren];
+                    Span<float> altWeights = stackalloc float[numChildren];
+                    int altCount = 0;
+                    float totalAltWeight = 0.0f;
+
+                    for (ushort i = 0; i < numChildren; i++)
+                    {
+                        if (i == bestChildOffset) continue;
+
+                        ref readonly MCTSNode child = ref _arena[fc + i];
+                        float parentQ = -child.Q;
+                        if (child.Visits >= minEliteVisits && parentQ >= minEliteQ)
+                        {
+                            altOffsets[altCount] = i;
+                            float w = child.Visits;
+                            altWeights[altCount] = w;
+                            totalAltWeight += w;
+                            altCount++;
+                        }
+                    }
+
+                    if (altCount > 0 && totalAltWeight > 0.0f)
+                    {
+                        // With probability marginFraction, select one of the alternative elite moves (weighted by visits).
+                        // Otherwise, stick with the primary greedy best move.
+                        if (Random.Shared.NextSingle() < marginFraction)
+                        {
+                            float roll = Random.Shared.NextSingle() * totalAltWeight;
+                            float accumulated = 0.0f;
+                            for (int e = 0; e < altCount; e++)
+                            {
+                                accumulated += altWeights[e];
+                                if (accumulated >= roll)
+                                {
+                                    selectedBestMove = _arena[fc + altOffsets[e]].Move;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Fall back to greedy best child if single dominant move or MoveRandomness == 0
+                if (selectedBestMove.IsNull)
+                {
+                    selectedBestMove = _arena[fc + bestChildOffset].Move;
                 }
             }
             else

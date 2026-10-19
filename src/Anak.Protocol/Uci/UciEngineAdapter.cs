@@ -48,16 +48,20 @@ public sealed class UciEngineAdapter
         _options.Threads.ValueChanged += OnThreadsChanged;
 
         // Wire opening book
-        if (File.Exists(_options.BookFile.Value))
-        {
-            _book.Load(_options.BookFile.Value);
-        }
+        _book.LoadOrDefault(_options.BookFile.Value);
         _book.OwnBook = _options.OwnBook.Value;
         _book.Mode = ParseBookMode(_options.BookMode.Value);
 
-        _options.BookFile.ValueChanged += path => _book.Load(path);
+        _options.BookFile.ValueChanged += path => _book.LoadOrDefault(path);
         _options.OwnBook.ValueChanged += enabled => _book.OwnBook = enabled;
         _options.BookMode.ValueChanged += modeStr => _book.Mode = ParseBookMode(modeStr);
+
+        // Wire MCTS search randomness and temperature
+        _engine.Parameters.MoveRandomness = _options.MoveRandomness.Value;
+        _engine.Parameters.Temperature = _options.Temperature.Value / 100.0f;
+
+        _options.MoveRandomness.ValueChanged += val => _engine.Parameters.MoveRandomness = val;
+        _options.Temperature.ValueChanged += val => _engine.Parameters.Temperature = val / 100.0f;
 
         // Wire NNUE evaluator options
         if (_evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue)

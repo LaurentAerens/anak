@@ -92,4 +92,61 @@ public class MCTSTests
         Assert.Equal(gen1Before, gen1After);
         Assert.Equal(gen2Before, gen2After);
     }
+
+    [Fact]
+    public void MCTS_MoveRandomness_Zero_IsStrictlyDeterministic()
+    {
+        var evaluator = UciEngineAdapter.CreateEvaluator();
+        var engine = new MCTSEngine(evaluator, defaultHashMb: 4, arenaCapacity: 100_000);
+        engine.Parameters.MoveRandomness = 0;
+        engine.Parameters.Temperature = 0.0f;
+
+        var board = Fen.Parse(Fen.StartPosition);
+        var limits = new SearchLimits { Nodes = 400 };
+
+        engine.TranspositionTable.Clear();
+        Move first = engine.Search(in board, in limits);
+
+        for (int i = 0; i < 5; i++)
+        {
+            engine.TranspositionTable.Clear();
+            Move next = engine.Search(in board, in limits);
+            Assert.Equal(first, next);
+        }
+    }
+
+    [Fact]
+    public void MCTS_MoveRandomness_SamplesAmongEqualBestMoves()
+    {
+        var evaluator = UciEngineAdapter.CreateEvaluator();
+        var engine = new MCTSEngine(evaluator, defaultHashMb: 4, arenaCapacity: 100_000);
+        engine.Parameters.MoveRandomness = 40; // 40% probability of sampling alternative elite move
+
+        var board = Fen.Parse(Fen.StartPosition);
+        var limits = new SearchLimits { Nodes = 300 };
+
+        var chosenMoves = new HashSet<string>();
+        for (int i = 0; i < 25; i++)
+        {
+            engine.TranspositionTable.Clear();
+            Move bestMove = engine.Search(in board, in limits);
+            Assert.False(bestMove.IsNull);
+            chosenMoves.Add(bestMove.ToUci());
+        }
+
+        // With 40% randomness on startpos, should select at least 2 distinct near-equal opening moves
+        Assert.True(chosenMoves.Count >= 2, $"Expected >= 2 distinct moves, but got: {string.Join(", ", chosenMoves)}");
+    }
+
+    [Fact]
+    public void UciOptionRegistry_ExposesMoveRandomness()
+    {
+        var registry = new UciOptionRegistry();
+        Assert.NotNull(registry.MoveRandomness);
+        Assert.Equal(10, registry.MoveRandomness.Value);
+
+        bool updated = registry.TrySetValue("MoveRandomness", "20");
+        Assert.True(updated);
+        Assert.Equal(20, registry.MoveRandomness.Value);
+    }
 }

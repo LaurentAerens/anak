@@ -1,9 +1,11 @@
 #if WINDOWS
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 using Anak.Core;
+using Anak.Data.PolyGlot;
 using Anak.Protocol.Uci;
 using Anak.Search;
 using ChessColor = Anak.Core.Color;
@@ -83,12 +85,27 @@ public sealed class MainForm : Form
     private readonly ListBox _historyListBox;
     private readonly TextBox _fenTextBox;
     private readonly NumericUpDown _thinkTimeNumeric;
+    private readonly NumericUpDown _moveRandomnessNumeric;
     private readonly CheckBox _engineBlackCheckBox;
     private readonly CheckBox _engineWhiteCheckBox;
+    private readonly CheckBox _useBookCheckBox;
+    private readonly CheckBox _openingVarietyCheckBox;
+    private readonly ComboBox _timeControlCombo;
+    private readonly Panel _whiteClockPanel;
+    private readonly Panel _blackClockPanel;
+    private readonly Label _whiteClockLabel;
+    private readonly Label _blackClockLabel;
+    private readonly System.Windows.Forms.Timer _clockTimer;
     private readonly System.Windows.Forms.Timer _selfPlayTimer;
+    private readonly Stopwatch _turnStopwatch = new();
+
+    private double _whiteTimeMs = 300_000;
+    private double _blackTimeMs = 300_000;
+    private double _incrementMs = 2_000;
 
     private readonly MCTSEngine _engine;
     private readonly IEvaluator _evaluator;
+    private readonly PolyGlotBook _book = new();
     private CancellationTokenSource? _searchCts;
     private bool _isSearching;
 
@@ -104,6 +121,7 @@ public sealed class MainForm : Form
         _board = Fen.Parse(Fen.StartPosition);
         _evaluator = UciEngineAdapter.CreateEvaluator();
         _engine = new MCTSEngine(_evaluator, defaultHashMb: 32, arenaCapacity: 1_000_000);
+        _book.LoadOrDefault("book.bin");
 
         // Layout panels
         var mainLayout = new TableLayoutPanel
@@ -166,6 +184,56 @@ public sealed class MainForm : Form
         };
         rightPanel.Controls.Add(creditsLabel);
         y += 36;
+
+        // Digital Chess Clocks (White vs Black)
+        var clockContainer = new TableLayoutPanel
+        {
+            Location = new Point(4, y),
+            Size = new Size(360, 44),
+            ColumnCount = 2,
+            RowCount = 1
+        };
+        clockContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        clockContainer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+
+        _whiteClockPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = DrawingColor.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            Margin = new Padding(0, 0, 3, 0)
+        };
+        _whiteClockLabel = new Label
+        {
+            Text = "White  05:00",
+            Font = new Font("Consolas", 12f, FontStyle.Bold),
+            ForeColor = DrawingColor.FromArgb(20, 20, 30),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter
+        };
+        _whiteClockPanel.Controls.Add(_whiteClockLabel);
+        clockContainer.Controls.Add(_whiteClockPanel, 0, 0);
+
+        _blackClockPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = DrawingColor.FromArgb(45, 45, 55),
+            BorderStyle = BorderStyle.FixedSingle,
+            Margin = new Padding(3, 0, 0, 0)
+        };
+        _blackClockLabel = new Label
+        {
+            Text = "Black  05:00",
+            Font = new Font("Consolas", 12f, FontStyle.Bold),
+            ForeColor = DrawingColor.FromArgb(240, 240, 245),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleCenter
+        };
+        _blackClockPanel.Controls.Add(_blackClockLabel);
+        clockContainer.Controls.Add(_blackClockPanel, 1, 0);
+
+        rightPanel.Controls.Add(clockContainer);
+        y += 48;
 
         // Status Label
         _statusLabel = new Label
@@ -246,45 +314,89 @@ public sealed class MainForm : Form
         rightPanel.Controls.Add(_historyListBox);
         y += 98;
 
-        // Engine Options: Think time & checkboxes
+        // Engine Options: Time Control & checkboxes
         var optionsPanel = new FlowLayoutPanel
         {
             Location = new Point(4, y),
-            Size = new Size(360, 32),
-            FlowDirection = FlowDirection.LeftToRight
+            Size = new Size(360, 84),
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = true
         };
 
-        optionsPanel.Controls.Add(new Label { Text = "Time (ms):", AutoSize = true, Margin = new Padding(0, 4, 4, 0) });
+        optionsPanel.Controls.Add(new Label { Text = "Clock:", AutoSize = true, Margin = new Padding(0, 5, 2, 0) });
+        _timeControlCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 125,
+            Margin = new Padding(0, 2, 6, 0)
+        };
+        _timeControlCombo.Items.AddRange(["5m + 2s (Blitz)", "3m + 2s (Blitz)", "1m + 1s (Bullet)", "10m + 5s (Rapid)", "Fixed Time (ms)"]);
+        _timeControlCombo.SelectedIndex = 0; // Default: 5 min + 2s Blitz
+        _timeControlCombo.SelectedIndexChanged += (_, _) => ResetTimeControl();
+        optionsPanel.Controls.Add(_timeControlCombo);
+
+        optionsPanel.Controls.Add(new Label { Text = "Fixed (ms):", AutoSize = true, Margin = new Padding(0, 5, 2, 0) });
         _thinkTimeNumeric = new NumericUpDown
         {
             Minimum = 50,
             Maximum = 30000,
             Value = 500,
             Increment = 100,
-            Width = 70
+            Width = 60,
+            Enabled = false
         };
         optionsPanel.Controls.Add(_thinkTimeNumeric);
 
         _engineWhiteCheckBox = new CheckBox
         {
-            Text = "Engine White",
+            Text = "White",
             AutoSize = true,
             Checked = false,
-            Margin = new Padding(8, 2, 0, 0)
+            Margin = new Padding(0, 4, 8, 0)
         };
         optionsPanel.Controls.Add(_engineWhiteCheckBox);
 
         _engineBlackCheckBox = new CheckBox
         {
-            Text = "Engine Black",
+            Text = "Black",
             AutoSize = true,
             Checked = true,
-            Margin = new Padding(4, 2, 0, 0)
+            Margin = new Padding(0, 4, 8, 0)
         };
         optionsPanel.Controls.Add(_engineBlackCheckBox);
 
+        _useBookCheckBox = new CheckBox
+        {
+            Text = "Opening Book",
+            AutoSize = true,
+            Checked = true,
+            Margin = new Padding(0, 4, 8, 0)
+        };
+        optionsPanel.Controls.Add(_useBookCheckBox);
+
+        _openingVarietyCheckBox = new CheckBox
+        {
+            Text = "Opening Variety",
+            AutoSize = true,
+            Checked = true,
+            Margin = new Padding(0, 4, 6, 0)
+        };
+        optionsPanel.Controls.Add(_openingVarietyCheckBox);
+
+        optionsPanel.Controls.Add(new Label { Text = "Rand (%):", AutoSize = true, Margin = new Padding(0, 6, 2, 0) });
+        _moveRandomnessNumeric = new NumericUpDown
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Value = 10,
+            Increment = 5,
+            Width = 48
+        };
+        _moveRandomnessNumeric.ValueChanged += (_, _) => _engine.Parameters.MoveRandomness = (int)_moveRandomnessNumeric.Value;
+        optionsPanel.Controls.Add(_moveRandomnessNumeric);
+
         rightPanel.Controls.Add(optionsPanel);
-        y += 36;
+        y += 92;
 
         // Action Buttons Row 1
         var btnPanel1 = new FlowLayoutPanel
@@ -365,6 +477,12 @@ public sealed class MainForm : Form
             }
         };
 
+        // Digital clock timer & initial time control
+        _clockTimer = new System.Windows.Forms.Timer { Interval = 100 };
+        _clockTimer.Tick += OnClockTimerTick;
+        _clockTimer.Start();
+        ResetTimeControl();
+
         UpdateGameDisplay();
     }
 
@@ -372,11 +490,19 @@ public sealed class MainForm : Form
     {
         _searchCts?.Cancel();
         _selfPlayTimer.Stop();
+        _engine.TranspositionTable.Clear();
+        ResetTimeControl();
         _board = Fen.Parse(Fen.StartPosition);
         _boardPanel.Board = _board;
         _boardPanel.LastMove = ChessMove.Null;
         _historyListBox.Items.Clear();
+        _clockTimer.Start();
         UpdateGameDisplay();
+
+        if (_engineWhiteCheckBox.Checked)
+        {
+            TriggerEngineMove();
+        }
     }
 
     private void LoadFen(string fen)
@@ -389,6 +515,7 @@ public sealed class MainForm : Form
             _boardPanel.Board = _board;
             _boardPanel.LastMove = ChessMove.Null;
             _historyListBox.Items.Clear();
+            _turnStopwatch.Restart();
             UpdateGameDisplay();
         }
         catch (Exception ex)
@@ -427,6 +554,23 @@ public sealed class MainForm : Form
 
     private void ApplyMove(ChessMove move)
     {
+        long turnElapsed = _turnStopwatch.ElapsedMilliseconds;
+        _turnStopwatch.Restart();
+
+        // Deduct elapsed time and credit increment to the mover
+        if (_timeControlCombo.SelectedIndex != 4)
+        {
+            if (_board.SideToMove == ChessColor.White)
+            {
+                _whiteTimeMs = Math.Max(0, _whiteTimeMs - turnElapsed) + _incrementMs;
+            }
+            else
+            {
+                _blackTimeMs = Math.Max(0, _blackTimeMs - turnElapsed) + _incrementMs;
+            }
+            UpdateClockLabels();
+        }
+
         string moveUci = move.ToUci();
         _board.MakeMove(move, out _);
         _boardPanel.Board = _board;
@@ -479,14 +623,55 @@ public sealed class MainForm : Form
     {
         if (_isSearching) return;
 
+        // 1. Opening book probe (if enabled)
+        if (_useBookCheckBox.Checked && _book.IsLoaded)
+        {
+            Board bookBoard = _board;
+            if (_book.TryGetMove(in bookBoard, out ChessMove bookMove, BookMode.WeightedRandom) && !bookMove.IsNull)
+            {
+                _searchStatsLabel.Text = $"Book Move: {bookMove.ToUci()} (instant)";
+                _pvTextBox.Text = bookMove.ToUci();
+                ApplyMove(bookMove);
+                return;
+            }
+        }
+
         _isSearching = true;
         _searchCts = new CancellationTokenSource();
 
-        int thinkTimeMs = (int)_thinkTimeNumeric.Value;
-        var limits = new SearchLimits { MoveTime = thinkTimeMs };
+        SearchLimits limits;
+        if (_timeControlCombo.SelectedIndex == 4) // Fixed Time (ms)
+        {
+            int thinkTimeMs = (int)_thinkTimeNumeric.Value;
+            limits = new SearchLimits { MoveTime = thinkTimeMs };
+            _searchStatsLabel.Text = $"Engine: Searching ({thinkTimeMs} ms fixed)...";
+        }
+        else
+        {
+            long turnElapsed = _turnStopwatch.ElapsedMilliseconds;
+            int curWhite = (int)Math.Max(10, _whiteTimeMs - (_board.SideToMove == ChessColor.White ? turnElapsed : 0));
+            int curBlack = (int)Math.Max(10, _blackTimeMs - (_board.SideToMove == ChessColor.Black ? turnElapsed : 0));
+
+            limits = new SearchLimits
+            {
+                WhiteTime = curWhite,
+                BlackTime = curBlack,
+                WhiteIncrement = (int)_incrementMs,
+                BlackIncrement = (int)_incrementMs
+            };
+            int myTime = _board.SideToMove == ChessColor.White ? curWhite : curBlack;
+            _searchStatsLabel.Text = $"Engine: Thinking (Clock: {FormatTime(myTime)} +{_incrementMs / 1000:0}s)...";
+        }
+
         Board searchBoard = _board;
 
-        _searchStatsLabel.Text = $"Engine: Searching ({thinkTimeMs} ms)...";
+        // Exploration temperature for opening moves if Opening Variety is checked
+        float originalTemp = _engine.Parameters.Temperature;
+        bool applyVariety = _openingVarietyCheckBox.Checked && _historyListBox.Items.Count < 6;
+        if (applyVariety)
+        {
+            _engine.Parameters.Temperature = 0.35f;
+        }
 
         try
         {
@@ -520,6 +705,10 @@ public sealed class MainForm : Form
         }
         finally
         {
+            if (applyVariety)
+            {
+                _engine.Parameters.Temperature = originalTemp;
+            }
             _isSearching = false;
         }
     }
@@ -533,10 +722,131 @@ public sealed class MainForm : Form
         }
     }
 
+    private void ResetTimeControl()
+    {
+        switch (_timeControlCombo.SelectedIndex)
+        {
+            case 0: // 5 min + 2s (Blitz)
+                _whiteTimeMs = 300_000;
+                _blackTimeMs = 300_000;
+                _incrementMs = 2_000;
+                _thinkTimeNumeric.Enabled = false;
+                break;
+            case 1: // 3 min + 2s (Blitz)
+                _whiteTimeMs = 180_000;
+                _blackTimeMs = 180_000;
+                _incrementMs = 2_000;
+                _thinkTimeNumeric.Enabled = false;
+                break;
+            case 2: // 1 min + 1s (Bullet)
+                _whiteTimeMs = 60_000;
+                _blackTimeMs = 60_000;
+                _incrementMs = 1_000;
+                _thinkTimeNumeric.Enabled = false;
+                break;
+            case 3: // 10 min + 5s (Rapid)
+                _whiteTimeMs = 600_000;
+                _blackTimeMs = 600_000;
+                _incrementMs = 5_000;
+                _thinkTimeNumeric.Enabled = false;
+                break;
+            case 4: // Fixed Time (ms)
+                _whiteTimeMs = 0;
+                _blackTimeMs = 0;
+                _incrementMs = 0;
+                _thinkTimeNumeric.Enabled = true;
+                break;
+        }
+
+        _turnStopwatch.Restart();
+        UpdateClockLabels();
+    }
+
+    private void UpdateClockLabels()
+    {
+        if (_timeControlCombo.SelectedIndex == 4)
+        {
+            _whiteClockLabel.Text = "White  Fixed";
+            _blackClockLabel.Text = "Black  Fixed";
+            return;
+        }
+
+        _whiteClockLabel.Text = $"White  {FormatTime(_whiteTimeMs)}";
+        _blackClockLabel.Text = $"Black  {FormatTime(_blackTimeMs)}";
+    }
+
+    private static string FormatTime(double ms)
+    {
+        if (ms <= 0) return "00:00.0";
+        if (ms >= 60_000)
+        {
+            int totalSec = (int)(ms / 1000);
+            int m = totalSec / 60;
+            int s = totalSec % 60;
+            return $"{m:D2}:{s:D2}";
+        }
+        else
+        {
+            int totalTenths = (int)(ms / 100);
+            int s = totalTenths / 10;
+            int tenths = totalTenths % 10;
+            return $"{s:D2}.{tenths:D1}";
+        }
+    }
+
+    private void OnClockTimerTick(object? sender, EventArgs e)
+    {
+        if (_board.IsGameOver(out _))
+        {
+            return;
+        }
+
+        if (_timeControlCombo.SelectedIndex == 4)
+        {
+            _whiteClockLabel.Text = "White  Fixed";
+            _blackClockLabel.Text = "Black  Fixed";
+            return;
+        }
+
+        long elapsedTurn = _turnStopwatch.ElapsedMilliseconds;
+
+        if (_board.SideToMove == ChessColor.White)
+        {
+            double rem = Math.Max(0, _whiteTimeMs - elapsedTurn);
+            _whiteClockLabel.Text = $"White  {FormatTime(rem)}";
+            _whiteClockPanel.BackColor = DrawingColor.FromArgb(235, 255, 235);
+            _blackClockPanel.BackColor = DrawingColor.FromArgb(45, 45, 55);
+
+            if (rem <= 0)
+            {
+                _clockTimer.Stop();
+                _searchCts?.Cancel();
+                _statusLabel.Text = "Game Over: White lost on time (flag fall)!";
+                _statusLabel.ForeColor = DrawingColor.DarkRed;
+            }
+        }
+        else
+        {
+            double rem = Math.Max(0, _blackTimeMs - elapsedTurn);
+            _blackClockLabel.Text = $"Black  {FormatTime(rem)}";
+            _blackClockPanel.BackColor = DrawingColor.FromArgb(50, 75, 60);
+            _whiteClockPanel.BackColor = DrawingColor.White;
+
+            if (rem <= 0)
+            {
+                _clockTimer.Stop();
+                _searchCts?.Cancel();
+                _statusLabel.Text = "Game Over: Black lost on time (flag fall)!";
+                _statusLabel.ForeColor = DrawingColor.DarkRed;
+            }
+        }
+    }
+
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
         _searchCts?.Cancel();
         _selfPlayTimer.Stop();
+        _clockTimer.Stop();
         base.OnFormClosing(e);
     }
 }

@@ -26,6 +26,13 @@ public sealed class MCTSParameters
     public float Temperature { get; set; } = 0.0f;
 
     /// <summary>
+    /// Root move randomness / tie-breaking margin in percent (0 = pure greedy, 10 = sample among moves within 10% of max visits).
+    /// Prevents robotic determinism when multiple candidate moves evaluate to near-identical quality.
+    /// Default: 10 (10%).
+    /// </summary>
+    public int MoveRandomness { get; set; } = 10;
+
+    /// <summary>
     /// Virtual loss applied to in-flight threads during multi-threaded MCTS search.
     /// Default: 1.0f.
     /// </summary>

@@ -273,6 +273,8 @@ public sealed class UciOptionRegistry
     public CheckOption UseNnue { get; }
     public StringOption NnuePath { get; }
     public CheckOption BlunderWatchdog { get; }
+    public SpinOption MoveRandomness { get; }
+    public SpinOption Temperature { get; }
 
     public UciOptionRegistry()
     {
@@ -286,6 +288,8 @@ public sealed class UciOptionRegistry
         UseNnue = new CheckOption("UseNnue", defaultValue: true);
         NnuePath = new StringOption("NnuePath", defaultValue: "./networks");
         BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: true);
+        MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
+        Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
 
         Register(Hash);
         Register(Threads);
@@ -297,6 +301,8 @@ public sealed class UciOptionRegistry
         Register(UseNnue);
         Register(NnuePath);
         Register(BlunderWatchdog);
+        Register(MoveRandomness);
+        Register(Temperature);
     }
 
     public void Register(UciOption option)

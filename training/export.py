@@ -94,14 +94,15 @@ def export_micro(model: MicroNNUE, output_path: str):
 def main():
     parser = argparse.ArgumentParser(description="Export PyTorch NNUE checkpoint to quantized binary .nnue")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to input PyTorch checkpoint (.pt)")
-    parser.add_argument("--model", type=str, choices=["open", "closed", "micro"], required=True,
-                        help="Model architecture type")
+    parser.add_argument("--model", type=str, choices=["open", "closed", "micro", "small"], required=True,
+                        help="Model architecture type (open, closed, or micro/small)")
     parser.add_argument("--output", type=str, default=None, help="Output .nnue binary file path")
     args = parser.parse_args()
 
-    output_file = args.output or f"./networks/{args.model}.nnue"
+    model_name = "micro" if args.model == "small" else args.model
+    output_file = args.output or f"./networks/{model_name}.nnue"
 
-    if args.model == "micro":
+    if args.model in ("micro", "small"):
         net = MicroNNUE()
         net.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
         net.eval()

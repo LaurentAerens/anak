@@ -12,4 +12,8 @@
     <ProjectReference Include="..\Anak.Data\Anak.Data.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\networks\*.nnue" Link="networks\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\networks')" />
+  </ItemGroup>
+
 </Project>

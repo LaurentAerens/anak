@@ -20,14 +20,56 @@ public sealed class PolyGlotBook
 
     public PolyGlotBook() { }
 
-    public PolyGlotBook(string bookFile, bool ownBook = true)
+    public PolyGlotBook(string? bookFile, bool ownBook = true)
     {
-        BookFile = bookFile;
+        BookFile = bookFile ?? "book.bin";
         OwnBook = ownBook;
-        if (!string.IsNullOrWhiteSpace(bookFile) && File.Exists(bookFile))
+        if (!string.IsNullOrWhiteSpace(bookFile))
         {
             Load(bookFile);
         }
+    }
+
+    /// <summary>
+    /// Intelligently resolves the path to an opening book file across BaseDirectory and repository hierarchy.
+    /// </summary>
+    public static string? ResolveBookPath(string? bookFile)
+    {
+        if (string.IsNullOrWhiteSpace(bookFile))
+        {
+            bookFile = "book.bin";
+        }
+
+        if (Path.IsPathRooted(bookFile))
+        {
+            return File.Exists(bookFile) ? Path.GetFullPath(bookFile) : null;
+        }
+
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        string directCandidate = Path.Combine(baseDir, bookFile);
+        if (File.Exists(directCandidate))
+            return Path.GetFullPath(directCandidate);
+
+        string assetsCandidate = Path.Combine(baseDir, "assets", bookFile);
+        if (File.Exists(assetsCandidate))
+            return Path.GetFullPath(assetsCandidate);
+
+        // Search parent directories up to 5 levels
+        string? parent = Directory.GetParent(baseDir)?.FullName;
+        for (int i = 0; i < 5 && parent != null; i++)
+        {
+            string check = Path.Combine(parent, bookFile);
+            if (File.Exists(check))
+                return Path.GetFullPath(check);
+
+            check = Path.Combine(parent, "assets", bookFile);
+            if (File.Exists(check))
+                return Path.GetFullPath(check);
+
+            parent = Directory.GetParent(parent)?.FullName;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -36,14 +78,33 @@ public sealed class PolyGlotBook
     /// </summary>
     public bool Load(string filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        if (string.IsNullOrWhiteSpace(filePath))
             return false;
+
+        string? resolved = ResolveBookPath(filePath);
+
+        if (resolved == null || !File.Exists(resolved))
+        {
+            lock (_lock)
+            {
+                _entries = [];
+                BookFile = filePath;
+            }
+            return false;
+        }
 
         try
         {
-            byte[] bytes = File.ReadAllBytes(filePath);
+            byte[] bytes = File.ReadAllBytes(resolved);
             if (bytes.Length < 16 || bytes.Length % 16 != 0)
+            {
+                lock (_lock)
+                {
+                    _entries = [];
+                    BookFile = filePath;
+                }
                 return false;
+            }
 
             int count = bytes.Length / 16;
             PolyGlotEntry[] entries = new PolyGlotEntry[count];
@@ -62,14 +123,57 @@ public sealed class PolyGlotBook
             lock (_lock)
             {
                 _entries = entries;
-                BookFile = filePath;
+                BookFile = resolved;
             }
             return true;
         }
         catch
         {
+            lock (_lock)
+            {
+                _entries = [];
+                BookFile = filePath;
+            }
             return false;
         }
+    }
+
+    /// <summary>
+    /// Loads the built-in master opening book into memory.
+    /// Persists book.bin to the application base directory if not already present.
+    /// </summary>
+    public bool LoadDefaultBook()
+    {
+        lock (_lock)
+        {
+            _entries = DefaultOpeningBook.GetDefaultEntries();
+            BookFile = "book.bin";
+        }
+
+        try
+        {
+            string targetPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "book.bin");
+            DefaultOpeningBook.EnsureBookFileExists(targetPath);
+        }
+        catch
+        {
+            // Non-critical if directory is read-only
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Attempts to load the specified book file from disk; if missing or invalid, falls back to the built-in master opening book.
+    /// </summary>
+    public bool LoadOrDefault(string? bookFile = "book.bin")
+    {
+        if (!string.IsNullOrWhiteSpace(bookFile) && Load(bookFile))
+        {
+            return true;
+        }
+
+        return LoadDefaultBook();
     }
 
     /// <summary>
