@@ -9,6 +9,7 @@ import os
 import re
 import gzip
 import zipfile
+import random
 from typing import Union, List, Optional
 import chess
 import chess.pgn
@@ -147,6 +148,42 @@ def calculate_openness(board: chess.Board) -> float:
     return max(0.0, min(1.0, openness))
 
 
+def find_hanging_piece_blunder(board: chess.Board):
+    """
+    Identifies if a legal move exists that hangs an undefended piece or walks
+    into an attack by a lower-valued piece (e.g. piece attacked by pawn).
+    Returns (blunder_move, penalty_eval) or (None, 0.0).
+    """
+    moving_color = board.turn
+    enemy_color = not moving_color
+
+    for move in board.legal_moves:
+        p = board.piece_at(move.from_square)
+        if not p or p.piece_type in (chess.KING, chess.PAWN):
+            continue
+
+        board.push(move)
+        enemy_attackers = board.attackers(enemy_color, move.to_square)
+        friendly_defenders = board.attackers(moving_color, move.to_square)
+        board.pop()
+
+        if not enemy_attackers:
+            continue
+
+        # 1. Undefended piece
+        if not friendly_defenders:
+            penalty = -9.0 if p.piece_type == chess.QUEEN else (-5.0 if p.piece_type == chess.ROOK else -3.0)
+            return move, penalty
+
+        # 2. Defended, but attacked by a lower-valued pawn
+        pawn_attackers = enemy_attackers & board.pieces(chess.PAWN, enemy_color)
+        if pawn_attackers and p.piece_type in (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN):
+            penalty = -8.0 if p.piece_type == chess.QUEEN else (-4.0 if p.piece_type == chess.ROOK else -2.0)
+            return move, penalty
+
+    return None, 0.0
+
+
 def encode_board_features(board: chess.Board):
     """
     Encodes chess.Board into HalfKP sparse feature indices for our perspective and their perspective.
@@ -252,6 +289,7 @@ class TcecDataset(IterableDataset):
 
                     for node in game.mainline():
                         move = node.move
+                        is_move_capture = board.is_capture(move)
                         board.push(move)
                         ply += 1
 
@@ -272,19 +310,68 @@ class TcecDataset(IterableDataset):
                         eval_delta = abs(eval_val - prev_eval)
                         prev_eval = eval_val
 
+                        # 10% sample of opposite topology for cross-regularization / baseline generalization
+                        is_secondary_10pct = random.random() < 0.10
+
                         accept = False
-                        if self.target_model == "open" and openness >= 0.50:
-                            accept = True
-                        elif self.target_model == "closed" and openness < 0.50:
-                            accept = True
+                        if self.target_model == "open":
+                            # 90% open positions (openness >= 0.50) + 10% closed positions for regularization
+                            if openness >= 0.50 or is_secondary_10pct:
+                                accept = True
+                        elif self.target_model == "closed":
+                            # 90% closed positions (openness < 0.50) + 10% open positions for regularization
+                            if openness < 0.50 or is_secondary_10pct:
+                                accept = True
                         elif self.target_model in ("micro", "small"):
-                            # Small/Micro focuses on high-volatility tactical positions and low pieces
+                            # 1. Synthetic Blunder Injection:
+                            # In quiet master positions (|eval| < 1.0), with 30% probability, generate a hanging-piece blunder.
+                            # This converts flawless engine games into rich tactical blunder training data!
+                            if abs(eval_val) < 1.0 and random.random() < 0.30:
+                                b_move, penalty = find_hanging_piece_blunder(board)
+                                if b_move:
+                                    board.push(b_move)
+                                    our_idx_b, their_idx_b = encode_board_features(board)
+                                    board.pop()
+
+                                    our_t = torch.zeros(FEATURE_COUNT, dtype=torch.float32)
+                                    their_t = torch.zeros(FEATURE_COUNT, dtype=torch.float32)
+                                    our_t[our_idx_b] = 1.0
+                                    their_t[their_idx_b] = 1.0
+
+                                    # Opponent's perspective right after blunder is made: heavily winning (+3, +5, +9)
+                                    yield {
+                                        "our_features": our_t,
+                                        "their_features": their_t,
+                                        "target_wdl": torch.tensor(1.0, dtype=torch.float32),
+                                        "target_eval": torch.tensor(-penalty, dtype=torch.float32)
+                                    }
+                                    sample_count += 1
+                                    if self.max_samples and sample_count >= self.max_samples:
+                                        return
+
+                            # Focus on major tactical swings (blunders, traps), positions after captures, and endgames
                             piece_count = bin(board.occupied).count("1")
-                            if eval_delta >= 1.5 or piece_count <= 16:
+                            is_blunder = eval_delta >= 1.5 or abs(eval_val) >= 2.0
+                            is_capture = is_move_capture
+                            # Also retain 10% quiet baseline positions as negative/neutral training samples
+                            if is_blunder or is_capture or piece_count <= 16 or is_secondary_10pct:
                                 accept = True
 
                         if not accept:
                             continue
+
+                        # Target evaluation formatting:
+                        # For Micro blunder detector:
+                        # Deadzone small positional noise: anything below 2.0 pawns is treated as 0.0 (safe).
+                        # Severe blunders (>= 2.0 pawns) are rounded to nearest integer (e.g. +2.8 -> +3.0, -4.1 -> -4.0)
+                        # so the 16 neurons focus entirely on learning gross tactical imbalances.
+                        if self.target_model in ("micro", "small"):
+                            if abs(eval_relative) < 2.0:
+                                target_eval_final = 0.0
+                            else:
+                                target_eval_final = float(round(eval_relative))
+                        else:
+                            target_eval_final = eval_relative
 
                         # Feature encoding
                         our_idx, their_idx = encode_board_features(board)
@@ -299,7 +386,7 @@ class TcecDataset(IterableDataset):
                             "our_features": our_tensor,
                             "their_features": their_tensor,
                             "target_wdl": torch.tensor(wdl_relative, dtype=torch.float32),
-                            "target_eval": torch.tensor(eval_relative, dtype=torch.float32)
+                            "target_eval": torch.tensor(target_eval_final, dtype=torch.float32)
                         }
 
                         sample_count += 1

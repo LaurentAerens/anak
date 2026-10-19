@@ -28,23 +28,53 @@ pip install -r requirements.txt
 
 ---
 
-## Dataset: Automated TCEC Downloader
+## Training Data Hub & Position Generation
 
-Anak includes an automated downloader script ([`download_tcec.py`](file:///c:/Users/laerens/source/repos/Personal/anak/training/download_tcec.py)) that connects to `tcec-chess.com`, downloads archives, and extracts the PGN files with full engine evaluations:
+Anak supports multiple training data avenues:
+1. **Local Stockfish Position Generator** ([`generate_data.py`](file:///c:/Users/laerens/source/repos/Personal/anak/training/generate_data.py)): High-speed parallel generation on your CPU across 16–20 cores with targeted topology biasing.
+2. **Automated TCEC Downloader** ([`download_tcec.py`](file:///c:/Users/laerens/source/repos/Personal/anak/training/download_tcec.py)): Full grandmaster engine seasons and tournament archives directly from `tcec-chess.com`.
+3. **Unified Data Downloader** ([`download_data.py`](file:///c:/Users/laerens/source/repos/Personal/anak/training/download_data.py)): Hub for fetching TCEC, Lichess evaluated archives, tactical puzzles, Stockfish open data, and Leela datasets.
 
-### 1. Download via Web URL:
+---
+
+### 1. Generating Custom Data with Local Stockfish (`generate_data.py`)
+
+Using your local `stockfish.exe`, you can generate millions of targeted, evaluated positions offline across all CPU cores:
+
 ```bash
-python download_tcec.py --url "https://tcec-chess.com/#div=all&game=1&season=25" --output ./data
+# Generate 50,000 open positions for open.nnue:
+python generate_data.py --mode open --positions 50000
+
+# Generate 50,000 closed positions for closed.nnue:
+python generate_data.py --mode closed --positions 50000
+
+# Generate 50,000 tactical blunder & trap positions for micro.nnue:
+python generate_data.py --mode blunders --positions 50000
+
+# Generate general balanced self-play:
+python generate_data.py --mode general --positions 100000 --workers 16 --depth 8
+```
+Generated games are saved to `training/data/generated_<mode>.pgn` with standard `[%eval ...]` comments.
+
+---
+
+### 2. Downloading Public Datasets (`download_data.py`)
+
+```bash
+# Download complete TCEC Season 25 archives:
+python download_data.py --source tcec --season 25 --division all
+
+# Download Lichess master games with Stockfish evals:
+python download_data.py --source lichess
+
+# Download Lichess tactical blunder puzzles:
+python download_data.py --source puzzles
+
+# Trigger local generator:
+python download_data.py --source generate --mode open --positions 25000
 ```
 
-### 2. Download via Season and Division Arguments:
-```bash
-# Download complete Season 25 (all divisions, ~42 MB zip / 140 MB PGN)
-python download_tcec.py --season 25 --division all --output ./data
-
-# Download only Season 25 Superfinal
-python download_tcec.py --season 25 --division sf --output ./data
-```
+---
 
 ### Handling TCEC High Draw Rate (~75%)
 TCEC games frequently end in draws between elite engines. The dataset pipeline mitigates draw-bias by:
@@ -54,17 +84,23 @@ TCEC games frequently end in draws between elite engines. The dataset pipeline m
 
 ---
 
-## Training the Models
+## Training the Models (With Source Filtering)
 
-The training script automatically discovers all `.pgn` and `.pgn.gz` files inside `./data/` or `training/data/`. You can omit `--data` or explicitly point it to a file or directory.
+The training script automatically discovers all `.pgn`, `.pgn.gz`, and `.zip` files in `training/data/`.
+You can use `--source` to select exactly what data or combination of data to train on:
 
-### 1. Train the Open-NNUE Model
 ```bash
-# Auto-discovers games in ./data
-python train.py --model open --epochs 40 --batch-size 4096 --output ./checkpoints
+# Train on ONLY locally generated data:
+python train.py --model open --source generated --epochs 25
 
-# Or explicitly pass the data folder / PGN file:
-python train.py --model open --data ./data --epochs 40 --batch-size 4096
+# Train on ONLY TCEC data:
+python train.py --model open --source tcec --epochs 25
+
+# Train on a COMBO of Generated and TCEC data:
+python train.py --model open --source generated,tcec --epochs 25
+
+# Train on ALL available data in training/data/:
+python train.py --model open --source all --epochs 25
 ```
 
 ### 2. Train the Closed-NNUE Model

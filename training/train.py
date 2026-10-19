@@ -16,14 +16,15 @@ from dataset import TcecDataset, find_pgn_files
 from loss import TcecBlendedLoss, BlunderLoss
 
 
-def resolve_data_files(data_arg: Optional[str] = None) -> List[str]:
+def resolve_data_files(data_arg: Optional[str] = None, source: str = "all") -> List[str]:
     """
-    Intelligently locates PGN training data files across workspace/relative directories.
-    Handles explicit files, directories, and auto-discovers ./data or training/data.
+    Intelligently locates PGN training data files across workspace/relative directories,
+    and filters by source (tcec, generated, lichess, stockfish, leela, all).
     """
     script_dir = os.path.dirname(os.path.abspath(__file__))
     cwd = os.getcwd()
 
+    raw_files = []
     if data_arg:
         candidates = [
             data_arg,
@@ -42,32 +43,60 @@ def resolve_data_files(data_arg: Optional[str] = None) -> List[str]:
             if os.path.exists(c):
                 files = find_pgn_files(c)
                 if files:
-                    return files
-        return []
+                    raw_files = files
+                    break
+    else:
+        # Fallback to standard locations when --data is omitted
+        default_dirs = [
+            os.path.join(cwd, "training", "data"),
+            os.path.join(cwd, "data"),
+            os.path.join(script_dir, "data"),
+            os.path.join(os.path.dirname(script_dir), "training", "data"),
+        ]
 
-    # Fallback to standard locations when --data is omitted
-    default_dirs = [
-        os.path.join(cwd, "training", "data"),
-        os.path.join(cwd, "data"),
-        os.path.join(script_dir, "data"),
-        os.path.join(os.path.dirname(script_dir), "training", "data"),
-    ]
+        for d in default_dirs:
+            if os.path.exists(d):
+                files = find_pgn_files(d)
+                if files:
+                    raw_files = files
+                    break
 
-    for d in default_dirs:
-        if os.path.exists(d):
-            files = find_pgn_files(d)
-            if files:
-                return files
+    if not raw_files or source.lower() in ("all", "*"):
+        return raw_files
 
-    return []
+    # Filter by source tags (e.g. 'generated', 'tcec', 'lichess', or comma-separated combo)
+    sources = [s.strip().lower() for s in source.split(",") if s.strip()]
+    filtered = []
+    for f in raw_files:
+        basename = os.path.basename(f).lower()
+        matched = False
+        for s in sources:
+            if s == "generated" and ("generated" in basename or basename.startswith("gen_")):
+                matched = True
+            elif s == "tcec" and "tcec" in basename:
+                matched = True
+            elif s == "lichess" and "lichess" in basename:
+                matched = True
+            elif s == "stockfish" and "stockfish" in basename:
+                matched = True
+            elif s in ("leela", "lc0") and ("leela" in basename or "lc0" in basename):
+                matched = True
+            elif s in basename:
+                matched = True
+        if matched:
+            filtered.append(f)
+
+    return filtered
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train Anak NNUE models on TCEC datasets")
+    parser = argparse.ArgumentParser(description="Train Anak NNUE models on TCEC, Stockfish, Leela, Lichess, or Generated datasets")
     parser.add_argument("--model", type=str, choices=["open", "closed", "micro", "small"], default="open",
                         help="Target network to train (open, closed, or micro/small)")
+    parser.add_argument("--source", type=str, default="all",
+                        help="Data source filter (tcec, generated, lichess, stockfish, leela, all, or comma-separated combo like 'tcec,generated')")
     parser.add_argument("--data", type=str, default=None,
-                        help="Path to TCEC PGN file or data directory (defaults to auto-discovering ./data or training/data)")
+                        help="Path to PGN file or data directory (defaults to auto-discovering ./data or training/data)")
     parser.add_argument("--epochs", type=int, default=40, help="Number of training epochs")
     parser.add_argument("--batch-size", type=int, default=4096, help="Batch size")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
@@ -85,12 +114,14 @@ def main():
     args = parse_args()
 
     # 1. Resolve Data Files
-    data_files = resolve_data_files(args.data)
+    data_files = resolve_data_files(args.data, source=args.source)
     if not data_files:
         print("\n" + "=" * 70)
-        print("ERROR: No PGN training data files found!")
+        print("ERROR: No matching PGN training data files found!")
+        if args.source != "all":
+            print(f"Filter requested source: '{args.source}'")
         if args.data:
-            print(f"Specified target: '{args.data}' (file or directory does not contain .pgn / .pgn.gz)")
+            print(f"Specified target path: '{args.data}'")
         print("\nSearched standard locations:")
         print(f"  - {os.path.abspath('data')}")
         print(f"  - {os.path.abspath(os.path.join(os.path.dirname(__file__), 'data'))}")
@@ -104,7 +135,8 @@ def main():
     os.makedirs(args.output, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"=== Training Anak NNUE: {args.model.upper()} Model on {device} ===")
-    print(f"Found {len(data_files)} PGN file(s):")
+    print(f"Data Source Filter: {args.source.upper()} ({len(data_files)} matching files)")
+    print(f"Found PGN file(s):")
     for f in data_files[:5]:
         print(f"  - {f} ({os.path.getsize(f):,} bytes)")
     if len(data_files) > 5:
