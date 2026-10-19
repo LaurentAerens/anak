@@ -1,0 +1,27 @@
+{
+  "open_middlegame": {
+    "query": "openness >= 0.50 and pieces > 16 and has_queens",
+    "ratio": 0.35,
+    "description": "Tactical open positions with active diagonals and open files"
+  },
+  "queenless_endgame": {
+    "query": "no_queens and pieces <= 16",
+    "ratio": 0.25,
+    "description": "Queenless endgames (no queen, boards with fewer pieces)"
+  },
+  "deep_endgame": {
+    "query": "pieces <= 10",
+    "ratio": 0.15,
+    "description": "Deep endgame positions with 10 or fewer pieces"
+  },
+  "tactical_blunders": {
+    "query": "is_blunder or abs_eval >= 2.0",
+    "ratio": 0.15,
+    "description": "Tactical swings and blunder refutations for Micro/Minimal model"
+  },
+  "closed_chains": {
+    "query": "openness < 0.45",
+    "ratio": 0.10,
+    "description": "Locked pawn chains and closed strategic maneuvering"
+  }
+}

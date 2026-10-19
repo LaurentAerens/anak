@@ -108,13 +108,20 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
         }
 
         string? parent = baseDir;
-        for (int i = 0; i < 5 && parent != null; i++)
+        for (int i = 0; i < 6 && parent != null; i++)
         {
             candidate = Path.Combine(parent, "networks");
-            if (Directory.Exists(candidate))
+            if (Directory.Exists(candidate) && (File.Exists(Path.Combine(candidate, "open.nnue")) || File.Exists(Path.Combine(candidate, "closed.nnue"))))
             {
                 return Path.GetFullPath(candidate);
             }
+
+            candidate = Path.Combine(parent, "training", "networks");
+            if (Directory.Exists(candidate) && (File.Exists(Path.Combine(candidate, "open.nnue")) || File.Exists(Path.Combine(candidate, "closed.nnue"))))
+            {
+                return Path.GetFullPath(candidate);
+            }
+
             parent = Directory.GetParent(parent)?.FullName;
         }
 

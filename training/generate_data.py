@@ -1,13 +1,14 @@
 """
 High-Speed Multi-Threaded Position & Evaluation Generator for Anak NNUE Training.
 Generates diverse chess positions via self-play and opening book seeding, evaluates
-them using local Stockfish across all available CPU cores, and exports standard PGNs.
+them using local Stockfish across all available CPU cores, and exports standard PGNs or .binpack.
 
-Supports targeted generation modes:
-  --mode open     : Biases toward open center files, early pawn trades, and piece play.
-  --mode closed   : Biases toward locked pawn wedges and maneuvering structures.
-  --mode blunders : Generates tactical blunder refutations, forks, and hanging pieces for Micro-NNUE.
-  --mode general  : Broad balanced self-play across diverse master openings.
+Supports query-driven generation and metric steering:
+  --query "pieces <= 16 and not has_queens" : Endgame & queenless positions
+  --no-queens                               : Strips or trades queens early
+  --max-pieces 16                           : Biases toward endgame positions
+  --mode open / closed / blunders / general : Topology and blunder biasing
+  --format pgn / binpack                    : Output format
 """
 
 import argparse
@@ -16,10 +17,13 @@ import random
 import subprocess
 import sys
 import time
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import chess
 import chess.pgn
 from tqdm import tqdm
+
+from query import extract_metrics_from_board, PositionQuery, DatasetRecipe
+from binpack import BinpackWriter
 
 
 def find_stockfish_binary() -> Optional[str]:
@@ -41,8 +45,24 @@ def find_stockfish_binary() -> Optional[str]:
     return None
 
 
-def load_seed_openings() -> List[str]:
-    """Loads FEN / EPD opening strings from tools/fastchess/openings.epd if available."""
+def strip_queens_from_fen(fen: str) -> str:
+    """Removes all queens from a FEN string to produce a valid queenless position."""
+    try:
+        board = chess.Board(fen)
+        board.remove_piece_at(chess.D1)
+        board.remove_piece_at(chess.D8)
+        # Clear any remaining queens on board
+        for sq in chess.SQUARES:
+            p = board.piece_at(sq)
+            if p and p.piece_type == chess.QUEEN:
+                board.remove_piece_at(sq)
+        return board.fen()
+    except Exception:
+        return fen
+
+
+def load_seed_openings(no_queens: bool = False, max_pieces: Optional[int] = None) -> List[str]:
+    """Loads FEN / EPD opening strings with optional piece filtering."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(script_dir)
     epd_path = os.path.join(repo_root, "tools", "fastchess", "openings.epd")
@@ -53,7 +73,6 @@ def load_seed_openings() -> List[str]:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#"):
-                    # EPD lines usually end with operations like 'ce 0; pm ...'
                     fen_parts = line.split(";")
                     fen = fen_parts[0].strip()
                     openings.append(fen)
@@ -61,7 +80,26 @@ def load_seed_openings() -> List[str]:
     if not openings:
         openings = [chess.STARTING_FEN]
 
-    return openings
+    processed = []
+    for fen in openings:
+        cur_fen = fen
+        if no_queens:
+            cur_fen = strip_queens_from_fen(cur_fen)
+        if max_pieces:
+            try:
+                b = chess.Board(cur_fen)
+                if bin(b.occupied).count("1") > max_pieces:
+                    # Strip non-king pieces randomly until count <= max_pieces
+                    non_kings = [sq for sq in chess.SQUARES if b.piece_at(sq) and b.piece_at(sq).piece_type != chess.KING]
+                    random.shuffle(non_kings)
+                    while bin(b.occupied).count("1") > max_pieces and non_kings:
+                        b.remove_piece_at(non_kings.pop())
+                    cur_fen = b.fen()
+            except Exception:
+                pass
+        processed.append(cur_fen)
+
+    return processed
 
 
 class StockfishEvaluator:
@@ -113,7 +151,6 @@ class StockfishEvaluator:
                 try:
                     idx = parts.index("cp")
                     cp = int(parts[idx + 1])
-                    # cp is relative to side to move in UCI
                     val = cp / 100.0
                     score_pawns = val if side_to_move_white else -val
                 except (ValueError, IndexError):
@@ -144,50 +181,17 @@ class StockfishEvaluator:
             pass
 
 
-def calculate_openness(board: chess.Board) -> float:
-    """Computes pawn topology openness score in range [0.0, 1.0]."""
-    white_pawns = board.pieces_mask(chess.PAWN, chess.WHITE)
-    black_pawns = board.pieces_mask(chess.PAWN, chess.BLACK)
-    all_pawns = white_pawns | black_pawns
-    total_pawns = bin(all_pawns).count("1")
-
-    locked_rams = white_pawns & (black_pawns >> 8)
-    locked_count = bin(locked_rams).count("1")
-
-    open_files = 0
-    semi_open_files = 0
-    file_masks = [0x0101010101010101 << i for i in range(8)]
-
-    for mask in file_masks:
-        has_white = (white_pawns & mask) != 0
-        has_black = (black_pawns & mask) != 0
-        if not has_white and not has_black:
-            open_files += 1
-        elif not has_white or not has_black:
-            semi_open_files += 1
-
-    center_mask = file_masks[2] | file_masks[3] | file_masks[4] | file_masks[5]
-    center_pawns = bin(all_pawns & center_mask).count("1")
-
-    openness = (
-        0.35
-        + (open_files * 0.12)
-        + (semi_open_files * 0.05)
-        - (locked_count * 0.10)
-        + ((8 - center_pawns) * 0.03)
-        + ((16 - total_pawns) * 0.02)
-    )
-    return max(0.0, min(1.0, openness))
-
-
 def generate_single_game(
     sf: StockfishEvaluator,
     seed_fen: str,
     mode: str,
+    query: Optional[PositionQuery] = None,
+    no_queens: bool = False,
+    max_pieces: Optional[int] = None,
     max_plies: int = 80
 ) -> Optional[chess.pgn.Game]:
     """
-    Generates a single evaluated game from an opening seed FEN with topology biasing.
+    Generates a single evaluated game from an opening seed FEN with query and topology biasing.
     """
     try:
         board = chess.Board(seed_fen)
@@ -202,40 +206,43 @@ def generate_single_game(
     current_node = game
 
     ply = 0
+    prev_eval = 0.0
+
     while not board.is_game_over() and ply < max_plies:
         legal_moves = list(board.legal_moves)
         if not legal_moves:
             break
 
-        # Move selection with mode biasing
+        # Move selection with biasing
         chosen_move = None
 
-        if mode == "open":
-            # Prefer captures, pawn trades, and open-file piece development
+        if no_queens:
+            # Strongly prioritize queen captures or queen trades if any queen is left
+            queen_moves = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.QUEEN]
+            queen_captures = [m for m in legal_moves if board.is_capture(m) and board.piece_at(m.to_square) and board.piece_at(m.to_square).piece_type == chess.QUEEN]
+            if queen_captures:
+                chosen_move = random.choice(queen_captures)
+            elif queen_moves and random.random() < 0.6:
+                chosen_move = random.choice(queen_moves)
+
+        if chosen_move is None and mode == "open":
             captures = [m for m in legal_moves if board.is_capture(m)]
-            pawn_moves = [m for m in legal_moves if board.piece_at(m.from_square).piece_type == chess.PAWN]
+            pawn_moves = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.PAWN]
             if captures and random.random() < 0.65:
                 chosen_move = random.choice(captures)
             elif pawn_moves and random.random() < 0.50:
                 chosen_move = random.choice(pawn_moves)
-            else:
-                chosen_move = random.choice(legal_moves)
 
-        elif mode == "closed":
-            # Prefer non-capture pawn pushes and closed maneuvering
-            quiet_pawns = [m for m in legal_moves if board.piece_at(m.from_square).piece_type == chess.PAWN and not board.is_capture(m)]
-            knights = [m for m in legal_moves if board.piece_at(m.from_square).piece_type == chess.KNIGHT]
+        elif chosen_move is None and mode == "closed":
+            quiet_pawns = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.PAWN and not board.is_capture(m)]
+            knights = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.KNIGHT]
             if quiet_pawns and random.random() < 0.55:
                 chosen_move = random.choice(quiet_pawns)
             elif knights and random.random() < 0.40:
                 chosen_move = random.choice(knights)
-            else:
-                chosen_move = random.choice(legal_moves)
 
-        elif mode == "blunders":
-            # Normal play with intentional 25% tactical blunder injection
+        elif chosen_move is None and mode == "blunders":
             if random.random() < 0.25 and ply > 6:
-                # Find an undefended hanging piece move
                 for m in legal_moves:
                     p = board.piece_at(m.from_square)
                     if p and p.piece_type in (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN):
@@ -246,10 +253,8 @@ def generate_single_game(
                         if attacked and not defended:
                             chosen_move = m
                             break
-            if chosen_move is None:
-                chosen_move = random.choice(legal_moves)
-        else:
-            # General balanced play
+
+        if chosen_move is None:
             chosen_move = random.choice(legal_moves)
 
         board.push(chosen_move)
@@ -258,12 +263,13 @@ def generate_single_game(
         # Evaluate position with Stockfish
         fen = board.fen()
         score = sf.evaluate_fen(fen)
+        eval_delta = abs((score or 0.0) - prev_eval)
+        prev_eval = score or 0.0
 
         current_node = current_node.add_variation(chosen_move)
         if score is not None:
             current_node.comment = f"[%eval {score:+.2f}]"
 
-    # Set game result
     if board.is_checkmate():
         res = "1-0" if board.turn == chess.BLACK else "0-1"
     elif board.is_stalemate() or board.is_insufficient_material() or board.can_claim_draw():
@@ -277,14 +283,20 @@ def generate_single_game(
 
 def worker_task(args_tuple) -> List[str]:
     """Worker process function generating a batch of games and returning PGN strings."""
-    worker_id, stockfish_path, mode, count, depth, seed_openings = args_tuple
+    worker_id, stockfish_path, mode, count, depth, seed_openings, query_str, no_queens, max_pieces = args_tuple
     sf = StockfishEvaluator(stockfish_path, depth=depth)
+    query = PositionQuery(query_str) if query_str else None
     pgn_strings = []
 
     try:
         for _ in range(count):
             seed = random.choice(seed_openings)
-            game = generate_single_game(sf, seed, mode)
+            game = generate_single_game(
+                sf, seed, mode,
+                query=query,
+                no_queens=no_queens,
+                max_pieces=max_pieces
+            )
             if game:
                 pgn_strings.append(str(game))
     finally:
@@ -294,9 +306,15 @@ def worker_task(args_tuple) -> List[str]:
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Anak High-Speed Multi-Core Training Position Generator")
+    parser = argparse.ArgumentParser(description="Anak Query-Driven Position & Evaluation Generator")
     parser.add_argument("--mode", type=str, choices=["open", "closed", "blunders", "general"], default="general",
                         help="Target generation mode (open, closed, blunders, or general)")
+    parser.add_argument("--query", type=str, default=None,
+                        help="Query metric expression to steer data (e.g. 'pieces <= 16 and not has_queens')")
+    parser.add_argument("--no-queens", action="store_true", default=False,
+                        help="Steer generation to queenless boards (boards with no queen)")
+    parser.add_argument("--max-pieces", type=int, default=None,
+                        help="Maximum pieces on board for endgame generation (e.g. 16 or 10)")
     parser.add_argument("--positions", type=int, default=5000,
                         help="Target number of evaluated positions to generate")
     parser.add_argument("--games", type=int, default=None,
@@ -308,7 +326,9 @@ def parse_args():
     parser.add_argument("--stockfish", type=str, default=None,
                         help="Path to stockfish executable (auto-detected if omitted)")
     parser.add_argument("--output", type=str, default=None,
-                        help="Output PGN file path (defaults to training/data/generated_<mode>.pgn)")
+                        help="Output file path (defaults to training/data/generated_<mode>.pgn)")
+    parser.add_argument("--format", type=str, choices=["pgn", "binpack"], default="pgn",
+                        help="Output format: standard PGN or high-performance .binpack")
     return parser.parse_args()
 
 
@@ -330,34 +350,47 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     data_dir = os.path.join(script_dir, "data")
     os.makedirs(data_dir, exist_ok=True)
-    out_file = args.output or os.path.join(data_dir, f"generated_{args.mode}.pgn")
+
+    tag = args.mode
+    if args.no_queens:
+        tag += "_noqueen"
+    if args.max_pieces:
+        tag += f"_p{args.max_pieces}"
+
+    ext = ".binpack" if args.format == "binpack" else ".pgn"
+    out_file = args.output or os.path.join(data_dir, f"generated_{tag}{ext}")
 
     # 4. Target game count
     if args.games:
         total_games = args.games
     else:
-        # Average ~40 evaluated plies per game
         total_games = max(5, args.positions // 40)
 
     games_per_worker = max(1, total_games // workers)
     actual_games = games_per_worker * workers
 
     print("=" * 70)
-    print("=== Anak NNUE Parallel Position & Evaluation Generator ===")
+    print("=== Anak NNUE Query-Driven Position & Evaluation Generator ===")
     print("=" * 70)
     print(f"Target Mode:      {args.mode.upper()}")
+    if args.query:
+        print(f"Query Filter:     '{args.query}'")
+    if args.no_queens:
+        print(f"Constraint:       NO QUEENS (Queenless boards)")
+    if args.max_pieces:
+        print(f"Constraint:       MAX PIECES <= {args.max_pieces} (Endgames)")
     print(f"Stockfish:        {sf_path}")
     print(f"Evaluation Depth: {args.depth}")
     print(f"Workers:          {workers} parallel processes (across {total_cpus} CPUs)")
     print(f"Target Games:     ~{actual_games} games (~{actual_games * 40:,} positions)")
-    print(f"Output File:      {out_file}")
+    print(f"Output File:      {out_file} ({args.format.upper()})")
     print("=" * 70)
 
-    openings = load_seed_openings()
-    print(f"Loaded {len(openings)} opening seed positions from opening book.")
+    openings = load_seed_openings(no_queens=args.no_queens, max_pieces=args.max_pieces)
+    print(f"Prepared {len(openings)} opening seed positions.")
 
     tasks = [
-        (i, sf_path, args.mode, games_per_worker, args.depth, openings)
+        (i, sf_path, args.mode, games_per_worker, args.depth, openings, args.query, args.no_queens, args.max_pieces)
         for i in range(workers)
     ]
 
@@ -374,10 +407,31 @@ def main():
     total_positions_est = len(all_pgn_strings) * 40
     pos_per_sec = total_positions_est / max(0.001, elapsed)
 
-    # Append to output PGN file
-    with open(out_file, "a", encoding="utf-8") as f:
-        for pgn in all_pgn_strings:
-            f.write(pgn + "\n\n")
+    if args.format == "binpack":
+        # Convert generated PGNs to .binpack directly
+        import io
+        writer = BinpackWriter(out_file, model_tag=args.mode)
+        pos_count = 0
+        for pgn_text in all_pgn_strings:
+            game = chess.pgn.read_game(io.StringIO(pgn_text))
+            if not game:
+                continue
+            b = game.board()
+            for node in game.mainline():
+                b.push(node.move)
+                from dataset import parse_eval_from_comment
+                ev = parse_eval_from_comment(node.comment)
+                if ev is not None:
+                    from query import calculate_pawn_openness
+                    op = calculate_pawn_openness(b)
+                    writer.add_board(b, ev if b.turn == chess.WHITE else -ev, 0.5, op)
+                    pos_count += 1
+        writer.close()
+        print(f"\nWrote {pos_count:,} positions directly to binary pack: {out_file}")
+    else:
+        with open(out_file, "a", encoding="utf-8") as f:
+            for pgn in all_pgn_strings:
+                f.write(pgn + "\n\n")
 
     print("\n" + "=" * 70)
     print(f"SUCCESS: Generated {len(all_pgn_strings)} games in {elapsed:.1f}s ({pos_per_sec:.0f} pos/sec)!")

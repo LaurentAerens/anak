@@ -1,6 +1,9 @@
 """
 Loss functions for Anak NNUE training.
-Handles TCEC draw rates via WDL + Huber Eval blending and asymmetric blunder penalties for MicroNNUE.
+Features:
+- ModernNNUELoss: Stockfish-style win-probability BCE loss blending search evaluations and WDL.
+- TcecBlendedLoss: Smooth-L1 Huber + BCE WDL loss for backward compatibility.
+- BlunderLoss: Asymmetric 5x gradient penalty watchdog loss for Micro-NNUE.
 """
 
 import torch
@@ -8,10 +11,36 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
+class ModernNNUELoss(nn.Module):
+    """
+    Modern Stockfish-style NNUE loss function.
+    Converts engine evaluations to expected win probability via sigmoid:
+      P_eval = sigmoid(target_eval / eval_scale)
+      target_prob = lambda_wdl * target_wdl + (1 - lambda_wdl) * P_eval
+    Computes Binary Cross Entropy with Logits against network prediction:
+      loss = BCEWithLogits(pred / eval_scale, target_prob)
+    This yields smooth, un-saturating gradients and naturally mitigates draw bias.
+    """
+    def __init__(self, lambda_wdl: float = 0.40, eval_scale: float = 2.50):
+        super().__init__()
+        self.lambda_wdl = lambda_wdl
+        self.eval_scale = eval_scale
+
+    def forward(self, pred: torch.Tensor, target_wdl: torch.Tensor, target_eval: torch.Tensor) -> torch.Tensor:
+        # Sigmoid of search evaluation in pawns
+        p_eval = torch.sigmoid(target_eval / self.eval_scale)
+
+        # Blended ground truth probability
+        target_prob = (self.lambda_wdl * target_wdl) + ((1.0 - self.lambda_wdl) * p_eval)
+
+        # Logit scaling
+        logits = pred / self.eval_scale
+        return F.binary_cross_entropy_with_logits(logits, target_prob)
+
+
 class TcecBlendedLoss(nn.Module):
     """
     Blended loss function balancing true game outcomes (WDL) with deep search evaluations.
-    Essential for TCEC datasets to prevent draw-bias resulting from high draw rates.
     """
     def __init__(self, lambda_wdl: float = 0.40):
         super().__init__()
@@ -20,21 +49,10 @@ class TcecBlendedLoss(nn.Module):
         self.eval_loss = nn.SmoothL1Loss()
 
     def forward(self, pred: torch.Tensor, target_wdl: torch.Tensor, target_eval: torch.Tensor) -> torch.Tensor:
-        """
-        :param pred: Raw model logit / score.
-        :param target_wdl: Ground truth game outcome in [0.0, 1.0].
-        :param target_eval: Engine evaluation in pawns (e.g. +1.25).
-        """
-        # Map raw engine eval to tanh [-1.0, 1.0] scale
         scaled_eval = torch.tanh(target_eval / 4.0)
-
-        # 1. WDL Cross-Entropy Loss
         l_wdl = self.wdl_loss(pred, target_wdl)
-
-        # 2. Evaluation Huber Loss
         pred_scaled = torch.tanh(pred / 4.0)
         l_eval = self.eval_loss(pred_scaled, scaled_eval)
-
         return (self.lambda_wdl * l_wdl) + ((1.0 - self.lambda_wdl) * l_eval)
 
 

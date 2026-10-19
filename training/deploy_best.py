@@ -84,6 +84,10 @@ def main():
     secondary_dirs = [
         os.path.join(repo_root, "src", "Anak.Protocol", "bin", "Release", "net11.0", "networks"),
         os.path.join(repo_root, "src", "Anak.Protocol", "bin", "Debug", "net11.0", "networks"),
+        os.path.join(repo_root, "tools", "Anak.UI", "bin", "Release", "net11.0-windows", "networks"),
+        os.path.join(repo_root, "tools", "Anak.UI", "bin", "Debug", "net11.0-windows", "networks"),
+        os.path.join(repo_root, "tools", "Anak.UI", "bin", "Release", "net11.0", "networks"),
+        os.path.join(repo_root, "tools", "Anak.UI", "bin", "Debug", "net11.0", "networks"),
     ]
 
     print("\n" + "=" * 70)

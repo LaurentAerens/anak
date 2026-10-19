@@ -143,6 +143,16 @@ def download_tcec_season(season: str, division: str = "all", output_dir: str = "
     return extracted
 
 
+def download_season(season: int = 25, output_dir: str = "./data"):
+    """Alias for download_tcec_season with all divisions."""
+    return download_tcec_season(season=str(season), division="all", output_dir=output_dir)
+
+
+def download_by_division(season: int = 25, division: str = "premier", output_dir: str = "./data"):
+    """Alias for download_tcec_season with specific division."""
+    return download_tcec_season(season=str(season), division=division, output_dir=output_dir)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Automated downloader for TCEC Season PGN archives")
     parser.add_argument("--url", type=str, default=None,
