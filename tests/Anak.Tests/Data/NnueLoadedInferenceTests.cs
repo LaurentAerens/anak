@@ -44,10 +44,13 @@ public sealed class NnueLoadedInferenceTests
 
         Board board = Fen.Parse(Fen.StartPosition);
 
-        // Warmup
+        // Warm up JIT and Tiered Compilation
         evaluator.SetRootTopology(in board);
-        _ = evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
-        _ = evaluator.EvaluateMicro(in board);
+        for (int i = 0; i < 100; i++)
+        {
+            _ = evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
+            _ = evaluator.EvaluateMicro(in board);
+        }
 
         // Test Zero Allocations during NNUE evaluation
         long bytesBefore = GC.GetAllocatedBytesForCurrentThread();

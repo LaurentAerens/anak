@@ -31,6 +31,7 @@ public sealed class UciEngineAdapter
     public Board CurrentBoard => _board;
     public IReadOnlyList<Move> GameMoves => _gameMoves;
     public bool IsSearching => _searchTask != null && !_searchTask.IsCompleted;
+    public IEvaluator Evaluator => _evaluator;
 
     public UciEngineAdapter(Action<string> outputWriter)
     {

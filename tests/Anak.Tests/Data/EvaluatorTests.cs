@@ -7,7 +7,7 @@ namespace Anak.Tests.Data;
 
 public class EvaluatorTests
 {
-    private static IEvaluator GetEvaluator() => UciEngineAdapter.CreateEvaluator();
+    private static IEvaluator GetEvaluator() => new Anak.Data.Evaluation.DefaultEvaluator();
 
     [Fact]
     public void Evaluator_StartPosition_Symmetric()

@@ -12,6 +12,8 @@ public sealed class TimeManager
     private readonly Stopwatch _stopwatch = new();
     private long _softLimitMs;
     private long _hardLimitMs;
+    private long _baseSoftLimitMs;
+    private long _baseHardLimitMs;
     private bool _hasTimeLimit;
 
     public const int CheckInterval = 1024;
@@ -34,6 +36,8 @@ public sealed class TimeManager
             _hasTimeLimit = false;
             _softLimitMs = long.MaxValue;
             _hardLimitMs = long.MaxValue;
+            _baseSoftLimitMs = long.MaxValue;
+            _baseHardLimitMs = long.MaxValue;
             return;
         }
 
@@ -42,6 +46,8 @@ public sealed class TimeManager
             _hasTimeLimit = true;
             _softLimitMs = Math.Max(1, limits.MoveTime - SafetyLagMs);
             _hardLimitMs = limits.MoveTime;
+            _baseSoftLimitMs = _softLimitMs;
+            _baseHardLimitMs = _hardLimitMs;
             return;
         }
 
@@ -55,12 +61,16 @@ public sealed class TimeManager
                 _hasTimeLimit = true;
                 _softLimitMs = 2970;
                 _hardLimitMs = 3000;
+                _baseSoftLimitMs = _softLimitMs;
+                _baseHardLimitMs = _hardLimitMs;
                 return;
             }
 
             _hasTimeLimit = false;
             _softLimitMs = long.MaxValue;
             _hardLimitMs = long.MaxValue;
+            _baseSoftLimitMs = long.MaxValue;
+            _baseHardLimitMs = long.MaxValue;
             return;
         }
 
@@ -71,11 +81,13 @@ public sealed class TimeManager
         {
             _hardLimitMs = Math.Max(10, remainingTime / 2);
             _softLimitMs = _hardLimitMs;
+            _baseSoftLimitMs = _softLimitMs;
+            _baseHardLimitMs = _hardLimitMs;
             return;
         }
 
-        // Calculate expected moves remaining in the game
-        int movesToGo = limits.MovesToGo > 0 ? Math.Clamp(limits.MovesToGo, 2, 50) : 25;
+        // Calculate expected moves remaining in the game (default 35 for balanced game pacing)
+        int movesToGo = limits.MovesToGo > 0 ? Math.Clamp(limits.MovesToGo, 2, 50) : 35;
 
         // Dynamic target allocation: (time / moves) + (3/4 * inc)
         long allocated = (remainingTime / movesToGo) + ((long)increment * 3 / 4);
@@ -86,6 +98,18 @@ public sealed class TimeManager
         // Hard limit allows up to 2.5x soft limit for complex or critical tactical branches
         long maxHard = Math.Min(remainingTime - SafetyLagMs, (long)(_softLimitMs * 2.5));
         _hardLimitMs = Math.Max(_softLimitMs, maxHard);
+        _baseSoftLimitMs = _softLimitMs;
+        _baseHardLimitMs = _hardLimitMs;
+    }
+
+    /// <summary>
+    /// Dynamically scales the soft and hard time limits by a factor (e.g. 0.25 when position is hopelessly lost).
+    /// </summary>
+    public void ScaleSoftLimit(float factor)
+    {
+        if (!_hasTimeLimit) return;
+        _softLimitMs = Math.Max(20, (long)(_baseSoftLimitMs * factor));
+        _hardLimitMs = Math.Max(_softLimitMs, (long)(_baseHardLimitMs * factor));
     }
 
     /// <summary>

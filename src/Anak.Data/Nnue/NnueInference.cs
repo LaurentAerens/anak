@@ -74,7 +74,7 @@ public static unsafe class NnueInference
             }
         }
 
-        return sum / NnueConstants.OutputScale;
+        return (int)((long)sum * NnueConstants.OutputScale / (NnueConstants.WeightScale * NnueConstants.WeightScale));
     }
 
     /// <summary>
@@ -110,7 +110,7 @@ public static unsafe class NnueInference
                 }
 
                 // Intermediate activation: ClippedReLU(dot / WeightScale)
-                hiddenOutput[k] = (short)Math.Clamp(dot / (NnueConstants.WeightScale * NnueConstants.WeightScale), 0, (int)NnueConstants.ClippedReluMax);
+                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
             }
         }
 
@@ -123,6 +123,6 @@ public static unsafe class NnueInference
             finalSum += hiddenOutput[k] * outWeights[k];
         }
 
-        return finalSum / NnueConstants.OutputScale;
+        return (int)((long)finalSum * NnueConstants.OutputScale / (NnueConstants.WeightScale * NnueConstants.WeightScale));
     }
 }

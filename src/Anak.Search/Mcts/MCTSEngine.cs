@@ -134,25 +134,8 @@ public sealed class MCTSEngine
         bool hasTtRoot = _tt.TryGet(rootBoard.ZobristKey, out TTEntry ttRoot);
         Move ttBestMove = hasTtRoot ? ttRoot.BestMove : Move.Null;
 
-        // Initialize root children priors
-        float basePrior = 1.0f / rootMoves.Count;
-        for (int i = 0; i < rootMoves.Count; i++)
-        {
-            ref MCTSNode child = ref _arena[rootFirstChild + i];
-            child.Move = rootMoves[i];
-            child.FirstChildIndex = -1;
-
-            if (ttBestMove != Move.Null && child.Move == ttBestMove)
-            {
-                child.Prior = Math.Max(basePrior, 0.40f);
-            }
-            else
-            {
-                child.Prior = (ttBestMove != Move.Null && rootMoves.Count > 1)
-                    ? (0.60f / (rootMoves.Count - 1))
-                    : basePrior;
-            }
-        }
+        // Initialize root children priors with tactical policy heuristics
+        InitializeChildPriors(in rootBoard, rootMoves.AsReadOnlySpan(), rootFirstChild, ttBestMove);
 
         // 3. MCTS Simulation Loop
         ulong iteration = 0;
@@ -240,24 +223,8 @@ public sealed class MCTSEngine
                             leafNode.TotalValue = ttLeaf.Value * ttLeaf.Visits;
                         }
 
-                        float uniformPrior = 1.0f / leafMoves.Count;
-                        for (int i = 0; i < leafMoves.Count; i++)
-                        {
-                            ref MCTSNode child = ref _arena[leafFirstChild + i];
-                            child.Move = leafMoves[i];
-                            child.FirstChildIndex = -1;
-
-                            if (ttHintMove != Move.Null && child.Move == ttHintMove)
-                            {
-                                child.Prior = Math.Max(uniformPrior, 0.40f);
-                            }
-                            else
-                            {
-                                child.Prior = (ttHintMove != Move.Null && leafMoves.Count > 1)
-                                    ? (0.60f / (leafMoves.Count - 1))
-                                    : uniformPrior;
-                            }
-                        }
+                        // Initialize leaf children priors with tactical policy heuristics
+                        InitializeChildPriors(in currentBoard, leafMoves.AsReadOnlySpan(), leafFirstChild, ttHintMove);
                     }
 
                     // Evaluate leaf position using IEvaluator
@@ -328,6 +295,51 @@ public sealed class MCTSEngine
             if (_parameters.MaxNodes > 0 && iteration >= _parameters.MaxNodes) break;
             if (!_arena.CanAllocate(256)) break;
 
+            // Smart dynamic early termination checks every 128 iterations (only when time-constrained)
+            if ((iteration & 127) == 0 && iteration >= 256 && _timeManager.HasTimeLimit && !limits.HasNodeLimit)
+            {
+                ref readonly MCTSNode curRoot = ref _arena[rootIndex];
+                float rootQ = curRoot.Q;
+
+                // 1. Hopeless / Dead Lost Position: Root is losing heavily (Q < -0.75, ~ -450 cp)
+                // Scale down soft limit to 25% (or 15% if Q < -0.90) so engine doesn't agonize when lost.
+                if (rootQ < -0.75f)
+                {
+                    float scaleFactor = rootQ < -0.90f ? 0.15f : 0.25f;
+                    _timeManager.ScaleSoftLimit(scaleFactor);
+                }
+
+                // 2. Dominant Best Move: Top child has >= 70% of visits and >= 3x second child
+                ushort rnc = curRoot.NumChildren;
+                if (iteration >= 384 && rnc > 1)
+                {
+                    int rfc = curRoot.FirstChildIndex;
+                    uint topVisits = 0;
+                    uint secondVisits = 0;
+                    for (ushort c = 0; c < rnc; c++)
+                    {
+                        uint v = _arena[rfc + c].Visits;
+                        if (v > topVisits)
+                        {
+                            secondVisits = topVisits;
+                            topVisits = v;
+                        }
+                        else if (v > secondVisits)
+                        {
+                            secondVisits = v;
+                        }
+                    }
+
+                    if (topVisits >= curRoot.Visits * 0.70f && topVisits >= secondVisits * 3)
+                    {
+                        if (_timeManager.ElapsedMilliseconds >= _timeManager.SoftLimitMs * 0.25f)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+
             // Soft time limit check after completing a full iteration
             if (_timeManager.IsSoftTimeUp()) break;
 
@@ -395,9 +407,9 @@ public sealed class MCTSEngine
                 if (_parameters.MoveRandomness > 0 && maxVisits > 0)
                 {
                     float marginFraction = Math.Clamp(_parameters.MoveRandomness / 100.0f, 0.0f, 1.0f);
-                    float qTolerance = 0.02f + (0.04f * marginFraction);
+                    float qTolerance = 0.04f + (0.08f * marginFraction);
                     float minEliteQ = maxQ >= 1.0f ? 1.0f : maxQ - qTolerance; // checkmates never gamble away mate
-                    uint minEliteVisits = Math.Max(2, (uint)(maxVisits * 0.20f));
+                    uint minEliteVisits = Math.Max(2, (uint)(maxVisits * 0.15f));
 
                     // Identify alternative elite candidates (excluding primary best child)
                     Span<ushort> altOffsets = stackalloc ushort[numChildren];
@@ -633,4 +645,95 @@ public sealed class MCTSEngine
 
         return false;
     }
+
+    /// <summary>
+    /// Initializes child nodes with tactically-informed policy priors (MVV-LVA captures, checks, promotions).
+    /// Prevents uniform exploration across quiet moves during tactical conflicts.
+    /// </summary>
+    private void InitializeChildPriors(in Board board, ReadOnlySpan<Move> moves, int firstChildIdx, Move ttHintMove)
+    {
+        Span<float> weights = stackalloc float[moves.Length];
+        float totalWeight = 0.0f;
+
+        for (int i = 0; i < moves.Length; i++)
+        {
+            float w = ComputeMoveHeuristicWeight(in board, moves[i]);
+            weights[i] = w;
+            totalWeight += w;
+        }
+
+        float invTotal = totalWeight > 0.0f ? 1.0f / totalWeight : (1.0f / moves.Length);
+
+        for (int i = 0; i < moves.Length; i++)
+        {
+            ref MCTSNode child = ref _arena[firstChildIdx + i];
+            child.Move = moves[i];
+            child.FirstChildIndex = -1;
+
+            float heuristicPrior = weights[i] * invTotal;
+
+            if (ttHintMove != Move.Null)
+            {
+                if (child.Move == ttHintMove)
+                {
+                    child.Prior = Math.Max(heuristicPrior, 0.40f);
+                }
+                else if (moves.Length > 1)
+                {
+                    child.Prior = heuristicPrior * 0.60f;
+                }
+                else
+                {
+                    child.Prior = heuristicPrior;
+                }
+            }
+            else
+            {
+                child.Prior = heuristicPrior;
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static float ComputeMoveHeuristicWeight(in Board board, Move move)
+    {
+        float weight = 10.0f; // Base weight for quiet moves
+
+        if (move.IsPromotion)
+        {
+            weight += move.PromotionPieceType == PieceType.Queen ? 60.0f : 20.0f;
+        }
+
+        if (move.IsCapture)
+        {
+            weight += 20.0f;
+            PieceType victimType = move.IsEnPassant ? PieceType.Pawn : board.GetPieceAt(move.To).Type();
+            PieceType attackerType = board.GetPieceAt(move.From).Type();
+
+            int victimVal = GetPieceValue(victimType);
+            int attackerVal = GetPieceValue(attackerType);
+
+            // MVV-LVA (Most Valuable Victim - Least Valuable Attacker) bonus
+            int mvvLva = (victimVal * 10) - attackerVal;
+            weight += Math.Max(0, mvvLva);
+        }
+        else if (move.IsCastling)
+        {
+            weight += 15.0f;
+        }
+
+        return weight;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetPieceValue(PieceType pt) => pt switch
+    {
+        PieceType.Pawn => 1,
+        PieceType.Knight => 3,
+        PieceType.Bishop => 3,
+        PieceType.Rook => 5,
+        PieceType.Queen => 9,
+        PieceType.King => 1,
+        _ => 0
+    };
 }

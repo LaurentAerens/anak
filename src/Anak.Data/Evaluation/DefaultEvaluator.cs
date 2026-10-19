@@ -165,13 +165,13 @@ public sealed class DefaultEvaluator : IEvaluator
     private static readonly int[] _kingPstMg =
     [
          20,  30,  10,   0,   0,  10,  30,  20,
-         20,  20,   0,   0,   0,   0,  20,  20,
-        -10, -20, -20, -20, -20, -20, -20, -10,
-        -20, -30, -30, -40, -40, -30, -30, -20,
-        -30, -40, -40, -50, -50, -40, -40, -30,
-        -30, -40, -40, -50, -50, -40, -40, -30,
-        -30, -40, -40, -50, -50, -40, -40, -30,
-        -30, -40, -40, -50, -50, -40, -40, -30
+         20,  20, -10, -30, -30, -10,  20,  20,
+        -10, -20, -30, -40, -40, -30, -20, -10,
+        -20, -30, -40, -50, -50, -40, -30, -20,
+        -30, -40, -50, -60, -60, -50, -40, -30,
+        -30, -40, -50, -60, -60, -50, -40, -30,
+        -30, -40, -50, -60, -60, -50, -40, -30,
+        -30, -40, -50, -60, -60, -50, -40, -30
     ];
 
     // Endgame King PST (Favors active king in center)
@@ -396,38 +396,79 @@ public sealed class DefaultEvaluator : IEvaluator
         ulong allPawns = board.Pawns;
         int safetyScore = 0;
 
-        // Shelter files around king
-        int minF = Math.Max(0, kingFile - 1);
-        int maxF = Math.Min(7, kingFile + 1);
-
-        for (int f = minF; f <= maxF; f++)
+        // Castling rights & castled status evaluation
+        if (color == Color.White)
         {
-            ulong fileMask = Bitboard.FileMasks[f];
-            ulong myFilePawns = myPawns & fileMask;
-
-            if (myFilePawns == 0)
+            if (kingSq is Square.G1 or Square.C1 or Square.B1)
             {
-                // Semi-open file penalty near king
-                safetyScore -= 20;
+                safetyScore += 35; // Castled safely
+            }
+            else if ((board.Castling & CastlingRights.White) != 0)
+            {
+                safetyScore += 15; // Retains right to castle
+            }
+            else if (kingSq != Square.E1)
+            {
+                safetyScore -= 45; // Lost castling rights and king walked out
+            }
+        }
+        else
+        {
+            if (kingSq is Square.G8 or Square.C8 or Square.B8)
+            {
+                safetyScore += 35; // Castled safely
+            }
+            else if ((board.Castling & CastlingRights.Black) != 0)
+            {
+                safetyScore += 15; // Retains right to castle
+            }
+            else if (kingSq != Square.E8)
+            {
+                safetyScore -= 45; // Lost castling rights and king walked out
+            }
+        }
 
-                // Completely open file penalty
-                if ((allPawns & fileMask) == 0)
+        // Shelter files around king (only when king is on wing or castled)
+        bool isWingKing = kingFile <= 2 || kingFile >= 5;
+        if (isWingKing)
+        {
+            int minF = Math.Max(0, kingFile - 1);
+            int maxF = Math.Min(7, kingFile + 1);
+
+            for (int f = minF; f <= maxF; f++)
+            {
+                ulong fileMask = Bitboard.FileMasks[f];
+                ulong myFilePawns = myPawns & fileMask;
+
+                if (myFilePawns == 0)
                 {
-                    safetyScore -= 15;
+                    // Semi-open file penalty near king
+                    safetyScore -= 20;
+
+                    // Completely open file penalty
+                    if ((allPawns & fileMask) == 0)
+                    {
+                        safetyScore -= 15;
+                    }
+                }
+                else
+                {
+                    // Shelter bonus if pawn is close to king
+                    if (color == Color.White && kingRank <= 1)
+                    {
+                        safetyScore += 15;
+                    }
+                    else if (color == Color.Black && kingRank >= 6)
+                    {
+                        safetyScore += 15;
+                    }
                 }
             }
-            else
-            {
-                // Shelter bonus if pawn is close to king
-                if (color == Color.White && kingRank <= 2)
-                {
-                    safetyScore += 15;
-                }
-                else if (color == Color.Black && kingRank >= 5)
-                {
-                    safetyScore += 15;
-                }
-            }
+        }
+        else
+        {
+            // Exposed center king in midgame
+            safetyScore -= 25;
         }
 
         return safetyScore;

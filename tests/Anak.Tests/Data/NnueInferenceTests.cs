@@ -54,8 +54,11 @@ public sealed class NnueInferenceTests
         using var evaluator = new MultiTierNnueEvaluator();
         Board board = Fen.Parse(Fen.StartPosition);
 
-        // Warm up JIT
-        _ = evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
+        // Warm up JIT and Tiered Compilation
+        for (int i = 0; i < 100; i++)
+        {
+            _ = evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
+        }
 
         long bytesBefore = GC.GetAllocatedBytesForCurrentThread();
         for (int i = 0; i < 1000; i++)

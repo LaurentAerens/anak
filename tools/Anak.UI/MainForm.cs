@@ -111,15 +111,12 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Anak Chess Engine — Local Debugging & Visualizer";
-        Size = new Size(1020, 720);
-        MinimumSize = new Size(880, 640);
-        StartPosition = FormStartPosition.CenterScreen;
-        Font = new Font("Segoe UI", 9.5f, FontStyle.Regular);
-        BackColor = DrawingColor.FromArgb(245, 245, 248);
-
         _board = Fen.Parse(Fen.StartPosition);
         _evaluator = UciEngineAdapter.CreateEvaluator();
+        string evalTag = _evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive
+            ? "[NNUE Active]"
+            : "[Classical Fallback]";
+        Text = $"Anak Chess Engine — Local Debugging & Visualizer {evalTag}";
         _engine = new MCTSEngine(_evaluator, defaultHashMb: 32, arenaCapacity: 1_000_000);
         _book.LoadOrDefault("book.bin");
 
@@ -616,7 +613,8 @@ public sealed class MainForm : Form
         double winProb = 1.0 / (1.0 + Math.Pow(10, -displayScore / 400.0));
         _evalBar.WhiteWinProbability = winProb;
 
-        _evalLabel.Text = $"Eval: {displayScore:+#;-#;0} cp (White Win% : {(int)(winProb * 100)}%)";
+        string evalType = _evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive ? "NNUE" : "Classical";
+        _evalLabel.Text = $"Eval ({evalType}): {displayScore:+#;-#;0} cp (White Win% : {(int)(winProb * 100)}%)";
     }
 
     private async void TriggerEngineMove()

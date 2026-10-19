@@ -31,11 +31,8 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
     public MultiTierNnueEvaluator(string? networkDir = null)
     {
         _fallbackEvaluator = new DefaultEvaluator();
-        if (!string.IsNullOrWhiteSpace(networkDir))
-        {
-            NnueDirectory = networkDir;
-            LoadFromDirectory(networkDir);
-        }
+        string dirToLoad = !string.IsNullOrWhiteSpace(networkDir) ? networkDir : NnueDirectory;
+        LoadFromDirectory(dirToLoad);
     }
 
     /// <summary>
@@ -147,9 +144,22 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IDispos
     /// </summary>
     public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves)
     {
-        if (!UseNnue || _activeFullWeights == null)
+        if (!UseNnue)
         {
             return _fallbackEvaluator.Evaluate(in board, legalMoves);
+        }
+
+        if (_activeFullWeights == null)
+        {
+            if (_openWeights != null || _closedWeights != null)
+            {
+                SetRootTopology(in board);
+            }
+
+            if (_activeFullWeights == null)
+            {
+                return _fallbackEvaluator.Evaluate(in board, legalMoves);
+            }
         }
 
         int dim = _activeFullWeights.HiddenDim;

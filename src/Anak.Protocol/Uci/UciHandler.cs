@@ -147,6 +147,15 @@ public sealed class UciHandler
         SendLine("id name Anak 1.0.0");
         SendLine("id author Anak Contributors");
 
+        if (_adapter.Evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive)
+        {
+            SendLine($"info string NNUE active: [Open: {nnue.HasOpenModel}, Closed: {nnue.HasClosedModel}, Micro: {nnue.HasMicroModel}] ({nnue.NnueDirectory})");
+        }
+        else
+        {
+            SendLine("info string NNUE inactive: using classical heuristic fallback");
+        }
+
         foreach (var decl in _adapter.Options.GetDeclarations())
         {
             SendLine(decl);
@@ -370,8 +379,17 @@ public sealed class UciHandler
         MoveList moves = default;
         b.GenerateLegalMoves(ref moves);
 
-        IEvaluator evaluator = UciEngineAdapter.CreateEvaluator();
+        IEvaluator evaluator = _adapter.Evaluator;
         Value val = evaluator.Evaluate(in b, moves.AsReadOnlySpan());
+
+        if (evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive)
+        {
+            SendLine($"info string Evaluator: Pure Multi-Tier NNUE (Open: {nnue.HasOpenModel}, Closed: {nnue.HasClosedModel}, Micro: {nnue.HasMicroModel})");
+        }
+        else
+        {
+            SendLine("info string Evaluator: Classical Heuristic Fallback");
+        }
 
         SendLine($"Evaluation: {val.Raw} cp (from perspective of {b.SideToMove})");
     }

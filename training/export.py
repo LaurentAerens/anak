@@ -41,8 +41,8 @@ def export_standard(model: StandardNNUE, output_path: str):
     ft_weights = quantize_sbyte(model.ft.weight.T)  # (768, 256) int8
     ft_biases = quantize_short(model.ft.bias)       # (256,) int16
 
-    # 2. Hidden Layer: PyTorch l1.weight is (32, 512) -> transpose to (512, 32)
-    hidden_weights = quantize_sbyte(model.l1.weight.T)  # (512, 32) int8
+    # 2. Hidden Layer: PyTorch l1.weight is (32, 512) -> row-major (32, 512)
+    hidden_weights = quantize_sbyte(model.l1.weight)  # (32, 512) int8
     hidden_biases = quantize_short(model.l1.bias)       # (32,) int16
 
     # 3. Output Layer: PyTorch output.weight is (1, 32)
