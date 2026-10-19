@@ -28,12 +28,23 @@ pip install -r requirements.txt
 
 ---
 
-## Dataset: Using TCEC Game Archives
+## Dataset: Automated TCEC Downloader
 
-The **Top Chess Engine Championship (TCEC)** publishes full PGN archives of all season games with embedded engine evaluations:
+Anak includes an automated downloader script ([`download_tcec.py`](file:///c:/Users/laerens/source/repos/Personal/anak/training/download_tcec.py)) that connects to `tcec-chess.com`, downloads archives, and extracts the PGN files with full engine evaluations:
 
-1. Download season archives (e.g., TCEC Season 25 / 26 PGNs) from [tcec-chess.com](https://tcec-chess.com/#div=all&game=1&season=25).
-2. Save the `.pgn` or `.pgn.gz` file locally, for example: `training/data/tcec_season25.pgn.gz`.
+### 1. Download via Web URL:
+```bash
+python download_tcec.py --url "https://tcec-chess.com/#div=all&game=1&season=25" --output ./data
+```
+
+### 2. Download via Season and Division Arguments:
+```bash
+# Download complete Season 25 (all divisions, ~42 MB zip / 140 MB PGN)
+python download_tcec.py --season 25 --division all --output ./data
+
+# Download only Season 25 Superfinal
+python download_tcec.py --season 25 --division sf --output ./data
+```
 
 ### Handling TCEC High Draw Rate (~75%)
 TCEC games frequently end in draws between elite engines. The dataset pipeline mitigates draw-bias by:
