@@ -144,8 +144,8 @@ public sealed class UciHandler
 
     private void HandleUci()
     {
-        SendLine("id name Anak 1.0.0");
-        SendLine("id author Anak Contributors");
+        SendLine($"id name {Program.EngineName}");
+        SendLine($"id author {Program.Author}");
 
         if (_adapter.Evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive)
         {

@@ -54,12 +54,18 @@ def download_file(url: str, output_path: str):
     print(f"Downloading: {url}")
     print(f"Target:      {output_path}")
 
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req) as resp:
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
         total_size = int(resp.headers.get("content-length", 0))
 
         with DownloadProgressBar(unit="B", unit_scale=True, miniters=1, desc=os.path.basename(output_path), total=total_size) as t:
-            urllib.request.urlretrieve(url, filename=output_path, reporthook=t.update_to)
+            with open(output_path, "wb") as out_f:
+                while True:
+                    chunk = resp.read(65536)
+                    if not chunk:
+                        break
+                    out_f.write(chunk)
+                    t.update(len(chunk))
 
     print(f"Downloaded successfully: {output_path} ({os.path.getsize(output_path)} bytes)")
 

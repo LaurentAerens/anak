@@ -58,4 +58,21 @@ public class NnueTests
         evaluator.SetRootTopology(in closedBoard);
         Assert.True(evaluator.IsActive);
     }
+
+    [Fact]
+    public void MultiTierNnueEvaluator_RecognizesQueenAdvantageAndDisadvantage()
+    {
+        using var evaluator = new MultiTierNnueEvaluator();
+        var startBoard = Fen.Parse(Fen.StartPosition);
+        var whiteUpQueen = Fen.Parse("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        var whiteDownQueen = Fen.Parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1");
+
+        evaluator.SetRootTopology(in startBoard);
+        int startCp = evaluator.Evaluate(in startBoard, ReadOnlySpan<Move>.Empty).Raw;
+        int upQueenCp = evaluator.Evaluate(in whiteUpQueen, ReadOnlySpan<Move>.Empty).Raw;
+        int downQueenCp = evaluator.Evaluate(in whiteDownQueen, ReadOnlySpan<Move>.Empty).Raw;
+
+        Assert.True(upQueenCp > startCp + 500, $"Expected +Queen ({upQueenCp} cp) > Start ({startCp} cp) + 500");
+        Assert.True(downQueenCp < startCp - 500, $"Expected -Queen ({downQueenCp} cp) < Start ({startCp} cp) - 500");
+    }
 }

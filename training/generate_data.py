@@ -1,7 +1,8 @@
 """
 High-Speed Multi-Threaded Position & Evaluation Generator for Anak NNUE Training.
 Generates diverse chess positions via self-play and opening book seeding, evaluates
-them using local Stockfish across all available CPU cores, and exports standard PGNs or .binpack.
+them using local Stockfish (or built-in 2-ply Quiescent Tactical Evaluator fallback)
+across all available CPU cores, and exports standard PGNs or .binpack.
 
 Supports query-driven generation and metric steering:
   --query "pieces <= 16 and not has_queens" : Endgame & queenless positions
@@ -12,37 +13,239 @@ Supports query-driven generation and metric steering:
 """
 
 import argparse
+import io
 import os
 import random
+import shutil
 import subprocess
 import sys
 import time
-from typing import List, Optional, Tuple, Dict, Any
+import urllib.request
+import zipfile
+from typing import List, Optional, Tuple
 import chess
 import chess.pgn
 from tqdm import tqdm
 
-from query import extract_metrics_from_board, PositionQuery, DatasetRecipe
+from query import extract_metrics_from_board, PositionQuery, calculate_pawn_openness
 from binpack import BinpackWriter
 
+_PAWN_PST = [
+     0.00,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00,
+     0.05,  0.10,  0.10, -0.20, -0.20,  0.10,  0.10,  0.05,
+     0.05, -0.05, -0.10,  0.00,  0.00, -0.10, -0.05,  0.05,
+     0.00,  0.00,  0.00,  0.20,  0.20,  0.00,  0.00,  0.00,
+     0.05,  0.05,  0.10,  0.25,  0.25,  0.10,  0.05,  0.05,
+     0.10,  0.10,  0.20,  0.30,  0.30,  0.20,  0.10,  0.10,
+     0.50,  0.50,  0.50,  0.50,  0.50,  0.50,  0.50,  0.50,
+     0.00,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00,
+]
+_KNIGHT_PST = [
+    -0.50, -0.40, -0.30, -0.30, -0.30, -0.30, -0.40, -0.50,
+    -0.40, -0.20,  0.00,  0.05,  0.05,  0.00, -0.20, -0.40,
+    -0.30,  0.05,  0.10,  0.15,  0.15,  0.10,  0.05, -0.30,
+    -0.30,  0.00,  0.15,  0.20,  0.20,  0.15,  0.00, -0.30,
+    -0.30,  0.05,  0.15,  0.20,  0.20,  0.15,  0.05, -0.30,
+    -0.30,  0.00,  0.10,  0.15,  0.15,  0.10,  0.00, -0.30,
+    -0.40, -0.20,  0.00,  0.00,  0.00,  0.00, -0.20, -0.40,
+    -0.50, -0.40, -0.30, -0.30, -0.30, -0.30, -0.40, -0.50,
+]
+_BISHOP_PST = [
+    -0.20, -0.10, -0.10, -0.10, -0.10, -0.10, -0.10, -0.20,
+    -0.10,  0.05,  0.00,  0.00,  0.00,  0.00,  0.05, -0.10,
+    -0.10,  0.10,  0.10,  0.10,  0.10,  0.10,  0.10, -0.10,
+    -0.10,  0.00,  0.10,  0.10,  0.10,  0.10,  0.00, -0.10,
+    -0.10,  0.05,  0.05,  0.10,  0.10,  0.05,  0.05, -0.10,
+    -0.10,  0.00,  0.05,  0.10,  0.10,  0.05,  0.00, -0.10,
+    -0.10,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00, -0.10,
+    -0.20, -0.10, -0.10, -0.10, -0.10, -0.10, -0.10, -0.20,
+]
+_ROOK_PST = [
+     0.00,  0.00,  0.00,  0.05,  0.05,  0.00,  0.00,  0.00,
+    -0.05,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00, -0.05,
+    -0.05,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00, -0.05,
+    -0.05,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00, -0.05,
+    -0.05,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00, -0.05,
+    -0.05,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00, -0.05,
+     0.05,  0.10,  0.10,  0.10,  0.10,  0.10,  0.10,  0.05,
+     0.00,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00,
+]
+_QUEEN_PST = [
+    -0.20, -0.10, -0.10, -0.05, -0.05, -0.10, -0.10, -0.20,
+    -0.10,  0.00,  0.05,  0.00,  0.00,  0.00,  0.00, -0.10,
+    -0.10,  0.05,  0.05,  0.05,  0.05,  0.05,  0.00, -0.10,
+     0.00,  0.00,  0.05,  0.05,  0.05,  0.05,  0.00, -0.05,
+    -0.05,  0.00,  0.05,  0.05,  0.05,  0.05,  0.00, -0.05,
+    -0.10,  0.00,  0.05,  0.05,  0.05,  0.05,  0.00, -0.10,
+    -0.10,  0.00,  0.00,  0.00,  0.00,  0.00,  0.00, -0.10,
+    -0.20, -0.10, -0.10, -0.05, -0.05, -0.10, -0.10, -0.20,
+]
+_KING_PST = [
+     0.20,  0.30,  0.10,  0.00,  0.00,  0.10,  0.30,  0.20,
+     0.20,  0.20, -0.10, -0.30, -0.30, -0.10,  0.20,  0.20,
+    -0.10, -0.20, -0.30, -0.40, -0.40, -0.30, -0.20, -0.10,
+    -0.20, -0.30, -0.40, -0.50, -0.50, -0.40, -0.30, -0.20,
+    -0.30, -0.40, -0.50, -0.60, -0.60, -0.50, -0.40, -0.30,
+    -0.30, -0.40, -0.50, -0.60, -0.60, -0.50, -0.40, -0.30,
+    -0.30, -0.40, -0.50, -0.60, -0.60, -0.50, -0.40, -0.30,
+    -0.30, -0.40, -0.50, -0.60, -0.60, -0.50, -0.40, -0.30,
+]
 
-def find_stockfish_binary() -> Optional[str]:
-    """Auto-detects stockfish.exe in repository directories or system PATH."""
+STOCKFISH_WINDOWS_URL = "https://github.com/official-stockfish/Stockfish/releases/download/sf_19/stockfish-windows-x86-64-universal.zip"
+
+
+def find_stockfish_binary(auto_download: bool = False) -> Optional[str]:
+    """Auto-detects stockfish.exe in repository directories or system PATH, optionally downloading it."""
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(script_dir)
+    bin_dir = os.path.join(repo_root, "tools", "fastchess", "bin")
     candidates = [
-        os.path.join(repo_root, "tools", "fastchess", "bin", "stockfish.exe"),
-        os.path.join(repo_root, "tools", "fastchess", "bin", "stockfish", "stockfish.exe"),
+        os.path.join(bin_dir, "stockfish.exe"),
+        os.path.join(bin_dir, "stockfish", "stockfish.exe"),
         os.path.join(repo_root, "stockfish.exe"),
         "stockfish.exe",
         "stockfish",
     ]
     for c in candidates:
-        if os.path.isfile(c) and os.access(c, os.X_OK):
-            return os.path.abspath(c)
         if os.path.isfile(c):
             return os.path.abspath(c)
+        found_path = shutil.which(c)
+        if found_path:
+            return os.path.abspath(found_path)
+
+    if auto_download and os.name == "nt":
+        try:
+            os.makedirs(bin_dir, exist_ok=True)
+            print(f"[+] Downloading Stockfish 19 for training data generation...")
+            req = urllib.request.Request(STOCKFISH_WINDOWS_URL, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                data = io.BytesIO(resp.read())
+            with zipfile.ZipFile(data) as zf:
+                zf.extractall(bin_dir)
+            for root, _, files in os.walk(bin_dir):
+                for f in files:
+                    if "stockfish" in f.lower() and f.endswith(".exe"):
+                        src = os.path.join(root, f)
+                        dst = os.path.join(bin_dir, "stockfish.exe")
+                        if os.path.abspath(src) != os.path.abspath(dst):
+                            shutil.copy2(src, dst)
+                        return os.path.abspath(dst)
+        except Exception as e:
+            print(f"Notice: Could not auto-download Stockfish ({e}). Using built-in Tactical Evaluator.")
+
     return None
+
+
+class BuiltinTacticalEvaluator:
+    """
+    Fast built-in 2-ply Quiescent Tactical + Positional Evaluator (in pawns from White's perspective).
+    Provides reliable evaluations and best moves when external Stockfish binary is absent.
+    """
+    PIECE_VALS = {
+        chess.PAWN: 1.00,
+        chess.KNIGHT: 3.20,
+        chess.BISHOP: 3.30,
+        chess.ROOK: 5.00,
+        chess.QUEEN: 9.00,
+        chess.KING: 0.00,
+    }
+    PSTS = {
+        chess.PAWN: _PAWN_PST,
+        chess.KNIGHT: _KNIGHT_PST,
+        chess.BISHOP: _BISHOP_PST,
+        chess.ROOK: _ROOK_PST,
+        chess.QUEEN: _QUEEN_PST,
+        chess.KING: _KING_PST,
+    }
+
+    def static_eval_white(self, board: chess.Board) -> float:
+        if board.is_checkmate():
+            return -30.0 if board.turn == chess.WHITE else 30.0
+        if board.is_stalemate() or board.is_insufficient_material():
+            return 0.0
+
+        score = 0.0
+        w_bishops = 0
+        b_bishops = 0
+        for sq in chess.SQUARES:
+            p = board.piece_at(sq)
+            if p is None:
+                continue
+            pt = p.piece_type
+            base = self.PIECE_VALS[pt]
+            pst_idx = sq if p.color == chess.WHITE else (sq ^ 56)
+            val = base + self.PSTS[pt][pst_idx]
+            if p.color == chess.WHITE:
+                score += val
+                if pt == chess.BISHOP:
+                    w_bishops += 1
+            else:
+                score -= val
+                if pt == chess.BISHOP:
+                    b_bishops += 1
+
+        # Bishop pair bonus
+        if w_bishops >= 2:
+            score += 0.35
+        if b_bishops >= 2:
+            score -= 0.35
+
+        # Tempo bonus
+        score += 0.20 if board.turn == chess.WHITE else -0.20
+        return score
+
+    def _quiesce_side(self, board: chess.Board, alpha: float, beta: float, depth: int = 2) -> float:
+        stand_pat = self.static_eval_white(board)
+        if board.turn == chess.BLACK:
+            stand_pat = -stand_pat
+
+        if stand_pat >= beta:
+            return beta
+        if alpha < stand_pat:
+            alpha = stand_pat
+        if depth <= 0:
+            return stand_pat
+
+        for m in board.legal_moves:
+            if board.is_capture(m) or m.promotion:
+                board.push(m)
+                score = -self._quiesce_side(board, -beta, -alpha, depth - 1)
+                board.pop()
+                if score >= beta:
+                    return beta
+                if score > alpha:
+                    alpha = score
+        return alpha
+
+    def search_move_and_eval(self, fen: str) -> Tuple[Optional[chess.Move], float]:
+        board = chess.Board(fen)
+        legal = list(board.legal_moves)
+        if not legal:
+            return None, self.static_eval_white(board)
+
+        best_move = legal[0]
+        best_score_side = -999.0
+
+        for m in legal:
+            board.push(m)
+            sc = -self._quiesce_side(board, -999.0, 999.0, depth=1)
+            board.pop()
+            # Small tie-breaking noise
+            sc_noisy = sc + random.uniform(-0.04, 0.04)
+            if sc_noisy > best_score_side:
+                best_score_side = sc_noisy
+                best_move = m
+
+        eval_white = best_score_side if board.turn == chess.WHITE else -best_score_side
+        return best_move, max(-30.0, min(30.0, eval_white))
+
+    def evaluate_fen(self, fen: str) -> float:
+        board = chess.Board(fen)
+        sc_side = self._quiesce_side(board, -999.0, 999.0, depth=2)
+        return sc_side if board.turn == chess.WHITE else -sc_side
+
+    def close(self):
+        pass
 
 
 def strip_queens_from_fen(fen: str) -> str:
@@ -51,7 +254,6 @@ def strip_queens_from_fen(fen: str) -> str:
         board = chess.Board(fen)
         board.remove_piece_at(chess.D1)
         board.remove_piece_at(chess.D8)
-        # Clear any remaining queens on board
         for sq in chess.SQUARES:
             p = board.piece_at(sq)
             if p and p.piece_type == chess.QUEEN:
@@ -85,27 +287,34 @@ def load_seed_openings(no_queens: bool = False, max_pieces: Optional[int] = None
         cur_fen = fen
         if no_queens:
             cur_fen = strip_queens_from_fen(cur_fen)
-        if max_pieces:
-            try:
-                b = chess.Board(cur_fen)
-                if bin(b.occupied).count("1") > max_pieces:
-                    # Strip non-king pieces randomly until count <= max_pieces
-                    non_kings = [sq for sq in chess.SQUARES if b.piece_at(sq) and b.piece_at(sq).piece_type != chess.KING]
-                    random.shuffle(non_kings)
-                    while bin(b.occupied).count("1") > max_pieces and non_kings:
-                        b.remove_piece_at(non_kings.pop())
-                    cur_fen = b.fen()
-            except Exception:
-                pass
-        processed.append(cur_fen)
+        try:
+            b = chess.Board(cur_fen)
+            if max_pieces and bin(b.occupied).count("1") > max_pieces:
+                non_kings = [sq for sq in chess.SQUARES if b.piece_at(sq) and b.piece_at(sq).piece_type != chess.KING]
+                random.shuffle(non_kings)
+                while bin(b.occupied).count("1") > max_pieces and non_kings:
+                    b.remove_piece_at(non_kings.pop())
+                cur_fen = b.fen()
+            processed.append(cur_fen)
+        except Exception:
+            continue
+
+    if not processed:
+        processed = [chess.STARTING_FEN]
 
     return processed
 
 
 class StockfishEvaluator:
-    """Manages an interactive UCI process with Stockfish for fast evaluations."""
-    def __init__(self, stockfish_path: str, depth: int = 8):
+    """Manages an interactive UCI process with Stockfish for fast evaluations and move search."""
+    def __init__(self, stockfish_path: Optional[str], depth: int = 8):
         self.depth = depth
+        self.fallback = None
+        if not stockfish_path or not os.path.isfile(stockfish_path):
+            self.fallback = BuiltinTacticalEvaluator()
+            self.process = None
+            return
+
         self.process = subprocess.Popen(
             [stockfish_path],
             stdin=subprocess.PIPE,
@@ -122,23 +331,28 @@ class StockfishEvaluator:
         self._wait_for("readyok")
 
     def _send(self, cmd: str):
-        self.process.stdin.write(f"{cmd}\n")
-        self.process.stdin.flush()
+        if self.process and self.process.stdin:
+            self.process.stdin.write(f"{cmd}\n")
+            self.process.stdin.flush()
 
     def _wait_for(self, target: str):
+        if not self.process or not self.process.stdout:
+            return
         while True:
             line = self.process.stdout.readline()
-            if not line:
-                break
-            if target in line:
+            if not line or target in line:
                 break
 
-    def evaluate_fen(self, fen: str) -> Optional[float]:
-        """Evaluates FEN at configured depth and returns score in pawns from White's perspective."""
+    def search_move_and_eval(self, fen: str) -> Tuple[Optional[chess.Move], Optional[float]]:
+        """Runs UCI search at configured depth and returns (best_move, score_pawns_white)."""
+        if self.fallback is not None:
+            return self.fallback.search_move_and_eval(fen)
+
         self._send(f"position fen {fen}")
         self._send(f"go depth {self.depth}")
 
         score_pawns = None
+        best_move = None
         side_to_move_white = " w " in fen
 
         while True:
@@ -166,19 +380,31 @@ class StockfishEvaluator:
                     pass
 
             if line_str.startswith("bestmove"):
+                parts = line_str.split()
+                if len(parts) >= 2 and parts[1] != "(none)":
+                    try:
+                        best_move = chess.Move.from_uci(parts[1])
+                    except ValueError:
+                        best_move = None
                 break
 
-        return score_pawns
+        return best_move, score_pawns
+
+    def evaluate_fen(self, fen: str) -> Optional[float]:
+        """Evaluates FEN at configured depth and returns score in pawns from White's perspective."""
+        _, score = self.search_move_and_eval(fen)
+        return score
 
     def close(self):
-        try:
-            self._send("quit")
-            self.process.stdin.close()
-            self.process.stdout.close()
-            self.process.terminate()
-            self.process.wait(timeout=1.0)
-        except Exception:
-            pass
+        if self.process is not None:
+            try:
+                self._send("quit")
+                self.process.stdin.close()
+                self.process.stdout.close()
+                self.process.terminate()
+                self.process.wait(timeout=1.0)
+            except Exception:
+                pass
 
 
 def generate_single_game(
@@ -188,10 +414,11 @@ def generate_single_game(
     query: Optional[PositionQuery] = None,
     no_queens: bool = False,
     max_pieces: Optional[int] = None,
-    max_plies: int = 80
+    max_plies: int = 70
 ) -> Optional[chess.pgn.Game]:
     """
-    Generates a single evaluated game from an opening seed FEN with query and topology biasing.
+    Generates a single evaluated game from an opening seed FEN using engine moves
+    with controlled topology/blunder steering.
     """
     try:
         board = chess.Board(seed_fen)
@@ -200,59 +427,61 @@ def generate_single_game(
 
     game = chess.pgn.Game()
     game.headers["Event"] = f"Anak Generator ({mode})"
-    game.headers["White"] = "Stockfish 19 / Rollout"
-    game.headers["Black"] = "Stockfish 19 / Rollout"
+    game.headers["White"] = "Stockfish / Rollout"
+    game.headers["Black"] = "Stockfish / Rollout"
     game.setup(board)
     current_node = game
 
     ply = 0
-    prev_eval = 0.0
+    last_eval_white = 0.0
 
     while not board.is_game_over() and ply < max_plies:
         legal_moves = list(board.legal_moves)
         if not legal_moves:
             break
 
-        # Move selection with biasing
-        chosen_move = None
+        # 1. Ask evaluator for best move and current position evaluation
+        engine_move, pos_eval_white = sf.search_move_and_eval(board.fen())
+        chosen_move = engine_move if (engine_move in legal_moves) else None
 
+        # 2. Controlled exploration / mode steering on ~25% of moves
         if no_queens:
-            # Strongly prioritize queen captures or queen trades if any queen is left
-            queen_moves = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.QUEEN]
-            queen_captures = [m for m in legal_moves if board.is_capture(m) and board.piece_at(m.to_square) and board.piece_at(m.to_square).piece_type == chess.QUEEN]
+            queen_captures = [
+                m for m in legal_moves
+                if board.is_capture(m) and board.piece_at(m.to_square) and board.piece_at(m.to_square).piece_type == chess.QUEEN
+            ]
             if queen_captures:
                 chosen_move = random.choice(queen_captures)
-            elif queen_moves and random.random() < 0.6:
-                chosen_move = random.choice(queen_moves)
 
-        if chosen_move is None and mode == "open":
-            captures = [m for m in legal_moves if board.is_capture(m)]
-            pawn_moves = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.PAWN]
-            if captures and random.random() < 0.65:
-                chosen_move = random.choice(captures)
-            elif pawn_moves and random.random() < 0.50:
-                chosen_move = random.choice(pawn_moves)
-
-        elif chosen_move is None and mode == "closed":
-            quiet_pawns = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.PAWN and not board.is_capture(m)]
-            knights = [m for m in legal_moves if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.KNIGHT]
-            if quiet_pawns and random.random() < 0.55:
+        if mode == "open" and random.random() < 0.25:
+            pawn_captures = [
+                m for m in legal_moves
+                if board.is_capture(m) and board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.PAWN
+            ]
+            if pawn_captures:
+                chosen_move = random.choice(pawn_captures)
+        elif mode == "closed" and random.random() < 0.25:
+            quiet_pawns = [
+                m for m in legal_moves
+                if board.piece_at(m.from_square) and board.piece_at(m.from_square).piece_type == chess.PAWN and not board.is_capture(m)
+            ]
+            if quiet_pawns:
                 chosen_move = random.choice(quiet_pawns)
-            elif knights and random.random() < 0.40:
-                chosen_move = random.choice(knights)
-
-        elif chosen_move is None and mode == "blunders":
-            if random.random() < 0.25 and ply > 6:
-                for m in legal_moves:
-                    p = board.piece_at(m.from_square)
-                    if p and p.piece_type in (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN):
-                        board.push(m)
-                        attacked = bool(board.attackers(not board.turn, m.to_square))
-                        defended = bool(board.attackers(board.turn, m.to_square))
-                        board.pop()
-                        if attacked and not defended:
-                            chosen_move = m
-                            break
+        elif mode == "blunders" and ply > 6 and random.random() < 0.30:
+            for m in legal_moves:
+                p = board.piece_at(m.from_square)
+                if p and p.piece_type in (chess.KNIGHT, chess.BISHOP, chess.ROOK, chess.QUEEN):
+                    board.push(m)
+                    attacked = bool(board.attackers(board.turn, m.to_square))
+                    defended = bool(board.attackers(not board.turn, m.to_square))
+                    board.pop()
+                    if attacked and not defended:
+                        chosen_move = m
+                        pos_eval_white = None  # Re-evaluate after blunder move
+                        break
+        elif ply <= 6 and random.random() < 0.30:
+            chosen_move = random.choice(legal_moves)
+            pos_eval_white = None
 
         if chosen_move is None:
             chosen_move = random.choice(legal_moves)
@@ -260,22 +489,33 @@ def generate_single_game(
         board.push(chosen_move)
         ply += 1
 
-        # Evaluate position with Stockfish
-        fen = board.fen()
-        score = sf.evaluate_fen(fen)
-        eval_delta = abs((score or 0.0) - prev_eval)
-        prev_eval = score or 0.0
+        # Evaluate resulting board if move deviated from engine best move
+        if chosen_move != engine_move or pos_eval_white is None:
+            score = sf.evaluate_fen(board.fen())
+        else:
+            score = pos_eval_white
+
+        if score is not None:
+            last_eval_white = score
 
         current_node = current_node.add_variation(chosen_move)
         if score is not None:
             current_node.comment = f"[%eval {score:+.2f}]"
 
+        # Early adjudication if decisive advantage reached
+        if abs(last_eval_white) >= 12.0 and ply >= 20:
+            break
+
     if board.is_checkmate():
         res = "1-0" if board.turn == chess.BLACK else "0-1"
     elif board.is_stalemate() or board.is_insufficient_material() or board.can_claim_draw():
         res = "1/2-1/2"
+    elif last_eval_white >= 1.50:
+        res = "1-0"
+    elif last_eval_white <= -1.50:
+        res = "0-1"
     else:
-        res = "*"
+        res = "1/2-1/2"
 
     game.headers["Result"] = res
     return game
@@ -319,8 +559,8 @@ def parse_args():
                         help="Target number of evaluated positions to generate")
     parser.add_argument("--games", type=int, default=None,
                         help="Target number of full games to generate (overrides --positions)")
-    parser.add_argument("--depth", type=int, default=8,
-                        help="Stockfish evaluation depth (default: 8 for ultra-fast generation)")
+    parser.add_argument("--depth", type=int, default=6,
+                        help="Stockfish evaluation depth (default: 6 for fast generation)")
     parser.add_argument("--workers", type=int, default=None,
                         help="Number of parallel worker processes (default: cpu_count - 2)")
     parser.add_argument("--stockfish", type=str, default=None,
@@ -335,12 +575,8 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # 1. Locate Stockfish
-    sf_path = args.stockfish or find_stockfish_binary()
-    if not sf_path or not os.path.exists(sf_path):
-        print("ERROR: stockfish.exe not found!")
-        print("Please ensure Stockfish is downloaded in tools/fastchess/bin/ or provide --stockfish <path>")
-        sys.exit(1)
+    # 1. Locate Stockfish (or use built-in evaluator)
+    sf_path = args.stockfish or find_stockfish_binary(auto_download=True)
 
     # 2. Worker concurrency
     total_cpus = os.cpu_count() or 4
@@ -379,7 +615,7 @@ def main():
         print(f"Constraint:       NO QUEENS (Queenless boards)")
     if args.max_pieces:
         print(f"Constraint:       MAX PIECES <= {args.max_pieces} (Endgames)")
-    print(f"Stockfish:        {sf_path}")
+    print(f"Evaluator:        {sf_path or 'Built-in 2-Ply Quiescent Tactical Evaluator'}")
     print(f"Evaluation Depth: {args.depth}")
     print(f"Workers:          {workers} parallel processes (across {total_cpus} CPUs)")
     print(f"Target Games:     ~{actual_games} games (~{actual_games * 40:,} positions)")
@@ -408,8 +644,6 @@ def main():
     pos_per_sec = total_positions_est / max(0.001, elapsed)
 
     if args.format == "binpack":
-        # Convert generated PGNs to .binpack directly
-        import io
         writer = BinpackWriter(out_file, model_tag=args.mode)
         pos_count = 0
         for pgn_text in all_pgn_strings:
@@ -422,7 +656,6 @@ def main():
                 from dataset import parse_eval_from_comment
                 ev = parse_eval_from_comment(node.comment)
                 if ev is not None:
-                    from query import calculate_pawn_openness
                     op = calculate_pawn_openness(b)
                     writer.add_board(b, ev if b.turn == chess.WHITE else -ev, 0.5, op)
                     pos_count += 1

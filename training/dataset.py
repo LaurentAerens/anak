@@ -132,7 +132,13 @@ def calculate_openness(board: chess.Board) -> float:
         elif not has_white or not has_black:
             semi_open_files += 1
 
-    # 3. Center pawns (files c, d, e, f)
+    # 3. Pawn tension (pawns in mutual attack contact)
+    file_a = file_masks[0]
+    file_h = file_masks[7]
+    white_attacks = ((white_pawns << 7) & ~file_h) | ((white_pawns << 9) & ~file_a)
+    tension_count = bin(white_attacks & black_pawns).count("1")
+
+    # 4. Center pawns (files c, d, e, f)
     center_mask = file_masks[2] | file_masks[3] | file_masks[4] | file_masks[5]
     center_pawns = bin(all_pawns & center_mask).count("1")
 
@@ -141,6 +147,7 @@ def calculate_openness(board: chess.Board) -> float:
         + (open_files * 0.12)
         + (semi_open_files * 0.05)
         - (locked_count * 0.10)
+        + (tension_count * 0.04)
         + ((8 - center_pawns) * 0.03)
         + ((16 - total_pawns) * 0.02)
     )
@@ -281,7 +288,7 @@ class TcecDataset(IterableDataset):
                     elif result_str == "1/2-1/2":
                         game_result = 0.5
                     else:
-                        continue
+                        game_result = None
 
                     board = game.board()
                     ply = 0
@@ -303,7 +310,11 @@ class TcecDataset(IterableDataset):
 
                         # Eval relative to current side to move
                         eval_relative = eval_val if board.turn == chess.WHITE else -eval_val
-                        wdl_relative = game_result if board.turn == chess.WHITE else (1.0 - game_result)
+                        if game_result is not None:
+                            wdl_relative = game_result if board.turn == chess.WHITE else (1.0 - game_result)
+                        else:
+                            import math
+                            wdl_relative = 1.0 / (1.0 + math.exp(-max(-20.0, min(20.0, eval_relative)) / 2.5))
 
                         # Check topology filter
                         openness = calculate_openness(board)

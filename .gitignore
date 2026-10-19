@@ -3,6 +3,8 @@
 [Oo]bj/
 [Ll]og/
 [Ll]ogs/
+*.exe
+
 
 ## Visual Studio / Roslyn / MSBuild
 .vs/

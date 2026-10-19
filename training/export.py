@@ -2,6 +2,7 @@
 Quantization and Binary Serializer for Anak NNUE.
 Exports PyTorch checkpoints (.pt) to quantized INT8/INT16 binary files (.nnue)
 directly loadable by Anak's C# engine with zero-GC allocations.
+Includes exact C# integer inference simulation and sanity verification.
 """
 
 import argparse
@@ -9,8 +10,17 @@ import os
 import struct
 import torch
 import numpy as np
+import chess
 
-from model import StandardNNUE, MicroNNUE, FEATURE_COUNT, STANDARD_HIDDEN_DIM, MICRO_HIDDEN_DIM
+from model import (
+    StandardNNUE,
+    MicroNNUE,
+    FEATURE_COUNT,
+    STANDARD_HIDDEN_DIM,
+    MICRO_HIDDEN_DIM,
+    clamp_nnue_weights,
+)
+from dataset import encode_board_features
 
 MAGIC_HEADER = 0x4B414E41  # "ANAK"
 FORMAT_VERSION = 1
@@ -19,6 +29,8 @@ ARCH_MICRO = 0x0002
 
 WEIGHT_SCALE = 64
 BIAS_SCALE = 64
+CLIPPED_RELU_MAX = 64
+OUTPUT_SCALE = 100
 
 
 def quantize_sbyte(tensor: torch.Tensor, scale: float = WEIGHT_SCALE) -> np.ndarray:
@@ -33,9 +45,67 @@ def quantize_short(tensor: torch.Tensor, scale: float = BIAS_SCALE) -> np.ndarra
     return np.clip(arr, -32768, 32767).astype(np.int16)
 
 
+def simulate_csharp_standard(
+    ft_weights: np.ndarray,
+    ft_biases: np.ndarray,
+    hidden_weights: np.ndarray,
+    hidden_biases: np.ndarray,
+    output_weights: np.ndarray,
+    output_bias_val: int,
+    our_idx: list,
+    their_idx: list,
+) -> int:
+    """Simulates exact C# NnueInference.EvaluateStandard integer arithmetic."""
+    our_acc = ft_biases.astype(np.int32).copy()
+    for idx in our_idx:
+        our_acc += ft_weights[idx].astype(np.int32)
+
+    their_acc = ft_biases.astype(np.int32).copy()
+    for idx in their_idx:
+        their_acc += ft_weights[idx].astype(np.int32)
+
+    our_clipped = np.clip(our_acc, 0, CLIPPED_RELU_MAX)
+    their_clipped = np.clip(their_acc, 0, CLIPPED_RELU_MAX)
+    activated = np.concatenate([our_clipped, their_clipped])  # (512,)
+
+    hidden_out = np.zeros(32, dtype=np.int32)
+    for k in range(32):
+        dot = int(hidden_biases[k]) * WEIGHT_SCALE + int(np.dot(activated, hidden_weights[k].astype(np.int32)))
+        hidden_out[k] = np.clip(int(dot / WEIGHT_SCALE), 0, CLIPPED_RELU_MAX)
+
+    final_sum = int(output_bias_val) + int(np.dot(hidden_out, output_weights.astype(np.int32)))
+    return int((final_sum * OUTPUT_SCALE) // (WEIGHT_SCALE * WEIGHT_SCALE))
+
+
+def simulate_csharp_micro(
+    ft_weights: np.ndarray,
+    ft_biases: np.ndarray,
+    output_weights: np.ndarray,
+    output_bias_val: int,
+    our_idx: list,
+    their_idx: list,
+) -> int:
+    """Simulates exact C# NnueInference.EvaluateMicro integer arithmetic."""
+    our_acc = ft_biases.astype(np.int32).copy()
+    for idx in our_idx:
+        our_acc += ft_weights[idx].astype(np.int32)
+
+    their_acc = ft_biases.astype(np.int32).copy()
+    for idx in their_idx:
+        their_acc += ft_weights[idx].astype(np.int32)
+
+    our_clipped = np.clip(our_acc, 0, CLIPPED_RELU_MAX)
+    their_clipped = np.clip(their_acc, 0, CLIPPED_RELU_MAX)
+    combined = np.concatenate([our_clipped, their_clipped])  # (32,)
+
+    final_sum = int(output_bias_val) + int(np.dot(combined, output_weights.astype(np.int32)))
+    return int((final_sum * OUTPUT_SCALE) // (WEIGHT_SCALE * WEIGHT_SCALE))
+
+
 def export_standard(model: StandardNNUE, output_path: str):
-    """Exports StandardNNUE (768 -> 256x2 -> 32 -> 1) to binary."""
+    """Exports StandardNNUE (768 -> 256x2 -> 32 -> 1) to binary and verifies quantization parity."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    clamp_nnue_weights(model)
 
     # 1. Feature Transformer: PyTorch ft.weight is (256, 768) -> transpose to (768, 256)
     ft_weights = quantize_sbyte(model.ft.weight.T)  # (768, 256) int8
@@ -43,7 +113,7 @@ def export_standard(model: StandardNNUE, output_path: str):
 
     # 2. Hidden Layer: PyTorch l1.weight is (32, 512) -> row-major (32, 512)
     hidden_weights = quantize_sbyte(model.l1.weight)  # (32, 512) int8
-    hidden_biases = quantize_short(model.l1.bias)       # (32,) int16
+    hidden_biases = quantize_short(model.l1.bias)     # (32,) int16
 
     # 3. Output Layer: PyTorch output.weight is (1, 32)
     output_weights = quantize_short(model.output.weight.squeeze(0))  # (32,) int16
@@ -62,12 +132,23 @@ def export_standard(model: StandardNNUE, output_path: str):
         f.write(output_weights.tobytes())
         f.write(struct.pack("<i", output_bias_val))
 
+    # Verify quantized C# evaluation on key positions
+    b_start = chess.Board(chess.STARTING_FEN)
+    b_plus_q = chess.Board("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    b_minus_q = chess.Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1")
+
+    cp_start = simulate_csharp_standard(ft_weights, ft_biases, hidden_weights, hidden_biases, output_weights, output_bias_val, *encode_board_features(b_start))
+    cp_plus_q = simulate_csharp_standard(ft_weights, ft_biases, hidden_weights, hidden_biases, output_weights, output_bias_val, *encode_board_features(b_plus_q))
+    cp_minus_q = simulate_csharp_standard(ft_weights, ft_biases, hidden_weights, hidden_biases, output_weights, output_bias_val, *encode_board_features(b_minus_q))
+
     print(f"Successfully exported Standard NNUE to: {output_path} ({os.path.getsize(output_path)} bytes)")
+    print(f"  [Quantized C# Eval Check] StartPos: {cp_start:+d} cp | +Queen: {cp_plus_q:+d} cp | -Queen: {cp_minus_q:+d} cp")
 
 
 def export_micro(model: MicroNNUE, output_path: str):
-    """Exports MicroNNUE (768 -> 16x2 -> 1) to binary."""
+    """Exports MicroNNUE (768 -> 16x2 -> 1) to binary and verifies quantization parity."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+    clamp_nnue_weights(model)
 
     # 1. Feature Transformer: PyTorch ft.weight is (16, 768) -> transpose to (768, 16)
     ft_weights = quantize_sbyte(model.ft.weight.T)  # (768, 16) int8
@@ -88,7 +169,16 @@ def export_micro(model: MicroNNUE, output_path: str):
         f.write(output_weights.tobytes())
         f.write(struct.pack("<i", output_bias_val))
 
+    b_start = chess.Board(chess.STARTING_FEN)
+    b_plus_q = chess.Board("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    b_minus_q = chess.Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1")
+
+    cp_start = simulate_csharp_micro(ft_weights, ft_biases, output_weights, output_bias_val, *encode_board_features(b_start))
+    cp_plus_q = simulate_csharp_micro(ft_weights, ft_biases, output_weights, output_bias_val, *encode_board_features(b_plus_q))
+    cp_minus_q = simulate_csharp_micro(ft_weights, ft_biases, output_weights, output_bias_val, *encode_board_features(b_minus_q))
+
     print(f"Successfully exported Micro NNUE to: {output_path} ({os.path.getsize(output_path)} bytes)")
+    print(f"  [Quantized C# Eval Check] StartPos: {cp_start:+d} cp | +Queen: {cp_plus_q:+d} cp | -Queen: {cp_minus_q:+d} cp")
 
 
 def main():

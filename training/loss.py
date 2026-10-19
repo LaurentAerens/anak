@@ -19,9 +19,9 @@ class ModernNNUELoss(nn.Module):
       target_prob = lambda_wdl * target_wdl + (1 - lambda_wdl) * P_eval
     Computes Binary Cross Entropy with Logits against network prediction:
       loss = BCEWithLogits(pred / eval_scale, target_prob)
-    This yields smooth, un-saturating gradients and naturally mitigates draw bias.
+    Also includes a small direct pawn-scale SmoothL1 term to anchor exact centipawn magnitude.
     """
-    def __init__(self, lambda_wdl: float = 0.40, eval_scale: float = 2.50):
+    def __init__(self, lambda_wdl: float = 0.25, eval_scale: float = 2.50):
         super().__init__()
         self.lambda_wdl = lambda_wdl
         self.eval_scale = eval_scale
@@ -35,14 +35,19 @@ class ModernNNUELoss(nn.Module):
 
         # Logit scaling
         logits = pred / self.eval_scale
-        return F.binary_cross_entropy_with_logits(logits, target_prob)
+        bce = F.binary_cross_entropy_with_logits(logits, target_prob)
+
+        # Direct pawn-scale SmoothL1 regularization to preserve exact material/eval magnitudes
+        clamped_target = torch.clamp(target_eval, -15.0, 15.0)
+        huber = F.smooth_l1_loss(pred / 4.0, clamped_target / 4.0)
+        return bce + (0.25 * huber)
 
 
 class TcecBlendedLoss(nn.Module):
     """
     Blended loss function balancing true game outcomes (WDL) with deep search evaluations.
     """
-    def __init__(self, lambda_wdl: float = 0.40):
+    def __init__(self, lambda_wdl: float = 0.30):
         super().__init__()
         self.lambda_wdl = lambda_wdl
         self.wdl_loss = nn.BCEWithLogitsLoss()
@@ -59,7 +64,8 @@ class TcecBlendedLoss(nn.Module):
 class BlunderLoss(nn.Module):
     """
     Asymmetric loss function specifically tailored for the Micro-NNUE watchdog.
-    Penalizes false negatives (failing to recognize a tactical blunder or trap)
+    Penalizes false negatives on tactical swings (both missing a severe blunder when
+    target <= -2.0 pawns and failing to recognize a winning refutation when target >= +2.0 pawns)
     with a 5x higher gradient weight.
     """
     def __init__(self, blunder_weight: float = 5.0):
@@ -73,8 +79,11 @@ class BlunderLoss(nn.Module):
 
         element_loss = self.base_loss(pred_scaled, target_scaled)
 
-        # Heavy penalty mask: position is a severe blunder (target <= -0.50), but model predicted safe (pred >= 0)
-        blunder_mask = (target_scaled <= -0.50) & (pred_scaled >= 0.0)
-        weights = torch.where(blunder_mask, self.blunder_weight, 1.0)
+        # Heavy penalty mask for severe tactical swings (|target| >= 2.0 pawns, i.e., |tanh| >= 0.46)
+        # where the prediction misses the severity or sign of the blunder
+        missed_losing_blunder = (target_scaled <= -0.46) & (pred_scaled > target_scaled + 0.15)
+        missed_winning_refutation = (target_scaled >= 0.46) & (pred_scaled < target_scaled - 0.15)
+        blunder_mask = missed_losing_blunder | missed_winning_refutation
 
+        weights = torch.where(blunder_mask, self.blunder_weight, 1.0)
         return (element_loss * weights).mean()

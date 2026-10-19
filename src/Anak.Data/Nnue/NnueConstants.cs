@@ -41,9 +41,9 @@ public static class NnueConstants
     public const int MicroHiddenDim = 16;
 
     /// <summary>
-    /// Upper clamp limit for ClippedReLU activations.
+    /// Upper clamp limit for ClippedReLU activations (1.0 * WeightScale = 64).
     /// </summary>
-    public const short ClippedReluMax = 127;
+    public const short ClippedReluMax = 64;
 
     /// <summary>
     /// Weight scaling divisor used during INT8 quantization.
@@ -51,7 +51,7 @@ public static class NnueConstants
     public const int WeightScale = 64;
 
     /// <summary>
-    /// Output score scaling divisor mapping raw network output to centipawns.
+    /// Output score scaling factor mapping network pawn output to centipawns (1.0 pawn = 100 cp).
     /// </summary>
-    public const int OutputScale = 400;
+    public const int OutputScale = 100;
 }

@@ -149,4 +149,24 @@ public class MCTSTests
         Assert.True(updated);
         Assert.Equal(20, registry.MoveRandomness.Value);
     }
+
+    [Fact]
+    public void MCTS_NeverSacrificesQueenForDefendedPawn()
+    {
+        // Position where White Queen on h5 could capture defended pawns on e5 (defended by c6 Knight) or f7 (defended by King, no Bishop on c4!)
+        // FEN: r1bqkbnr/pppp1ppp/2n5/4p2Q/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 2 3
+        var board = Fen.Parse("r1bqkbnr/pppp1ppp/2n5/4p2Q/4P3/8/PPPP1PPP/RNB1KBNR w KQkq - 2 3");
+        var evaluator = UciEngineAdapter.CreateEvaluator();
+        var engine = new MCTSEngine(evaluator, defaultHashMb: 4, arenaCapacity: 100_000);
+        engine.Parameters.MoveRandomness = 0;
+
+        var limits = new SearchLimits { Nodes = 400 };
+        Move bestMove = engine.Search(in board, in limits);
+
+        // Must NOT play Qxf7+ (undefended Queen sack) or Qxe5+ (defended by Knight on c6) or Qxh7 (defended by Rook on h8)
+        string uci = bestMove.ToUci();
+        Assert.NotEqual("h5f7", uci);
+        Assert.NotEqual("h5e5", uci);
+        Assert.NotEqual("h5h7", uci);
+    }
 }

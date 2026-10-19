@@ -171,16 +171,23 @@ def main():
     timestamp = time.strftime("%Y%m%d_%H%M%S")
     pgn_output = RESULTS_DIR / f"anak_vs_sf{args.elo}_{timestamp}.pgn"
 
+    # Use paths relative to REPO_ROOT to avoid spaces in paths breaking fastchess CLI parsing
+    fastchess_cmd = str(os.path.relpath(FASTCHESS_EXE, REPO_ROOT))
+    anak_cmd = str(os.path.relpath(ANAK_EXE, REPO_ROOT))
+    stockfish_cmd = str(os.path.relpath(STOCKFISH_EXE, REPO_ROOT))
+    openings_path = str(os.path.relpath(OPENINGS_FILE, REPO_ROOT))
+    pgn_path = str(os.path.relpath(pgn_output, REPO_ROOT))
+
     # 2. Build fast-chess command
     cmd = [
-        str(FASTCHESS_EXE),
+        fastchess_cmd,
         "-engine",
-        f"cmd={ANAK_EXE}",
+        f"cmd={anak_cmd}",
         "name=Anak",
         f"option.Threads={args.threads}",
         f"option.Hash={args.hash}",
         "-engine",
-        f"cmd={STOCKFISH_EXE}",
+        f"cmd={stockfish_cmd}",
         f"name=Stockfish-{args.elo}",
         f"option.Threads={args.threads}",
         f"option.Hash={args.hash}",
@@ -189,7 +196,7 @@ def main():
         "-each",
         f"tc={args.tc}",
         "-openings",
-        f"file={OPENINGS_FILE}",
+        f"file={openings_path}",
         "format=epd",
         "order=random",
         "-rounds",
@@ -207,7 +214,7 @@ def main():
         "-ratinginterval",
         "1",
         "-pgnout",
-        f"file={pgn_output}",
+        f"file={pgn_path}",
     ]
 
     print("\n[+] Launching fast-chess match ...")
@@ -216,6 +223,7 @@ def main():
     # 3. Execute fast-chess and stream output
     proc = subprocess.Popen(
         cmd,
+        cwd=str(REPO_ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,

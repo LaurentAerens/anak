@@ -10,6 +10,10 @@ namespace Anak.Protocol;
 /// </summary>
 public static class Program
 {
+    public const string Version = "0.0.1";
+    public const string EngineName = $"Anak {Version}";
+    public const string Author = "Anak Contributors";
+
     public static async Task Main(string[] args)
     {
         if (args.Length > 0)
@@ -18,7 +22,7 @@ public static class Program
 
             if (command is "-v" or "--version" or "version")
             {
-                Console.WriteLine("Anak 1.0.0 by Anak Contributors");
+                Console.WriteLine($"{EngineName} by {Author}");
                 return;
             }
 

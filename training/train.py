@@ -182,11 +182,17 @@ def main():
         model = StandardNNUE().to(device)
         criterion = ModernNNUELoss(lambda_wdl=args.lambda_wdl, eval_scale=2.50)
 
-    ema = ModelEMA(model, decay=0.999)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-5)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
+    ema = ModelEMA(model, decay=0.995)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.lr * 0.05)
 
     best_loss = float("inf")
+    effective_batch_size = args.batch_size
+    if use_fast_loader:
+        from binpack import BinpackReader
+        r = BinpackReader(binpack_file)
+        effective_batch_size = min(args.batch_size, max(256, len(r) // 32))
+        r.close()
 
     # 3. Training Loop
     for epoch in range(1, args.epochs + 1):
@@ -200,7 +206,7 @@ def main():
             # Ultra-fast zero-copy batch streaming
             loader = FastMemoryMappedBatchLoader(
                 binpack_file,
-                batch_size=args.batch_size,
+                batch_size=effective_batch_size,
                 shuffle=True,
                 device=device
             )
@@ -220,6 +226,7 @@ def main():
                     loss = criterion(preds, target_wdl, target_eval)
 
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
 
                 clamp_nnue_weights(model, max_val=1.98)
@@ -259,7 +266,11 @@ def main():
                     loss = criterion(preds, target_wdl, target_eval)
 
                 loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
+
+                clamp_nnue_weights(model, max_val=1.98)
+                ema.update(model)
 
                 total_loss += loss.item()
                 batch_count += 1

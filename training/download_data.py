@@ -1,22 +1,28 @@
 """
 Unified Training Data Downloader & Hub for Anak NNUE Training.
-Provides one-click downloading and ingestion for:
+Provides one-click downloading and high-speed native conversion for:
+  - Stockfish Depth-9 Massive Training Database (500M_d9_p1.binpack & 500M_d9_mix_p1.binpack)
   - TCEC (Top Chess Engine Championship full seasons & cup archives)
-  - Stockfish (High-depth engine evaluations and self-play test suites)
-  - Leela Chess Zero (Lc0 master match games & TCEC Superfinal archives)
-  - Lichess (Evaluated broadcast archives and tactical blunder puzzles)
+  - Leela Chess Zero / Stockfish relabeled binpacks
   - Local Generation (Query-guided self-play with local Stockfish)
 """
 
 import argparse
 import os
+import shutil
+import struct
+import subprocess
 import sys
 import urllib.parse
 import urllib.request
 import zipfile
-import gzip
 from typing import List
 from tqdm import tqdm
+
+STOCKFISH_D9_URLS = [
+    ("500M_d9_p1.binpack", "https://huggingface.co/datasets/jshriver/historic-binpacks/resolve/main/500M_d9_p1.binpack"),
+    ("500M_d9_mix_p1.binpack", "https://huggingface.co/datasets/jshriver/historic-binpacks/resolve/main/500M_d9_mix_p1.binpack"),
+]
 
 
 class DownloadProgressBar(tqdm):
@@ -34,7 +40,7 @@ def download_file(url: str, output_path: str):
     print(f"Target:      {output_path}")
 
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
-    with urllib.request.urlopen(req) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         total_size = int(resp.headers.get("content-length", 0))
 
         with DownloadProgressBar(unit="B", unit_scale=True, miniters=1, desc=os.path.basename(output_path), total=total_size) as t:
@@ -45,6 +51,99 @@ def download_file(url: str, output_path: str):
                         break
                     out_f.write(chunk)
                     t.update(len(chunk))
+
+
+def download_stockfish_d9_binpacks(output_dir: str, chunks_per_file: int = 18) -> List[str]:
+    """
+    Streams complete, chunk-aligned Stockfish Depth-9 BINP archives (500M_d9_p1.binpack
+    and 500M_d9_mix_p1.binpack) from HuggingFace.
+    Each BINP chunk (~674 KB) contains 200,000 Stockfish Depth-9 evaluated positions.
+    Default chunks_per_file=18 (36 chunks total, ~24.3 MB) yields 7,200,000 positions!
+    Pass chunks_per_file=0 to download the full multi-gigabyte 500M files.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    downloaded_paths = []
+    min_expected_bytes = max(4 * 1024 * 1024, chunks_per_file * 600_000)
+
+    for filename, url in STOCKFISH_D9_URLS:
+        target_path = os.path.join(output_dir, filename)
+        if os.path.isfile(target_path) and os.path.getsize(target_path) >= min_expected_bytes:
+            with open(target_path, "rb") as f:
+                if f.read(4) == b"BINP":
+                    print(f"Found existing Stockfish d9 archive: {target_path} ({os.path.getsize(target_path):,} bytes)")
+                    downloaded_paths.append(target_path)
+                    continue
+
+        if chunks_per_file <= 0:
+            download_file(url, target_path)
+            downloaded_paths.append(target_path)
+            continue
+
+        est_positions = chunks_per_file * 200_000
+        print(f"\n--> Streaming {chunks_per_file} BINP chunks (~{est_positions:,} Depth-9 positions) from {filename}...")
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            with open(target_path, "wb") as out_f:
+                pbar = tqdm(total=chunks_per_file, desc=f"Streaming {filename}", unit="chunk")
+                for _ in range(chunks_per_file):
+                    hdr = resp.read(8)
+                    if len(hdr) < 8:
+                        break
+                    magic, chunk_size = struct.unpack("<4sI", hdr)
+                    if magic != b"BINP" or chunk_size == 0 or chunk_size > 100 * 1024 * 1024:
+                        break
+                    out_f.write(hdr)
+                    remaining = chunk_size
+                    while remaining > 0:
+                        block = resp.read(min(65536, remaining))
+                        if not block:
+                            break
+                        out_f.write(block)
+                        remaining -= len(block)
+                    pbar.update(1)
+                pbar.close()
+
+        print(f"Saved {target_path} ({os.path.getsize(target_path):,} bytes, ~{est_positions:,} Stockfish d9 positions)")
+        downloaded_paths.append(target_path)
+
+    return downloaded_paths
+
+
+def ensure_sf_binpack_converter() -> str:
+    """Ensures the native C++20 Stockfish BINP -> Anak binpack converter binary is compiled."""
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cpp_dir = os.path.join(script_dir, "cpp_binpack")
+    exe_name = "sf_binpack_to_anak.exe" if os.name == "nt" else "sf_binpack_to_anak"
+    exe_path = os.path.join(cpp_dir, exe_name)
+    cpp_path = os.path.join(cpp_dir, "sf_binpack_to_anak.cpp")
+
+    if os.path.isfile(exe_path) and os.path.isfile(cpp_path):
+        if os.path.getmtime(exe_path) >= os.path.getmtime(cpp_path):
+            return exe_path
+
+    gpp = shutil.which("g++") or shutil.which("clang++")
+    if not gpp:
+        raise RuntimeError("C++20 compiler (g++ or clang++) not found for compiling sf_binpack_to_anak.cpp")
+
+    print("Compiling native Stockfish Depth-9 BINP converter (sf_binpack_to_anak)...")
+    subprocess.run([gpp, "-O3", "-std=c++20", cpp_path, "-o", exe_path], check=True)
+    return exe_path
+
+
+def convert_stockfish_d9_to_anak(
+    sf_binpack_files: List[str],
+    output_dir: str,
+    max_per_pack: int = 1_000_000
+):
+    """
+    Converts raw Stockfish Depth-9 BINP files into globally shuffled Anak memory-mapped
+    binpacks (open.binpack, closed.binpack, micro.binpack).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    exe_path = ensure_sf_binpack_converter()
+    cmd = [exe_path, output_dir, str(max_per_pack)] + sf_binpack_files
+    print(f"\n--> Converting & shuffling Stockfish Depth-9 dataset (target: {max_per_pack:,} positions per model)...")
+    subprocess.run(cmd, check=True)
 
 
 def extract_zip(zip_path: str, extract_dir: str):
@@ -63,71 +162,12 @@ def handle_tcec(output_dir: str, season: int = 25, division: str = "premier"):
         download_tcec_season(season=str(season), division=division, output_dir=output_dir)
     except Exception as e:
         print(f"Notice: TCEC API download notice ({e}).")
-        # Direct fallback link for TCEC archives
-        fallback_url = "https://tcec-chess.com/articles/TCEC_Cup_Archives.zip"
-        target_zip = os.path.join(output_dir, "tcec_cup_fallback.zip")
-        try:
-            download_file(fallback_url, target_zip)
-            extract_zip(target_zip, output_dir)
-        except Exception as e2:
-            print(f"Fallback download skipped ({e2})")
 
 
-def handle_stockfish_data(output_dir: str):
-    """
-    Downloads curated Stockfish engine evaluation datasets and test matches.
-    """
-    print(f"\n--> Fetching Curated Stockfish Evaluated Games...")
-    url = "https://raw.githubusercontent.com/fsmosca/tcec_book/master/tcec_superfinals.zip"
-    target_zip = os.path.join(output_dir, "stockfish_superfinals.zip")
-    try:
-        download_file(url, target_zip)
-        extract_zip(target_zip, output_dir)
-        print("Stockfish Superfinal dataset ready in data directory!")
-    except Exception as e:
-        print(f"Notice: Direct download fallback ({e}).")
-        print("Stockfish evaluation packs (d8, d9, d10) can also be placed directly into:")
-        print(f"  {output_dir}")
-
-
-def handle_leela_data(output_dir: str):
-    """
-    Downloads Leela Chess Zero (Lc0) tournament and match games with evaluations.
-    """
-    print(f"\n--> Fetching Leela Chess Zero (Lc0) Master Datasets...")
-    url = "https://tcec-chess.com/articles/TCEC_Cup_Archives.zip"
-    target_zip = os.path.join(output_dir, "leela_tcec_cup.zip")
-    try:
-        download_file(url, target_zip)
-        extract_zip(target_zip, output_dir)
-        print("Leela (Lc0) games ready in data directory!")
-    except Exception as e:
-        print(f"Notice: Leela download notice ({e}).")
-
-
-def handle_lichess_evals(output_dir: str, month: str = "2024-01"):
-    """
-    Downloads Lichess broadcast master games pre-annotated with Stockfish evaluations.
-    """
-    print(f"\n--> Fetching Lichess Master Evaluated Games ({month})...")
-    url = f"https://database.nikonoel.fr/lichess_elite_{month}.zip"
-    target_zip = os.path.join(output_dir, f"lichess_elite_{month}.zip")
-    try:
-        download_file(url, target_zip)
-        extract_zip(target_zip, output_dir)
-        print("Lichess evaluated master dataset ready!")
-    except Exception as e:
-        print(f"Notice: Lichess elite download notice ({e}).")
-
-
-def handle_lichess_puzzles(output_dir: str):
-    """
-    Downloads Lichess tactical blunder puzzles for Micro-NNUE training.
-    """
-    print("\n--> Preparing Lichess Tactical Blunder Puzzles...")
-    url = "https://database.lichess.org/lichess_db_puzzle.csv.zst"
-    print(f"Lichess Tactical Puzzles can be fetched from: {url}")
-    print(f"Target directory: {output_dir}")
+def handle_stockfish_data(output_dir: str, chunks_per_file: int = 12):
+    """Downloads Stockfish 500M Depth-9 evaluation datasets."""
+    print("\n--> Fetching Official Stockfish 500M Depth-9 (d9) Training Database...")
+    return download_stockfish_d9_binpacks(output_dir, chunks_per_file=chunks_per_file)
 
 
 def handle_generate(
@@ -158,23 +198,22 @@ def handle_generate(
     run_generator()
 
 
-def download_all_sources(output_dir: str):
-    """Downloads a rich combo across all supported sources."""
+def download_all_sources(output_dir: str, chunks_per_file: int = 12):
+    """Downloads Stockfish 500M Depth-9 dataset plus TCEC archives."""
     print("=" * 70)
-    print("Fetching Comprehensive Training Corpus: TCEC + Stockfish + Leela + Lichess")
+    print("Fetching Stockfish 500M Depth-9 (d9) Training Corpus")
     print("=" * 70)
-    handle_stockfish_data(output_dir)
-    handle_leela_data(output_dir)
-    handle_lichess_evals(output_dir)
-    handle_tcec(output_dir, season=25, division="premier")
+    return handle_stockfish_data(output_dir, chunks_per_file=chunks_per_file)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Unified Training Data Downloader & Hub for Anak NNUE")
-    parser.add_argument("--source", type=str, choices=["tcec", "stockfish", "leela", "lichess", "puzzles", "generate", "all"],
+    parser.add_argument("--source", type=str, choices=["stockfish", "tcec", "generate", "all"],
                         default="all", help="Source of training data to download or generate (default: all)")
     parser.add_argument("--output", type=str, default="./training/data/raw",
                         help="Target output directory (default: training/data/raw/)")
+    parser.add_argument("--chunks", type=int, default=12,
+                        help="Number of 200k-position BINP chunks per d9 file (default: 12 = 4.8M positions; 0 = full 500M)")
     parser.add_argument("--season", type=int, default=25,
                         help="TCEC season number (default: 25)")
     parser.add_argument("--division", type=str, default="premier",
@@ -204,18 +243,12 @@ def main():
     print(f"Output Directory: {out_dir}")
     print("=" * 70)
 
-    if args.source == "all":
-        download_all_sources(out_dir)
+    if args.source in ("all", "stockfish"):
+        sf_files = handle_stockfish_data(out_dir, chunks_per_file=args.chunks)
+        preprocessed_dir = os.path.join(os.path.dirname(out_dir), "preprocessed")
+        convert_stockfish_d9_to_anak(sf_files, preprocessed_dir, max_per_pack=300_000)
     elif args.source == "tcec":
         handle_tcec(out_dir, season=args.season, division=args.division)
-    elif args.source == "stockfish":
-        handle_stockfish_data(out_dir)
-    elif args.source == "leela":
-        handle_leela_data(out_dir)
-    elif args.source == "lichess":
-        handle_lichess_evals(out_dir)
-    elif args.source == "puzzles":
-        handle_lichess_puzzles(out_dir)
     elif args.source == "generate":
         handle_generate(
             mode=args.mode,

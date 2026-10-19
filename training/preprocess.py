@@ -76,7 +76,7 @@ def process_pgn_stream(
             elif result_str == "1/2-1/2":
                 game_result = 0.5
             else:
-                continue
+                game_result = None
 
             board = game.board()
             ply = 0
@@ -96,7 +96,11 @@ def process_pgn_stream(
                     continue
 
                 eval_relative = eval_val if board.turn == chess.WHITE else -eval_val
-                wdl_relative = game_result if board.turn == chess.WHITE else (1.0 - game_result)
+                if game_result is not None:
+                    wdl_relative = game_result if board.turn == chess.WHITE else (1.0 - game_result)
+                else:
+                    import math
+                    wdl_relative = 1.0 / (1.0 + math.exp(-max(-20.0, min(20.0, eval_relative)) / 2.5))
                 eval_delta = abs(eval_val - prev_eval)
                 prev_eval = eval_val
 
@@ -148,15 +152,34 @@ def process_pgn_stream(
                     # Route to Micro / Minimal Blunder NNUE
                     if "micro" in writers:
                         # Synthetic blunder injection for quiet positions
-                        if abs(eval_val) < 1.0 and random.random() < 0.30:
+                        if abs(eval_val) < 1.5 and random.random() < 0.35:
                             b_move, penalty = find_hanging_piece_blunder(board)
                             if b_move:
                                 board.push(b_move)
                                 b_openness = metrics["openness"]
+                                # 1. Opponent's turn right after blunder (winning for side to move: -penalty > 0)
                                 writers["micro"].add_board(board, -penalty, 1.0, b_openness, is_blunder=True)
-                                board.pop()
                                 if stats:
                                     stats["micro_count"] += 1
+
+                                # 2. Find and execute the opponent's capture to record the losing side's perspective (penalty < 0)
+                                cap_moves = [m for m in board.legal_moves if m.to_square == b_move.to_square]
+                                if cap_moves:
+                                    board.push(cap_moves[0])
+                                    writers["micro"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
+                                    if stats:
+                                        stats["micro_count"] += 1
+                                    if "open" in writers and b_openness >= 0.50:
+                                        writers["open"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
+                                        if stats:
+                                            stats["open_count"] += 1
+                                    elif "closed" in writers and b_openness < 0.50:
+                                        writers["closed"].add_board(board, penalty, 0.0, b_openness, is_blunder=True)
+                                        if stats:
+                                            stats["closed_count"] += 1
+                                    board.pop()
+
+                                board.pop()
 
                         # Blunder / Endgame filter
                         if is_blunder or is_capture or pieces <= 16 or is_secondary_10pct:

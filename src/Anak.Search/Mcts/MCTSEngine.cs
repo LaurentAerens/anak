@@ -229,18 +229,17 @@ public sealed class MCTSEngine
 
                     // Evaluate leaf position using IEvaluator
                     Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
+                    int effectiveCp = eval.Raw;
+
+                    // Asymmetric Tactical Watchdog & 1-Ply Quiescent Capture Resolution:
+                    // Checks if side-to-move at leaf can immediately win hanging material or punish a bad exchange.
+                    if (depth >= 1 && effectiveCp < 600)
+                    {
+                        effectiveCp = ResolveTacticalCaptures(in currentBoard, leafMoves.AsReadOnlySpan(), effectiveCp, multiTier);
+                    }
 
                     // Map centipawn value to [-1.0, 1.0] using hyperbolic tangent
-                    leafScore = MathF.Tanh(eval.Raw / 400.0f);
-
-                    // Asymmetric Tactical Watchdog (Micro-NNUE): check for opponent traps on promising deep nodes
-                    if (depth >= 4 && leafScore >= 0.45f && multiTier != null)
-                    {
-                        if (VerifyTacticalSafety(in currentBoard, multiTier, out float penalty))
-                        {
-                            leafScore = penalty;
-                        }
-                    }
+                    leafScore = MathF.Tanh(effectiveCp / 400.0f);
 
                     // Transposition Table store with DAG reuse
                     _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
@@ -612,38 +611,77 @@ public sealed class MCTSEngine
     }
 
     /// <summary>
-    /// Asymmetric Tactical Watchdog: performs a fast 1-ply tactical burst on aggressive opponent candidate replies
-    /// using the Micro-NNUE model to verify there are no hidden tactical refutations (blunders, forks, hanging pieces).
+    /// Asymmetric Tactical Watchdog & 1-Ply Quiescent Capture Resolution:
+    /// Checks if the side to move at the leaf has an immediate winning capture or promotion
+    /// (e.g., capturing a hanging Queen/Rook or recapturing after an opponent's bad sacrifice).
+    /// Returns the improved evaluation in centipawns from the leaf side-to-move's perspective.
     /// </summary>
-    private static bool VerifyTacticalSafety(in Board board, IMultiTierEvaluator multiTier, out float penalty)
+    private static int ResolveTacticalCaptures(
+        in Board board,
+        ReadOnlySpan<Move> legalMoves,
+        int baseCp,
+        IMultiTierEvaluator? multiTier)
     {
-        penalty = 0.0f;
-        MoveList opponentMoves = default;
-        Board copy = board;
-        copy.GenerateLegalMoves(ref opponentMoves);
+        int bestGainCp = 0;
+        Move bestCapture = Move.Null;
 
-        if (opponentMoves.Count == 0) return false;
-
-        for (int i = 0; i < opponentMoves.Count && i < 16; i++)
+        for (int i = 0; i < legalMoves.Length; i++)
         {
-            Move m = opponentMoves[i];
-            if (m.IsCapture || m.IsPromotion)
-            {
-                Board oppBoard = copy;
-                oppBoard.MakeMove(m, out _);
-                Value oppMicroVal = multiTier.EvaluateMicro(in oppBoard);
+            Move m = legalMoves[i];
+            if (!m.IsCapture && !m.IsPromotion) continue;
 
-                // oppMicroVal is from opponent's perspective.
-                // If opponent evaluation is heavily winning (>= 200 cp), our move walked into a blunder.
-                if (oppMicroVal.Raw >= 200)
-                {
-                    penalty = -MathF.Tanh(oppMicroVal.Raw / 400.0f);
-                    return true;
-                }
+            int victimCp = 0;
+            if (m.IsCapture)
+            {
+                PieceType victimType = m.IsEnPassant ? PieceType.Pawn : board.GetPieceAt(m.To).Type();
+                victimCp = GetPieceCentipawns(victimType);
+            }
+
+            if (m.IsPromotion)
+            {
+                victimCp += GetPieceCentipawns(m.PromotionPieceType) - 100;
+            }
+
+            PieceType attackerType = board.GetPieceAt(m.From).Type();
+            int attackerCp = m.IsPromotion
+                ? GetPieceCentipawns(m.PromotionPieceType)
+                : GetPieceCentipawns(attackerType);
+
+            Board nextBoard = board;
+            nextBoard.MakeMove(m, out _);
+
+            // Check if the captured square is defended by the opponent after our capture
+            bool opponentCanRecapture = nextBoard.IsSquareAttacked(m.To, nextBoard.SideToMove);
+            int netGain = opponentCanRecapture ? (victimCp - attackerCp) : victimCp;
+
+            if (netGain > bestGainCp)
+            {
+                bestGainCp = netGain;
+                bestCapture = m;
             }
         }
 
-        return false;
+        if (bestGainCp < 100)
+        {
+            return baseCp;
+        }
+
+        int tacticalCp = baseCp + (int)(bestGainCp * 0.90f);
+
+        // If a major tactical gain (>= 200 cp) was found and Micro-NNUE watchdog is enabled,
+        // cross-check with the Micro-NNUE evaluation (negated because nextBoard.SideToMove is opponent).
+        if (bestGainCp >= 200 && multiTier != null && !bestCapture.IsNull)
+        {
+            Board nextBoard = board;
+            nextBoard.MakeMove(bestCapture, out _);
+            int microAfterCp = -multiTier.EvaluateMicro(in nextBoard).Raw;
+            if (microAfterCp > tacticalCp)
+            {
+                tacticalCp = (tacticalCp + microAfterCp) / 2;
+            }
+        }
+
+        return Math.Max(baseCp, tacticalCp);
     }
 
     /// <summary>
@@ -698,6 +736,10 @@ public sealed class MCTSEngine
     private static float ComputeMoveHeuristicWeight(in Board board, Move move)
     {
         float weight = 10.0f; // Base weight for quiet moves
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+        PieceType attackerType = board.GetPieceAt(move.From).Type();
+        int attackerVal = GetPieceValue(attackerType);
 
         if (move.IsPromotion)
         {
@@ -706,23 +748,109 @@ public sealed class MCTSEngine
 
         if (move.IsCapture)
         {
-            weight += 20.0f;
             PieceType victimType = move.IsEnPassant ? PieceType.Pawn : board.GetPieceAt(move.To).Type();
-            PieceType attackerType = board.GetPieceAt(move.From).Type();
-
             int victimVal = GetPieceValue(victimType);
-            int attackerVal = GetPieceValue(attackerType);
 
-            // MVV-LVA (Most Valuable Victim - Least Valuable Attacker) bonus
-            int mvvLva = (victimVal * 10) - attackerVal;
-            weight += Math.Max(0, mvvLva);
+            if (attackerVal > victimVal && !move.IsPromotion && IsLosingCaptureSquare(in board, move.From, move.To, us, them, attackerVal))
+            {
+                // High-value piece capturing a defended lower-value piece (e.g. QxP or QxN on a defended square):
+                // Strongly suppress prior to avoid blind Queen/Rook sacrifices.
+                int loss = attackerVal - victimVal;
+                weight = loss >= 4 ? 1.0f : 2.5f;
+            }
+            else
+            {
+                weight += 20.0f;
+                // MVV-LVA (Most Valuable Victim - Least Valuable Attacker) bonus
+                int mvvLva = (victimVal * 10) - attackerVal;
+                weight += Math.Max(0, mvvLva);
+                if (!board.IsSquareAttacked(move.To, them))
+                {
+                    weight += 15.0f; // Bonus for capturing undefended/hanging pieces
+                }
+            }
         }
         else if (move.IsCastling)
         {
             weight += 15.0f;
         }
+        else if (attackerVal >= 3 && attackerType != PieceType.King)
+        {
+            // Quiet move with Minor/Rook/Queen: penalize walking into a lower-valued piece attack or undefended square
+            if (IsLosingCaptureSquare(in board, move.From, move.To, us, them, attackerVal))
+            {
+                weight = attackerVal >= 9 ? 1.0f : 2.0f;
+            }
+        }
 
         return weight;
+    }
+
+    /// <summary>
+    /// Determines if moving a piece of value <paramref name="attackerVal"/> from <paramref name="from"/> to <paramref name="to"/>
+    /// exposes it to capture by a lower-valued enemy piece, or leaves it completely undefended on an enemy-attacked square.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsLosingCaptureSquare(in Board board, Square from, Square to, Color us, Color them, int attackerVal)
+    {
+        int s = (byte)to;
+        ulong enemyPieces = board.GetPieces(them);
+        ulong occAfter = (board.Occupied ^ (1UL << (byte)from)) | (1UL << s);
+
+        // 1. Attacked by enemy Pawn (val = 1 < attackerVal for all non-pawns)
+        if (attackerVal > 1)
+        {
+            ulong pawnAttacks = them == Color.White
+                ? Bitboard.BlackPawnAttacks[s]
+                : Bitboard.WhitePawnAttacks[s];
+            if ((pawnAttacks & board.Pawns & enemyPieces) != 0) return true;
+        }
+
+        // 2. Attacked by enemy Minor piece (val = 3 < attackerVal for Rook=5, Queen=9)
+        if (attackerVal > 3)
+        {
+            if ((Bitboard.KnightAttacks[s] & board.Knights & enemyPieces) != 0) return true;
+            ulong bAttacks = MagicBitboards.GetBishopAttacks(to, occAfter);
+            if ((bAttacks & board.Bishops & enemyPieces) != 0) return true;
+        }
+
+        // 3. Attacked by enemy Rook (val = 5 < attackerVal for Queen=9)
+        if (attackerVal > 5)
+        {
+            ulong rAttacks = MagicBitboards.GetRookAttacks(to, occAfter);
+            if ((rAttacks & board.Rooks & enemyPieces) != 0) return true;
+        }
+
+        // 4. If target square is attacked by enemy (e.g. equal piece or King) AND we have zero friendly defenders on 'to'
+        if (board.IsSquareAttacked(to, them) && !IsDefendedByUsAfterMove(in board, from, to, us, occAfter))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool IsDefendedByUsAfterMove(in Board board, Square from, Square to, Color us, ulong occAfter)
+    {
+        int s = (byte)to;
+        ulong ourRemainingPieces = board.GetPieces(us) & ~(1UL << (byte)from);
+
+        ulong pawnAttacks = us == Color.White
+            ? Bitboard.BlackPawnAttacks[s]
+            : Bitboard.WhitePawnAttacks[s];
+        if ((pawnAttacks & board.Pawns & ourRemainingPieces) != 0) return true;
+
+        if ((Bitboard.KnightAttacks[s] & board.Knights & ourRemainingPieces) != 0) return true;
+        if ((Bitboard.KingAttacks[s] & board.Kings & ourRemainingPieces) != 0) return true;
+
+        ulong bAttacks = MagicBitboards.GetBishopAttacks(to, occAfter);
+        if ((bAttacks & (board.Bishops | board.Queens) & ourRemainingPieces) != 0) return true;
+
+        ulong rAttacks = MagicBitboards.GetRookAttacks(to, occAfter);
+        if ((rAttacks & (board.Rooks | board.Queens) & ourRemainingPieces) != 0) return true;
+
+        return false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -733,7 +861,19 @@ public sealed class MCTSEngine
         PieceType.Bishop => 3,
         PieceType.Rook => 5,
         PieceType.Queen => 9,
-        PieceType.King => 1,
+        PieceType.King => 20,
+        _ => 0
+    };
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetPieceCentipawns(PieceType pt) => pt switch
+    {
+        PieceType.Pawn => 100,
+        PieceType.Knight => 320,
+        PieceType.Bishop => 330,
+        PieceType.Rook => 500,
+        PieceType.Queen => 900,
+        PieceType.King => 20000,
         _ => 0
     };
 }
