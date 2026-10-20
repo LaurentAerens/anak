@@ -69,11 +69,15 @@ tablebases/
 
 # NNUE Network Binaries & Machine Learning Checkpoints
 *.nnue
+!networks/
+!networks/*.nnue
+training/networks/
+*.binpack
 *.pt
 *.pth
 *.onnx
 checkpoints/
-networks/*.nnue
+training/checkpoints/
 /data/
 /training/data/
 !tests/**/Data/

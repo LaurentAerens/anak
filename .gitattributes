@@ -47,7 +47,9 @@
 *.ico binary
 *.svg text eol=lf
 
-# Chess Tablebase and Book Binaries
+# Chess Tablebase, NNUE, and Book Binaries
+*.nnue binary
+*.binpack binary
 *.bin binary
 *.rtbw binary
 *.rtbz binary
