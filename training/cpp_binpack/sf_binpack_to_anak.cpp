@@ -427,30 +427,30 @@ int main(int argc, char** argv) {
                 rec.flags = (is_blunder ? 1 : 0) | (has_queens ? 2 : 0) | (in_check ? 4 : 0);
                 rec.reserved = 0;
 
-                bool cross_sample_10pct = (local_read % 10 == 0);
+                bool cross_sample_20pct = (local_read % 5 == 0); // 20% cross-domain sampling for 80/20 expert mixture
 
                 if (!is_capture) {
-                    if ((expert_id == 0 || openness >= 0.45f || cross_sample_10pct) && !open_recs.is_full()) {
+                    if ((expert_id == 0 || openness >= 0.45f || cross_sample_20pct) && !open_recs.is_full()) {
                         b_open.push_back(rec);
                         if (b_open.size() >= LOCAL_BATCH_SIZE) open_recs.append_batch(b_open);
                     }
-                    if ((expert_id == 1 || openness < 0.52f || cross_sample_10pct) && !closed_recs.is_full()) {
+                    if ((expert_id == 1 || openness < 0.52f || cross_sample_20pct) && !closed_recs.is_full()) {
                         b_closed.push_back(rec);
                         if (b_closed.size() >= LOCAL_BATCH_SIZE) closed_recs.append_batch(b_closed);
                     }
-                    if ((expert_id == 2 || is_endgame || cross_sample_10pct) && !endgame_recs.is_full()) {
+                    if ((expert_id == 2 || is_endgame || cross_sample_20pct) && !endgame_recs.is_full()) {
                         b_endgame.push_back(rec);
                         if (b_endgame.size() >= LOCAL_BATCH_SIZE) endgame_recs.append_batch(b_endgame);
                     }
-                    if ((expert_id == 3 || is_queenless || cross_sample_10pct) && !queenless_recs.is_full()) {
+                    if ((expert_id == 3 || is_queenless || cross_sample_20pct) && !queenless_recs.is_full()) {
                         b_queenless.push_back(rec);
                         if (b_queenless.size() >= LOCAL_BATCH_SIZE) queenless_recs.append_batch(b_queenless);
                     }
-                    if ((expert_id == 4 || is_imbalance || cross_sample_10pct) && !imbalance_recs.is_full()) {
+                    if ((expert_id == 4 || is_imbalance || cross_sample_20pct) && !imbalance_recs.is_full()) {
                         b_imbalance.push_back(rec);
                         if (b_imbalance.size() >= LOCAL_BATCH_SIZE) imbalance_recs.append_batch(b_imbalance);
                     }
-                    if ((expert_id == 5 || opposite_castling || cross_sample_10pct) && !attack_recs.is_full()) {
+                    if ((expert_id == 5 || opposite_castling || cross_sample_20pct) && !attack_recs.is_full()) {
                         b_attack.push_back(rec);
                         if (b_attack.size() >= LOCAL_BATCH_SIZE) attack_recs.append_batch(b_attack);
                     }

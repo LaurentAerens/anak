@@ -276,6 +276,46 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         train_loader.close()
         val_loader.close()
 
+    def test_cross_domain_mixture_batch_loader(self):
+        primary_path = os.path.join(self.temp_dir, "primary.binpack")
+        mix_path = os.path.join(self.temp_dir, "mix.binpack")
+        b = chess.Board()
+
+        # Primary has target_eval = +1.0
+        with BinpackWriter(primary_path, model_tag="open") as w:
+            for _ in range(400):
+                w.add_board(b, target_eval=1.0, target_wdl=0.7, openness=0.8)
+
+        # Mix has target_eval = -1.0
+        with BinpackWriter(mix_path, model_tag="closed") as w:
+            for _ in range(200):
+                w.add_board(b, target_eval=-1.0, target_wdl=0.3, openness=0.2)
+
+        # 80/20 mixture: batch_size=100 -> 80 primary, 20 mix
+        loader = FastMemoryMappedBatchLoader(
+            primary_path,
+            batch_size=100,
+            shuffle=False,
+            mix_sources=mix_path,
+            mix_ratio=0.20,
+        )
+        self.assertEqual(loader.primary_batch_size, 80)
+        self.assertEqual(loader.mix_batch_size, 20)
+
+        batches = list(loader)
+        self.assertGreaterEqual(len(batches), 1)
+        batch0 = batches[0]
+        # Total batch size is exactly 100
+        self.assertEqual(batch0["our_features"].shape[0], 100)
+
+        # Verify 80 primary (1.0) and 20 mix (-1.0)
+        evals = batch0["target_eval"].cpu().numpy()
+        count_primary = np.sum(np.isclose(evals, 1.0, atol=1e-3))
+        count_mix = np.sum(np.isclose(evals, -1.0, atol=1e-3))
+        self.assertEqual(count_primary, 80)
+        self.assertEqual(count_mix, 20)
+        loader.close()
+
     def test_resolve_binpack_files(self):
         f1 = os.path.join(self.temp_dir, "a.binpack")
         f2 = os.path.join(self.temp_dir, "b.binpack")

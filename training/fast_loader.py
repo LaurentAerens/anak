@@ -137,7 +137,9 @@ class FastBinpackDataset(Dataset):
         }
 
     def close(self):
-        for r in self.readers:
+        for r in getattr(self, "readers", []):
+            r.close()
+        for r in getattr(self, "mix_readers", []):
             r.close()
 
     def __enter__(self):
@@ -183,6 +185,8 @@ class FastMemoryMappedBatchLoader:
         val_split: float = 0.0,
         is_validation: bool = False,
         augment_flip: bool = False,
+        mix_sources: Optional[Union[str, List[str]]] = None,
+        mix_ratio: float = 0.0,
     ):
         self.files = resolve_binpack_files(binpack_path)
         if not self.files:
@@ -200,6 +204,24 @@ class FastMemoryMappedBatchLoader:
         self.val_split = max(0.0, min(0.99, float(val_split)))
         self.is_validation = is_validation
         self.augment_flip = augment_flip
+
+        # Configure cross-domain mixture (e.g. 80% primary expert + 20% general mix)
+        self.mix_ratio = max(0.0, min(0.90, float(mix_ratio)))
+        self.mix_files = resolve_binpack_files(mix_sources) if mix_sources else []
+        if self.mix_files and self.mix_ratio > 0.0:
+            self.mix_readers = [BinpackReader(f) for f in self.mix_files]
+            self.mix_file_lengths = [len(r) for r in self.mix_readers]
+            self.mix_cumulative_offsets = np.cumsum([0] + self.mix_file_lengths)
+            self.mix_total_records = int(self.mix_cumulative_offsets[-1])
+            self.mix_batch_size = max(1, int(round(self.batch_size * self.mix_ratio)))
+            self.primary_batch_size = max(1, self.batch_size - self.mix_batch_size)
+        else:
+            self.mix_readers = []
+            self.mix_file_lengths = []
+            self.mix_cumulative_offsets = np.array([0])
+            self.mix_total_records = 0
+            self.mix_batch_size = 0
+            self.primary_batch_size = self.batch_size
 
         # Determine partition range for train / val split
         if self.val_split > 0.0:
@@ -220,9 +242,9 @@ class FastMemoryMappedBatchLoader:
             self.num_batches = 0
         else:
             if self.drop_last:
-                self.num_batches = self.total_records // self.batch_size
+                self.num_batches = self.total_records // self.primary_batch_size
             else:
-                self.num_batches = math.ceil(self.total_records / self.batch_size)
+                self.num_batches = math.ceil(self.total_records / self.primary_batch_size)
 
     def __len__(self) -> int:
         return self.num_batches
@@ -239,9 +261,9 @@ class FastMemoryMappedBatchLoader:
         is_single_reader = (len(self.readers) == 1)
 
         for b in range(self.num_batches):
-            start = b * self.batch_size
-            end = min(start + self.batch_size, self.total_records)
-            if self.drop_last and (end - start) < self.batch_size:
+            start = b * self.primary_batch_size
+            end = min(start + self.primary_batch_size, self.total_records)
+            if self.drop_last and (end - start) < self.primary_batch_size:
                 break
 
             batch_global_indices = self.range_start + local_indices[start:end]
@@ -257,6 +279,22 @@ class FastMemoryMappedBatchLoader:
                     mask = (file_idx == f_idx)
                     sub_idx = batch_global_indices[mask] - self.cumulative_offsets[f_idx]
                     records[mask] = self.readers[f_idx].data[sub_idx]
+
+            # Cross-domain mixture (e.g. 20% general pool sampled across other domains)
+            if self.mix_batch_size > 0 and self.mix_total_records > 0:
+                mix_idx = np.random.randint(0, self.mix_total_records, size=self.mix_batch_size)
+                if len(self.mix_readers) == 1:
+                    mix_recs = self.mix_readers[0].data[mix_idx]
+                else:
+                    mix_recs = np.empty(self.mix_batch_size, dtype=RECORD_DTYPE)
+                    m_file_idx = np.searchsorted(self.mix_cumulative_offsets[1:], mix_idx, side="right")
+                    for mf_idx in np.unique(m_file_idx):
+                        m_mask = (m_file_idx == mf_idx)
+                        m_sub = mix_idx[m_mask] - self.mix_cumulative_offsets[mf_idx]
+                        mix_recs[m_mask] = self.mix_readers[mf_idx].data[m_sub]
+                records = np.concatenate([records, mix_recs])
+                if self.shuffle:
+                    np.random.default_rng().shuffle(records)
 
             # Fast numpy to torch conversion
             our_idx_t = torch.from_numpy(records["our_indices"].astype(np.int32))
@@ -285,7 +323,9 @@ class FastMemoryMappedBatchLoader:
             }
 
     def close(self):
-        for r in self.readers:
+        for r in getattr(self, "readers", []):
+            r.close()
+        for r in getattr(self, "mix_readers", []):
             r.close()
 
     def __enter__(self):

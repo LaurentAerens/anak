@@ -148,12 +148,15 @@ def train_single_model(
     augment_flip: bool = True,
     lambda_wdl: float = 0.35,
     patience: int = 15,
+    min_delta: float = 1e-4,
+    mix_sources: Optional[Union[str, List[str]]] = None,
+    mix_ratio: float = 0.20,
 ) -> str:
     """
     Trains one NNUE model on its preprocessed Stockfish d9/d11 binpack using 100% trainable weights,
-    PyTorch Mixed Precision (AMP: bfloat16/float16), horizontal board reflection data augmentation,
-    perspective-twin antisymmetry, linear warmup + Cosine Annealing, validation loss tracking,
-    step-aware ModelEMA, early stopping, and ModernNNUELoss / BlunderLoss.
+    PyTorch Mixed Precision (AMP: bfloat16/float16), 80/20 domain mixture regularization,
+    horizontal board reflection data augmentation, perspective-twin antisymmetry, linear warmup +
+    Cosine Annealing, validation loss tracking, step-aware ModelEMA, early stopping, and ModernNNUELoss / BlunderLoss.
     Returns path to best checkpoint (.pt).
     """
     print_banner(f"TRAINING {model_name.upper()}-NNUE ({epochs} Epochs on {device})")
@@ -170,6 +173,12 @@ def train_single_model(
     print(f"Batch Size:        {effective_batch_size:,} ({math.ceil(train_count / effective_batch_size):,} train steps/epoch)")
     print(f"Validation Split:  {val_split * 100:.1f}% ({total_records - train_count:,} validation positions)")
     print(f"Data Augmentation: {'Horizontal Board Mirroring (sq ^ 7)' if augment_flip else 'Disabled'}")
+    if mix_sources and mix_ratio > 0.0:
+        mix_pct = int(mix_ratio * 100)
+        primary_pct = 100 - mix_pct
+        print(f"Domain Mixture:    {primary_pct}% {model_name.upper()} + {mix_pct}% Global Cross-Domain Mix")
+    else:
+        print("Domain Mixture:    100% Domain-Specific")
 
     # Mixed Precision (AMP) Configuration
     is_cuda = (device.type == "cuda")
@@ -230,6 +239,8 @@ def train_single_model(
             val_split=val_split,
             is_validation=False,
             augment_flip=augment_flip,
+            mix_sources=mix_sources,
+            mix_ratio=mix_ratio,
         )
         val_loader = FastMemoryMappedBatchLoader(
             binpack_files,
@@ -317,7 +328,7 @@ def train_single_model(
         print(f"  Epoch {epoch:2d}/{epochs} | Train Loss: {avg_loss:.4f} | Val Loss: {val_str} | Throughput: {throughput:,.0f} pos/sec ({epoch_time:.2f}s) | LR: {scheduler.get_last_lr()[0]:.6f}")
 
         eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
-        if eval_metric < best_metric:
+        if eval_metric < (best_metric - min_delta):
             best_metric = eval_metric
             epochs_without_improvement = 0
             backup = ema.store_and_apply(model)
@@ -392,7 +403,9 @@ def main():
     parser.add_argument("--batch-size", type=int, default=16384 if torch.cuda.is_available() else 4096, help="Batch size (default: 16384 on GPU, 4096 on CPU)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate (default: 1e-3)")
     parser.add_argument("--lambda-wdl", type=float, default=0.35, help="WDL weight in ModernNNUELoss (default: 0.35)")
+    parser.add_argument("--mix-ratio", type=float, default=0.20, help="Fraction of batch sampled from other expert datasets (default: 0.20 = 80 percent target, 20 percent mix)")
     parser.add_argument("--patience", type=int, default=15, help="Early stopping patience in epochs (default: 15, 0 = disabled)")
+    parser.add_argument("--min-delta", type=float, default=1e-4, help="Minimum validation loss delta to qualify as an improvement for early stopping (default: 1e-4)")
     parser.add_argument("--positions-per-model", type=int, default=5_000_000, help="Target positions per expert binpack (default: 5,000,000; supports 30,000,000+)")
     parser.add_argument("--d9-chunks", type=int, default=150, help="Number of 200k-position BINP chunks per file (default: 150; set 0 for full 500M files)")
     parser.add_argument("--full-download", action="store_true", default=False, help="Download full 500M archives without chunk limit")
@@ -475,6 +488,10 @@ def main():
                 bin_path = [bin_path] + resolved_ext
 
         model_lr = args.lr * 1.5 if is_micro_model(m) else args.lr
+        # Collect mix sources from all other expert binpacks that exist on disk
+        other_binpacks = [os.path.join(args.preprocessed_dir, f"{other}.binpack") for other in ALL_8_MODELS if other != m]
+        valid_mix = [p for p in other_binpacks if os.path.isfile(p)]
+
         best_pt = train_single_model(
             model_name=m,
             binpack_path=bin_path,
@@ -488,6 +505,9 @@ def main():
             augment_flip=args.augment_flip,
             lambda_wdl=args.lambda_wdl,
             patience=args.patience,
+            min_delta=args.min_delta,
+            mix_sources=valid_mix,
+            mix_ratio=args.mix_ratio,
         )
         trained_checkpoints[m] = best_pt
 
