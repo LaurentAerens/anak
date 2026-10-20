@@ -158,14 +158,14 @@
     "stats": {
         "Anak-Dev vs Stockfish-1800": {
             "wins": 0,
-            "losses": 98,
+            "losses": 200,
             "draws": 0,
             "penta_WW": 0,
             "penta_WD": 0,
             "penta_WL": 0,
             "penta_DD": 0,
             "penta_LD": 0,
-            "penta_LL": 49
+            "penta_LL": 100
         }
     }
 }
