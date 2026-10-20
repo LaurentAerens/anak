@@ -275,9 +275,11 @@ public sealed class UciOptionRegistry
     public CheckOption BlunderWatchdog { get; }
     public SpinOption MoveRandomness { get; }
     public SpinOption Temperature { get; }
+    public ComboOption SearchAlgorithm { get; }
 
     public UciOptionRegistry()
     {
+        SearchAlgorithm = new ComboOption("SearchAlgorithm", defaultValue: "Minimax", ["Minimax", "Mcts"]);
         Hash = new SpinOption("Hash", defaultValue: 64, min: 1, max: 65536);
         Threads = new SpinOption("Threads", defaultValue: 1, min: 1, max: 256);
         OwnBook = new CheckOption("OwnBook", defaultValue: true);
@@ -291,6 +293,7 @@ public sealed class UciOptionRegistry
         MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
         Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
 
+        Register(SearchAlgorithm);
         Register(Hash);
         Register(Threads);
         Register(OwnBook);

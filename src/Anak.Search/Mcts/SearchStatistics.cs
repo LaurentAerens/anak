@@ -57,6 +57,16 @@ public struct SearchStatistics
     /// </summary>
     public float RootScore { get; set; }
 
+    /// <summary>
+    /// Centipawn score relative to side to move.
+    /// </summary>
+    public int ScoreCp { get; set; }
+
+    /// <summary>
+    /// Mate in N moves (positive for mating, negative for being mated, 0 if not mate).
+    /// </summary>
+    public int MateIn { get; set; }
+
     public SearchStatistics()
     {
         Depth = 0;
@@ -69,5 +79,7 @@ public struct SearchStatistics
         HashfullPermille = 0;
         TbHits = 0;
         RootScore = 0.0f;
+        ScoreCp = 0;
+        MateIn = 0;
     }
 }

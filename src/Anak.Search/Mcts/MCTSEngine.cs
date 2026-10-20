@@ -8,7 +8,7 @@ namespace Anak.Search;
 /// PUCT exploration, 64-byte cacheline Transposition Table integration with DAG subtree reuse,
 /// and dynamic UCI time management.
 /// </summary>
-public sealed class MCTSEngine
+public sealed class MCTSEngine : ISearchEngine
 {
     private readonly IEvaluator _evaluator;
     private readonly TranspositionTable _tt;

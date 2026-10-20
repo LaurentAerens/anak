@@ -14,6 +14,36 @@
       "tc": "3+0.05",
       "pgn": "tools/fastchess/results/anak_vs_sf1800_20261019_230409.pgn",
       "notes": "Initial release with MCTS, PUCT, Multi-Tier NNUE (Open/Closed/Micro watchdog), and tactical heuristics"
+    },
+    "v0.0.2": {
+      "version": "v0.0.2",
+      "date": "2026-10-20",
+      "estimated_elo": 1616,
+      "elo_margin": null,
+      "baseline_opponent": "Baseline v0.0.1",
+      "score": "-",
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "perf_percent": 50.0,
+      "tc": "3+0.05",
+      "pgn": "-",
+      "notes": "Archived baseline (MCTS with multi-tier NNUE)"
+    },
+    "v0.0.3": {
+      "version": "v0.0.3",
+      "date": "2026-10-20",
+      "estimated_elo": 1659,
+      "elo_margin": 23,
+      "baseline_opponent": "Stockfish 19 (1800 Elo)",
+      "score": "307.5 / 1000",
+      "wins": 297,
+      "losses": 682,
+      "draws": 21,
+      "perf_percent": 30.75,
+      "tc": "3+0.05",
+      "pgn": "tools/fastchess/results/anak_vs_sf1800_20261020_152301.pgn",
+      "notes": "Transition to Alpha-Beta (Negamax with PVS & Incremental Multi-Tier NNUE); +20.5 Elo over v0.0.2 in 1000-game match (529.5/1000)"
     }
   }
 }

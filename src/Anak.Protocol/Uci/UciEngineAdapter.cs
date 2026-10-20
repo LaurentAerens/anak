@@ -17,7 +17,9 @@ public sealed class UciEngineAdapter
     private readonly Action<string> _outputWriter;
     private readonly UciOptionRegistry _options;
     private readonly IEvaluator _evaluator;
-    private MCTSEngine _engine;
+    private readonly AlphaBetaEngine _alphaBetaEngine;
+    private readonly MCTSEngine _mctsEngine;
+    private ISearchEngine _activeEngine;
     private Board _board;
     private readonly List<Move> _gameMoves = new();
     private readonly Anak.Data.PolyGlot.PolyGlotBook _book = new();
@@ -33,6 +35,7 @@ public sealed class UciEngineAdapter
     public IReadOnlyList<Move> GameMoves => _gameMoves;
     public bool IsSearching => _searchTask != null && !_searchTask.IsCompleted;
     public IEvaluator Evaluator => _evaluator;
+    public ISearchEngine ActiveEngine => _activeEngine;
 
     public UciEngineAdapter(Action<string> outputWriter)
     {
@@ -42,13 +45,29 @@ public sealed class UciEngineAdapter
         // Instantiate evaluation engine
         _evaluator = CreateEvaluator();
 
-        // Instantiate MCTS search engine
-        _engine = new MCTSEngine(_evaluator, defaultHashMb: _options.Hash.Value)
+        // Instantiate search engines (AlphaBeta Minimax as default, MCTS as alternative)
+        _alphaBetaEngine = new AlphaBetaEngine(_evaluator, defaultHashMb: _options.Hash.Value)
         {
             Threads = _options.Threads.Value
         };
+        _mctsEngine = new MCTSEngine(_evaluator, defaultHashMb: _options.Hash.Value)
+        {
+            Threads = _options.Threads.Value
+        };
+        _activeEngine = _options.SearchAlgorithm.Value.Equals("Mcts", StringComparison.OrdinalIgnoreCase)
+            ? _mctsEngine
+            : _alphaBetaEngine;
 
         // Subscribe to UCI option change notifications
+        _options.SearchAlgorithm.ValueChanged += alg =>
+        {
+            lock (_syncLock)
+            {
+                _activeEngine = alg.Equals("Mcts", StringComparison.OrdinalIgnoreCase)
+                    ? _mctsEngine
+                    : _alphaBetaEngine;
+            }
+        };
         _options.Hash.ValueChanged += OnHashChanged;
         _options.Threads.ValueChanged += OnThreadsChanged;
 
@@ -63,11 +82,11 @@ public sealed class UciEngineAdapter
         _options.BookMode.ValueChanged += modeStr => _book.Mode = ParseBookMode(modeStr);
 
         // Wire MCTS search randomness and temperature
-        _engine.Parameters.MoveRandomness = _options.MoveRandomness.Value;
-        _engine.Parameters.Temperature = _options.Temperature.Value / 100.0f;
+        _mctsEngine.Parameters.MoveRandomness = _options.MoveRandomness.Value;
+        _mctsEngine.Parameters.Temperature = _options.Temperature.Value / 100.0f;
 
-        _options.MoveRandomness.ValueChanged += val => _engine.Parameters.MoveRandomness = val;
-        _options.Temperature.ValueChanged += val => _engine.Parameters.Temperature = val / 100.0f;
+        _options.MoveRandomness.ValueChanged += val => _mctsEngine.Parameters.MoveRandomness = val;
+        _options.Temperature.ValueChanged += val => _mctsEngine.Parameters.Temperature = val / 100.0f;
 
         // Wire NNUE evaluator options
         if (_evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue)
@@ -106,7 +125,8 @@ public sealed class UciEngineAdapter
     {
         lock (_syncLock)
         {
-            _engine.TranspositionTable.Resize(hashMb);
+            _alphaBetaEngine.TranspositionTable.Resize(hashMb);
+            _mctsEngine.TranspositionTable.Resize(hashMb);
         }
     }
 
@@ -114,7 +134,9 @@ public sealed class UciEngineAdapter
     {
         lock (_syncLock)
         {
-            _engine.Threads = Math.Max(1, threads);
+            int t = Math.Max(1, threads);
+            _alphaBetaEngine.Threads = t;
+            _mctsEngine.Threads = t;
         }
     }
 
@@ -128,7 +150,10 @@ public sealed class UciEngineAdapter
         lock (_syncLock)
         {
             StopSearchInternal();
-            _engine.TranspositionTable.Clear();
+            _alphaBetaEngine.TranspositionTable.Clear();
+            _alphaBetaEngine.ClearHistory();
+            _mctsEngine.TranspositionTable.Clear();
+            _mctsEngine.ClearHistory();
             _gameMoves.Clear();
             _board = Fen.Parse(Fen.StartPosition);
         }
@@ -215,7 +240,7 @@ public sealed class UciEngineAdapter
             {
                 try
                 {
-                    Move bestMove = _engine.Search(
+                    Move bestMove = _activeEngine.Search(
                         in searchBoard,
                         in limits,
                         stats =>
@@ -317,10 +342,18 @@ public sealed class UciEngineAdapter
     private void FormatAndSendInfo(SearchStatistics stats)
     {
         string scoreStr;
-        if (MathF.Abs(stats.RootScore) > 0.98f)
+        if (stats.MateIn != 0)
+        {
+            scoreStr = $"mate {stats.MateIn}";
+        }
+        else if (MathF.Abs(stats.RootScore) > 0.98f)
         {
             int mateMoves = stats.RootScore > 0 ? 1 : -1;
             scoreStr = $"mate {mateMoves}";
+        }
+        else if (stats.ScoreCp != 0)
+        {
+            scoreStr = $"cp {stats.ScoreCp}";
         }
         else
         {

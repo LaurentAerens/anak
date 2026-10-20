@@ -45,7 +45,10 @@ public static class BenchRunner
 
         // Warm up and instantiate engine
         IEvaluator evaluator = UciEngineAdapter.CreateEvaluator();
-        MCTSEngine engine = new(evaluator, defaultHashMb: hashMb);
+        ISearchEngine engine = new AlphaBetaEngine(evaluator, defaultHashMb: hashMb)
+        {
+            Threads = threads
+        };
 
         SearchLimits limits = new()
         {
