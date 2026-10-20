@@ -17,7 +17,17 @@ public interface IIncrementalEvaluator : IEvaluator
     void PushMove(Move move, Piece movedPiece, Piece capturedPiece, in Board boardAfter);
 
     /// <summary>
+    /// Pushes a null move along the search descent path (pieces unchanged, only key and depth updated).
+    /// </summary>
+    void PushNullMove(in Board boardAfter);
+
+    /// <summary>
     /// Rolls back the internal accumulator stack depth (e.g. to 0 after finishing a simulation path).
     /// </summary>
     void RollbackTo(int depth);
+
+    /// <summary>
+    /// Creates a worker evaluator instance sharing neural weights with an independent accumulator stack.
+    /// </summary>
+    IIncrementalEvaluator CreateWorkerInstance();
 }

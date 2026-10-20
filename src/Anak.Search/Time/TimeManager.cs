@@ -76,6 +76,8 @@ public sealed class TimeManager
 
         _hasTimeLimit = true;
 
+        int safetyLag = remainingTime < 500 ? Math.Min(10, remainingTime / 5) : SafetyLagMs;
+
         // Emergency low-time handling (< 100ms)
         if (remainingTime < 100)
         {
@@ -86,17 +88,24 @@ public sealed class TimeManager
             return;
         }
 
-        // Calculate expected moves remaining in the game (default 35 for balanced game pacing)
-        int movesToGo = limits.MovesToGo > 0 ? Math.Clamp(limits.MovesToGo, 2, 50) : 35;
+        // Calculate expected moves remaining in the game (default 40 for balanced game pacing)
+        int movesToGo = limits.MovesToGo > 0 ? Math.Clamp(limits.MovesToGo, 2, 50) : 40;
 
-        // Dynamic target allocation: (time / moves) + (3/4 * inc)
-        long allocated = (remainingTime / movesToGo) + ((long)increment * 3 / 4);
+        // Dynamic target allocation: (time / moves) + (7/10 * inc)
+        long allocated = (remainingTime / movesToGo) + ((long)increment * 7 / 10);
+
+        // If time is low relative to increment, preserve clock by budgeting within increment
+        if (increment > 0 && remainingTime < increment * 3)
+        {
+            allocated = Math.Min(allocated, (long)(increment * 0.85));
+        }
 
         // Soft limit is the ideal allocation per move
-        _softLimitMs = Math.Clamp(allocated, 10, remainingTime - SafetyLagMs);
+        _softLimitMs = Math.Clamp(allocated, 10, remainingTime - safetyLag);
 
-        // Hard limit allows up to 2.5x soft limit for complex or critical tactical branches
-        long maxHard = Math.Min(remainingTime - SafetyLagMs, (long)(_softLimitMs * 2.5));
+        // Hard limit: allow up to 1.8x soft limit, scaled down if low on time
+        float hardMultiplier = remainingTime < 2000 ? 1.4f : 1.8f;
+        long maxHard = Math.Min(remainingTime - safetyLag, (long)(_softLimitMs * hardMultiplier));
         _hardLimitMs = Math.Max(_softLimitMs, maxHard);
         _baseSoftLimitMs = _softLimitMs;
         _baseHardLimitMs = _hardLimitMs;

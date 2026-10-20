@@ -17,7 +17,7 @@ public struct TTCluster
 
 /// <summary>
 /// High-performance lock-free Transposition Table with 64-byte cacheline alignment,
-/// dynamic resizing, and DAG subtree reuse for MCTS.
+/// dynamic resizing, DAG subtree reuse for MCTS, and depth-preferred replacement for Minimax.
 /// </summary>
 public sealed class TranspositionTable
 {
@@ -99,13 +99,13 @@ public sealed class TranspositionTable
         ulong index = key & _mask;
         ref TTCluster cluster = ref _clusters[index];
 
-        if (cluster.Entry0.Key == key && cluster.Entry0.Visits > 0)
+        if (cluster.Entry0.Key == key && cluster.Entry0.IsValid)
         {
             entry = cluster.Entry0;
             return true;
         }
 
-        if (cluster.Entry1.Key == key && cluster.Entry1.Visits > 0)
+        if (cluster.Entry1.Key == key && cluster.Entry1.IsValid)
         {
             entry = cluster.Entry1;
             return true;
@@ -116,7 +116,90 @@ public sealed class TranspositionTable
     }
 
     /// <summary>
-    /// Stores or merges an entry into the Transposition Table with DAG transposition reuse.
+    /// Stores or updates an entry for Minimax / Alpha-Beta search.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Store(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags)
+    {
+        ulong index = key & _mask;
+        ref TTCluster cluster = ref _clusters[index];
+
+        // 1. If key matches either entry in the cluster, update in-place
+        if (cluster.Entry0.Key == key)
+        {
+            UpdateMinimaxEntry(ref cluster.Entry0, key, bestMove, depth, score, age, flags);
+            return;
+        }
+
+        if (cluster.Entry1.Key == key)
+        {
+            UpdateMinimaxEntry(ref cluster.Entry1, key, bestMove, depth, score, age, flags);
+            return;
+        }
+
+        // 2. Replacement strategy:
+        // Prefer uninitialized / invalid slot
+        if (!cluster.Entry0.IsValid)
+        {
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags);
+            return;
+        }
+
+        if (!cluster.Entry1.IsValid)
+        {
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags);
+            return;
+        }
+
+        // Prefer replacing slot with older age
+        if (cluster.Entry0.Age != age && cluster.Entry1.Age == age)
+        {
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags);
+            return;
+        }
+
+        if (cluster.Entry1.Age != age && cluster.Entry0.Age == age)
+        {
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags);
+            return;
+        }
+
+        // Prefer replacing slot with shallower depth
+        if (cluster.Entry0.Depth <= cluster.Entry1.Depth)
+        {
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags);
+        }
+        else
+        {
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void UpdateMinimaxEntry(ref TTEntry existing, ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags)
+    {
+        // Overwrite score and depth if:
+        // - New entry is Exact, OR
+        // - New search depth is >= existing depth, OR
+        // - Existing entry is from an older search generation
+        if (flags == TTFlags.Exact || depth >= existing.Depth || existing.Age != age)
+        {
+            existing.Key = key;
+            existing.Depth = depth;
+            existing.Score = score;
+            existing.Flags = flags;
+            existing.Age = age;
+            existing.Visits = Math.Max(1u, (uint)depth);
+        }
+
+        if (bestMove != Move.Null)
+        {
+            existing.BestMove = bestMove;
+        }
+    }
+
+    /// <summary>
+    /// Stores or merges an entry into the Transposition Table with DAG transposition reuse (MCTS).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Store(ulong key, Move bestMove, uint visits, float value, float prior, byte age, TTFlags flags = TTFlags.Exact)
@@ -127,25 +210,25 @@ public sealed class TranspositionTable
         // DAG Transposition Reuse: Check if either entry matches the key
         if (cluster.Entry0.Key == key)
         {
-            UpdateEntry(ref cluster.Entry0, key, bestMove, visits, value, prior, age, flags);
+            UpdateMctsEntry(ref cluster.Entry0, key, bestMove, visits, value, prior, age, flags);
             return;
         }
 
         if (cluster.Entry1.Key == key)
         {
-            UpdateEntry(ref cluster.Entry1, key, bestMove, visits, value, prior, age, flags);
+            UpdateMctsEntry(ref cluster.Entry1, key, bestMove, visits, value, prior, age, flags);
             return;
         }
 
         // Replacement strategy:
         // 1. Prefer uninitialized / empty slot
-        if (cluster.Entry0.Visits == 0)
+        if (!cluster.Entry0.IsValid)
         {
             cluster.Entry0 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
             return;
         }
 
-        if (cluster.Entry1.Visits == 0)
+        if (!cluster.Entry1.IsValid)
         {
             cluster.Entry1 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
             return;
@@ -176,7 +259,7 @@ public sealed class TranspositionTable
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void UpdateEntry(ref TTEntry existing, ulong key, Move bestMove, uint visits, float value, float prior, byte age, TTFlags flags)
+    private static void UpdateMctsEntry(ref TTEntry existing, ulong key, Move bestMove, uint visits, float value, float prior, byte age, TTFlags flags)
     {
         // DAG merge: blend values weighted by visit counts and take maximum visits
         uint oldVisits = existing.Visits;
@@ -221,8 +304,8 @@ public sealed class TranspositionTable
         for (int i = 0; i < sampleCount; i++)
         {
             ref readonly TTCluster cluster = ref _clusters[i];
-            if (cluster.Entry0.Visits > 0 && cluster.Entry0.Age == _currentAge) usedEntries++;
-            if (cluster.Entry1.Visits > 0 && cluster.Entry1.Age == _currentAge) usedEntries++;
+            if (cluster.Entry0.IsValid && cluster.Entry0.Age == _currentAge) usedEntries++;
+            if (cluster.Entry1.IsValid && cluster.Entry1.Age == _currentAge) usedEntries++;
         }
 
         return (int)((usedEntries * 1000L) / (sampleCount * 2));

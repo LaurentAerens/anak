@@ -31,6 +31,36 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     private readonly ulong[] _stackKeys = new ulong[256];
     private int _stackDepth = -1;
     private bool _disposed;
+    private readonly bool _ownsWeights = true;
+
+    /// <summary>
+    /// Creates a lightweight worker instance sharing all pre-loaded neural network weights,
+    /// but with its own independent accumulator stack for thread-safe concurrent search.
+    /// </summary>
+    public IIncrementalEvaluator CreateWorkerInstance()
+    {
+        return new MultiTierNnueEvaluator(this);
+    }
+
+    private MultiTierNnueEvaluator(MultiTierNnueEvaluator parent)
+    {
+        _ownsWeights = false;
+        _openWeights = parent._openWeights;
+        _closedWeights = parent._closedWeights;
+        _endgameWeights = parent._endgameWeights;
+        _queenlessWeights = parent._queenlessWeights;
+        _imbalanceWeights = parent._imbalanceWeights;
+        _attackWeights = parent._attackWeights;
+        _microWeights = parent._microWeights;
+        _volatilityWeights = parent._volatilityWeights;
+        _activeFullWeights = parent._activeFullWeights;
+        _fallbackEvaluator = parent._fallbackEvaluator;
+        UseNnue = parent.UseNnue;
+        NnueDirectory = parent.NnueDirectory;
+        BlunderWatchdog = parent.BlunderWatchdog;
+        Tablebase = parent.Tablebase;
+        ActiveRootExpert = parent.ActiveRootExpert;
+    }
 
 
     public bool UseNnue { get; set; } = true;
@@ -267,6 +297,34 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     }
 
     /// <summary>
+    /// Pushes a null move along the search descent path (pieces unchanged, only key and depth updated).
+    /// </summary>
+    public void PushNullMove(in Board boardAfter)
+    {
+        if (_stackDepth < 0 || _stackDepth >= 254) return;
+        NnueWeights? weights = _activeFullWeights;
+        if (weights == null) return;
+
+        int dim = weights.HiddenDim;
+        int curOffset = _stackDepth * dim;
+        int nextOffset = (_stackDepth + 1) * dim;
+
+        fixed (short* wPtr = _stackWhite, bPtr = _stackBlack)
+        {
+            short* curW = wPtr + curOffset;
+            short* curB = bPtr + curOffset;
+            short* nextW = wPtr + nextOffset;
+            short* nextB = bPtr + nextOffset;
+
+            Buffer.MemoryCopy(curW, nextW, dim * sizeof(short), dim * sizeof(short));
+            Buffer.MemoryCopy(curB, nextB, dim * sizeof(short), dim * sizeof(short));
+        }
+
+        _stackDepth++;
+        _stackKeys[_stackDepth] = boardAfter.ZobristKey;
+    }
+
+    /// <summary>
     /// Rolls back the internal accumulator stack depth.
     /// </summary>
     public void RollbackTo(int depth)
@@ -441,17 +499,20 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     {
         if (!_disposed)
         {
-            _openWeights?.Dispose();
-            if (!ReferenceEquals(_closedWeights, _openWeights))
+            if (_ownsWeights)
             {
-                _closedWeights?.Dispose();
+                _openWeights?.Dispose();
+                if (!ReferenceEquals(_closedWeights, _openWeights))
+                {
+                    _closedWeights?.Dispose();
+                }
+                _endgameWeights?.Dispose();
+                _queenlessWeights?.Dispose();
+                _imbalanceWeights?.Dispose();
+                _attackWeights?.Dispose();
+                _microWeights?.Dispose();
+                _volatilityWeights?.Dispose();
             }
-            _endgameWeights?.Dispose();
-            _queenlessWeights?.Dispose();
-            _imbalanceWeights?.Dispose();
-            _attackWeights?.Dispose();
-            _microWeights?.Dispose();
-            _volatilityWeights?.Dispose();
             _disposed = true;
         }
     }
