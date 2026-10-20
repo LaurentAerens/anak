@@ -18,7 +18,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from model import StandardNNUE, MicroNNUE, ModelEMA, clamp_nnue_weights
+from model import StandardNNUE, MicroNNUE, ModelEMA, clamp_nnue_weights, enforce_perspective_antisymmetry
 from dataset import TcecDataset, find_pgn_files
 from loss import ModernNNUELoss, TcecBlendedLoss, BlunderLoss
 from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
@@ -158,10 +158,11 @@ def parse_args():
                         help="Optional metric query filter (e.g. 'pieces <= 16 and not has_queens')")
     parser.add_argument("--epochs", type=int, default=40, help="Number of training epochs")
     parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear learning rate warmup epochs (default: 3)")
-    parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5%)")
+    parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5 percent)")
     parser.add_argument("--batch-size", type=int, default=8192, help="Batch size (e.g. 8192, 16384, 32768 for high-speed GPU training)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
-    parser.add_argument("--lambda-wdl", type=float, default=0.40, help="WDL loss weight factor")
+    parser.add_argument("--lambda-wdl", type=float, default=0.35, help="WDL loss weight factor (default: 0.35)")
+    parser.add_argument("--augment-flip", action="store_true", default=True, help="Apply random horizontal board reflection during training (default: True)")
     parser.add_argument("--output", type=str, default="./checkpoints", help="Output directory for checkpoints")
     parser.add_argument("--max-samples", type=int, default=None, help="Limit number of samples per epoch")
     parser.add_argument("--deploy", action="store_true", default=True,
@@ -277,6 +278,7 @@ def main():
                 device=device,
                 val_split=args.val_split,
                 is_validation=False,
+                augment_flip=args.augment_flip,
             )
             val_loader = FastMemoryMappedBatchLoader(
                 binpack_files,
@@ -285,6 +287,7 @@ def main():
                 device=device,
                 val_split=args.val_split,
                 is_validation=True,
+                augment_flip=False,
             ) if args.val_split > 0 else None
 
             pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs} [Mmap Binpack]")
@@ -331,6 +334,7 @@ def main():
                     break
 
             train_loader.close()
+            enforce_perspective_antisymmetry(model)
 
             # Validation evaluation
             avg_val_loss = None

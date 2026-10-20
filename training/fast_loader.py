@@ -181,7 +181,8 @@ class FastMemoryMappedBatchLoader:
         device: Optional[torch.device] = None,
         drop_last: bool = False,
         val_split: float = 0.0,
-        is_validation: bool = False
+        is_validation: bool = False,
+        augment_flip: bool = False,
     ):
         self.files = resolve_binpack_files(binpack_path)
         if not self.files:
@@ -198,6 +199,7 @@ class FastMemoryMappedBatchLoader:
         self.drop_last = drop_last
         self.val_split = max(0.0, min(0.99, float(val_split)))
         self.is_validation = is_validation
+        self.augment_flip = augment_flip
 
         # Determine partition range for train / val split
         if self.val_split > 0.0:
@@ -259,6 +261,15 @@ class FastMemoryMappedBatchLoader:
             # Fast numpy to torch conversion
             our_idx_t = torch.from_numpy(records["our_indices"].astype(np.int32))
             their_idx_t = torch.from_numpy(records["their_indices"].astype(np.int32))
+
+            # Horizontal board reflection data augmentation (doubles effective dataset, eliminates side bias)
+            if self.augment_flip:
+                flip = torch.randint(0, 2, (our_idx_t.shape[0], 1), dtype=torch.bool)
+                mask_our = (our_idx_t != SENTINEL_INDEX) & (our_idx_t < FEATURE_COUNT)
+                our_idx_t = torch.where(flip & mask_our, our_idx_t ^ 7, our_idx_t)
+                mask_their = (their_idx_t != SENTINEL_INDEX) & (their_idx_t < FEATURE_COUNT)
+                their_idx_t = torch.where(flip & mask_their, their_idx_t ^ 7, their_idx_t)
+
             target_eval_t = torch.from_numpy(records["target_eval"].copy()).to(self.device)
             target_wdl_t = torch.from_numpy(records["target_wdl"].copy()).to(self.device)
 

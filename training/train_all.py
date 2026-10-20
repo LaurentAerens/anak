@@ -15,20 +15,20 @@ import random
 import shutil
 import sys
 import time
-from typing import List
+from typing import List, Union, Optional
 import chess
 import numpy as np
 import torch
 from tqdm import tqdm
 
-from model import StandardNNUE, MicroNNUE, ModelEMA, clamp_nnue_weights
+from model import StandardNNUE, MicroNNUE, ModelEMA, clamp_nnue_weights, enforce_perspective_antisymmetry
 from loss import ModernNNUELoss, BlunderLoss
 from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
 from binpack import BinpackReader, BinpackWriter, read_binpack_count
 from preprocess import preprocess_data
 from export import export_standard, export_micro
 from dataset import find_pgn_files, encode_board_features, calculate_openness
-from download_data import download_stockfish_d9_binpacks, convert_stockfish_d9_to_anak
+from download_data import download_stockfish_d9_binpacks, convert_stockfish_d9_to_anak, STOCKFISH_D9_URLS
 from generate_data import BuiltinTacticalEvaluator, load_seed_openings
 
 
@@ -60,27 +60,32 @@ def ensure_stockfish_d9_binpacks(
     min_records_per_pack: int = 5_000_000,
     chunks_per_file: int = 100,
     required_models: List[str] = None,
+    force_rebuild: bool = False,
+    include_d11: bool = True,
 ):
     """
-    Ensures all 8 expert/helper .binpack files in preprocessed_dir exist and are populated
-    from the Stockfish 500M Depth-9 database.
+    Ensures all expert/helper .binpack files in preprocessed_dir exist and are populated
+    from the Stockfish Depth-9 & Depth-11 multi-hundred-million evaluation database.
     """
     os.makedirs(preprocessed_dir, exist_ok=True)
     target_models = required_models or ALL_8_MODELS
 
-    needs_build = False
-    for m in target_models:
-        tag = "micro" if m == "small" else m
-        path = os.path.join(preprocessed_dir, f"{tag}.binpack")
-        count = read_binpack_count(path)
-        min_req = min_records_per_pack if tag in ("open", "closed", "micro") else min(50_000, max(1000, min_records_per_pack // 4))
-        if count < min_req:
-            print(f"  [Check] {tag}.binpack has {count:,} finalized records (target >= {min_req:,}) -> rebuild needed.", flush=True)
-            needs_build = True
-            break
+    needs_build = force_rebuild
+    if not needs_build:
+        for m in target_models:
+            tag = "micro" if m == "small" else m
+            path = os.path.join(preprocessed_dir, f"{tag}.binpack")
+            count = read_binpack_count(path)
+            # Specialized expert categories (endgame, queenless, imbalance, attack, volatility)
+            # scale with min_records_per_pack // 2, with no artificial 50k ceiling!
+            min_req = min_records_per_pack if tag in ("open", "closed", "micro") else max(250_000, min_records_per_pack // 2)
+            if count < min_req:
+                print(f"  [Check] {tag}.binpack has {count:,} finalized records (target >= {min_req:,}) -> rebuild needed.", flush=True)
+                needs_build = True
+                break
 
     if not needs_build:
-        print_banner("STEP 1 & 2: STOCKFISH DEPTH-9 8-EXPERT BINPACKS READY")
+        print_banner("STEP 1 & 2: STOCKFISH DEPTH-9/11 8-EXPERT BINPACKS READY")
         for m in ALL_8_MODELS:
             path = os.path.join(preprocessed_dir, f"{m}.binpack")
             count = read_binpack_count(path)
@@ -88,11 +93,12 @@ def ensure_stockfish_d9_binpacks(
                 print(f"  - {m.capitalize():10s} Binpack: {count:,} positions ({os.path.getsize(path):,} bytes)", flush=True)
         return
 
-    print_banner("STEP 1: DOWNLOADING STOCKFISH 500M DEPTH-9 (d9) TRAINING DATABASE")
-    required_chunks = max(chunks_per_file, math.ceil((min_records_per_pack * 2.0) / 200_000))
-    sf_files = download_stockfish_d9_binpacks(raw_data_dir, chunks_per_file=required_chunks)
+    print_banner("STEP 1: DOWNLOADING STOCKFISH 500M DEPTH-9 & DEPTH-11 TRAINING ARCHIVES")
+    urls_to_pull = STOCKFISH_D9_URLS if include_d11 else [u for u in STOCKFISH_D9_URLS if "_d11" not in u[0]]
+    required_chunks = max(chunks_per_file, math.ceil((min_records_per_pack * 2.0) / 200_000)) if chunks_per_file > 0 else 0
+    sf_files = download_stockfish_d9_binpacks(raw_data_dir, chunks_per_file=required_chunks, dataset_urls=urls_to_pull)
 
-    print_banner("STEP 2: NATIVE C++20 UNPACKING & GLOBAL SHUFFLING INTO 8 ANAK BINPACKS")
+    print_banner("STEP 2: NATIVE MULTI-THREADED UNPACKING & SHUFFLING INTO 8 ANAK BINPACKS")
     convert_stockfish_d9_to_anak(
         sf_binpack_files=sf_files,
         output_dir=preprocessed_dir,
@@ -139,11 +145,15 @@ def train_single_model(
     checkpoints_dir: str,
     warmup_epochs: int = 3,
     val_split: float = 0.05,
+    augment_flip: bool = True,
+    lambda_wdl: float = 0.35,
+    patience: int = 15,
 ) -> str:
     """
-    Trains one NNUE model on its preprocessed Stockfish d9 binpack using 100% trainable weights,
-    PyTorch Mixed Precision (AMP: bfloat16/float16), linear warmup + Cosine Annealing,
-    validation split loss tracking, step-aware ModelEMA, and ModernNNUELoss / BlunderLoss.
+    Trains one NNUE model on its preprocessed Stockfish d9/d11 binpack using 100% trainable weights,
+    PyTorch Mixed Precision (AMP: bfloat16/float16), horizontal board reflection data augmentation,
+    perspective-twin antisymmetry, linear warmup + Cosine Annealing, validation loss tracking,
+    step-aware ModelEMA, early stopping, and ModernNNUELoss / BlunderLoss.
     Returns path to best checkpoint (.pt).
     """
     print_banner(f"TRAINING {model_name.upper()}-NNUE ({epochs} Epochs on {device})")
@@ -159,6 +169,7 @@ def train_single_model(
     print(f"Source Binpack(s): {len(binpack_files)} file(s), {total_records:,} positions ({total_bytes:,} bytes)")
     print(f"Batch Size:        {effective_batch_size:,} ({math.ceil(train_count / effective_batch_size):,} train steps/epoch)")
     print(f"Validation Split:  {val_split * 100:.1f}% ({total_records - train_count:,} validation positions)")
+    print(f"Data Augmentation: {'Horizontal Board Mirroring (sq ^ 7)' if augment_flip else 'Disabled'}")
 
     # Mixed Precision (AMP) Configuration
     is_cuda = (device.type == "cuda")
@@ -175,13 +186,13 @@ def train_single_model(
 
     if is_micro_model(model_name):
         model = MicroNNUE().to(device)
-        criterion = BlunderLoss()
+        criterion = BlunderLoss(blunder_weight=5.0)
     else:
         model = StandardNNUE().to(device)
-        criterion = ModernNNUELoss(lambda_wdl=0.25, eval_scale=2.50)
+        criterion = ModernNNUELoss(lambda_wdl=lambda_wdl, eval_scale=2.50)
 
-    ema = ModelEMA(model, decay=0.995)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    ema = ModelEMA(model, decay=0.999)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
 
     # Linear Warmup followed by Cosine Annealing
     actual_warmup = min(warmup_epochs, max(0, epochs // 4))
@@ -190,17 +201,19 @@ def train_single_model(
             optimizer, start_factor=0.1, end_factor=1.0, total_iters=actual_warmup
         )
         cosine_sched = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=epochs - actual_warmup, eta_min=lr * 0.05
+            optimizer, T_max=epochs - actual_warmup, eta_min=lr * 0.01
         )
         scheduler = torch.optim.lr_scheduler.SequentialLR(
             optimizer, schedulers=[warmup_sched, cosine_sched], milestones=[actual_warmup]
         )
     else:
-        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.05)
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.01)
 
     best_metric = float("inf")
+    epochs_without_improvement = 0
     out_tag = "micro" if model_name == "small" else model_name
     best_path = os.path.join(checkpoints_dir, f"{out_tag}_best.pt")
+    latest_path = os.path.join(checkpoints_dir, f"{out_tag}_latest.pt")
 
     for epoch in range(1, epochs + 1):
         epoch_start = time.time()
@@ -215,7 +228,8 @@ def train_single_model(
             shuffle=True,
             device=device,
             val_split=val_split,
-            is_validation=False
+            is_validation=False,
+            augment_flip=augment_flip,
         )
         val_loader = FastMemoryMappedBatchLoader(
             binpack_files,
@@ -223,7 +237,8 @@ def train_single_model(
             shuffle=False,
             device=device,
             val_split=val_split,
-            is_validation=True
+            is_validation=True,
+            augment_flip=False,
         ) if val_split > 0 else None
 
         pbar = tqdm(train_loader, desc=f"{model_name.capitalize()} Epoch {epoch}/{epochs}", leave=False)
@@ -265,6 +280,9 @@ def train_single_model(
 
         train_loader.close()
 
+        # Enforce perspective antisymmetry after each epoch
+        enforce_perspective_antisymmetry(model)
+
         # Validation evaluation
         avg_val_loss = None
         if val_loader and len(val_loader) > 0:
@@ -301,11 +319,26 @@ def train_single_model(
         eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
         if eval_metric < best_metric:
             best_metric = eval_metric
+            epochs_without_improvement = 0
             backup = ema.store_and_apply(model)
+            enforce_perspective_antisymmetry(model)
+            clamp_nnue_weights(model)
             torch.save(model.state_dict(), best_path)
             ema.restore(model, backup)
+        else:
+            epochs_without_improvement += 1
 
-    model.load_state_dict(torch.load(best_path, map_location=device))
+        # Always save latest checkpoint
+        torch.save(model.state_dict(), latest_path)
+
+        # Early stopping check
+        if patience > 0 and epochs_without_improvement >= patience:
+            print(f"  [Early Stopping] No improvement in validation loss for {patience} epochs. Halting early at epoch {epoch}/{epochs}.")
+            break
+
+    if os.path.isfile(best_path):
+        model.load_state_dict(torch.load(best_path, map_location=device))
+    enforce_perspective_antisymmetry(model)
     clamp_nnue_weights(model)
     torch.save(model.state_dict(), best_path)
     verify_model_sanity(model, model_name)
@@ -338,7 +371,7 @@ def main():
     repo_root = os.path.dirname(script_dir)
     default_networks = os.path.join(repo_root, "networks")
 
-    parser = argparse.ArgumentParser(description="All-in-One Anak 8-Model NNUE Pipeline: Stockfish d9 Gather, Unpack, Train, Deploy")
+    parser = argparse.ArgumentParser(description="All-in-One Anak 8-Model NNUE Pipeline: Stockfish d9/d11 Gather, Unpack, Train, Deploy")
     parser.add_argument(
         "--models",
         type=str,
@@ -346,13 +379,27 @@ def main():
         default=["all"],
         help="Models to train (default: all 8 models: open, closed, endgame, queenless, imbalance, attack, micro, volatility)",
     )
-    parser.add_argument("--epochs", type=int, default=100, help="Number of epochs per model (default: 100)")
+    parser.add_argument(
+        "--preset",
+        type=str,
+        choices=["quick", "standard", "large", "massive"],
+        default=None,
+        help="Convenience preset: 'quick' (500k pos, 30 ep), 'standard' (5M pos, 60 ep), 'large' (15M pos, 80 ep), 'massive' (30M+ pos, 100 ep, full d9/d11)",
+    )
+    parser.add_argument("--epochs", type=int, default=80, help="Number of epochs per model (default: 80)")
     parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear learning rate warmup epochs (default: 3)")
-    parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5%)")
-    parser.add_argument("--batch-size", type=int, default=8192, help="Batch size (default: 8192)")
+    parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5 percent)")
+    parser.add_argument("--batch-size", type=int, default=16384 if torch.cuda.is_available() else 4096, help="Batch size (default: 16384 on GPU, 4096 on CPU)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate (default: 1e-3)")
-    parser.add_argument("--positions-per-model", type=int, default=5_000_000, help="Target Stockfish d9 positions per expert binpack (default: 5,000,000; supports 10,000,000+)")
-    parser.add_argument("--d9-chunks", type=int, default=100, help="Number of 200k-position BINP chunks per d9 file (default: 100 = 80M raw positions across 4 files)")
+    parser.add_argument("--lambda-wdl", type=float, default=0.35, help="WDL weight in ModernNNUELoss (default: 0.35)")
+    parser.add_argument("--patience", type=int, default=15, help="Early stopping patience in epochs (default: 15, 0 = disabled)")
+    parser.add_argument("--positions-per-model", type=int, default=5_000_000, help="Target positions per expert binpack (default: 5,000,000; supports 30,000,000+)")
+    parser.add_argument("--d9-chunks", type=int, default=150, help="Number of 200k-position BINP chunks per file (default: 150; set 0 for full 500M files)")
+    parser.add_argument("--full-download", action="store_true", default=False, help="Download full 500M archives without chunk limit")
+    parser.add_argument("--include-d11", action="store_true", default=True, help="Include Depth-11 Stockfish archives for deeper endgame/positional play (default: True)")
+    parser.add_argument("--force-rebuild", action="store_true", default=False, help="Force re-downloading and re-unpacking binpacks even if existing ones are present")
+    parser.add_argument("--augment-flip", action="store_true", default=True, help="Apply random horizontal board reflection during training (default: True)")
+    parser.add_argument("--external-data", type=str, default=None, help="Additional external .binpack file, directory, or glob pattern to include")
     parser.add_argument("--data-dir", type=str, default=os.path.join(script_dir, "data", "raw"), help="Raw data directory")
     parser.add_argument("--preprocessed-dir", type=str, default=os.path.join(script_dir, "data", "preprocessed"), help="Binary pack directory")
     parser.add_argument("--checkpoints-dir", type=str, default=os.path.join(script_dir, "checkpoints"), help="Checkpoints directory")
@@ -361,22 +408,50 @@ def main():
     parser.add_argument("--skip-preprocess", action="store_true", default=False, help="Skip preprocessing if binpacks exist")
     args = parser.parse_args()
 
+    # Apply preset configurations if specified
+    if args.preset == "quick":
+        args.positions_per_model = 500_000
+        args.epochs = 30
+        args.d9_chunks = 25
+    elif args.preset == "standard":
+        args.positions_per_model = 5_000_000
+        args.epochs = 60
+        args.d9_chunks = 150
+    elif args.preset == "large":
+        args.positions_per_model = 15_000_000
+        args.epochs = 80
+        args.d9_chunks = 350
+    elif args.preset == "massive":
+        args.positions_per_model = 30_000_000
+        args.epochs = 100
+        args.d9_chunks = 0  # full download
+        args.full_download = True
+
+    if args.full_download:
+        args.d9_chunks = 0
+
     selected_models = parse_models_arg(args.models)
 
     overall_start = time.time()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print_banner(f"ANAK 8-MODEL MULTI-EXPERT NNUE TRAINING PIPELINE (PyTorch on {device})")
-    print(f"Target Models: {', '.join(m.upper() for m in selected_models)}")
+    print(f"Target Models:      {', '.join(m.upper() for m in selected_models)}")
+    print(f"Target Positions:   {args.positions_per_model:,} per expert model")
+    print(f"Epochs & Batch:     {args.epochs} epochs | Batch Size: {args.batch_size:,}")
+    print(f"Data Augmentation:  {'Horizontal Board Reflection' if args.augment_flip else 'Disabled'}")
+    print(f"Dataset Archives:   Depth-9 & {'Depth-11 Included' if args.include_d11 else 'Depth-9 Only'}")
 
     alt_data_dir = os.path.join(script_dir, "data")
 
-    # Step 1 & 2: Download Stockfish 500M Depth-9 dataset and convert to Anak binpacks
+    # Step 1 & 2: Download Stockfish Depth-9/11 datasets and convert to Anak binpacks
     ensure_stockfish_d9_binpacks(
         raw_data_dir=args.data_dir,
         preprocessed_dir=args.preprocessed_dir,
         min_records_per_pack=args.positions_per_model,
         chunks_per_file=args.d9_chunks,
         required_models=selected_models,
+        force_rebuild=args.force_rebuild,
+        include_d11=args.include_d11,
     )
 
     # Sync binpacks to training/data/ only when small (< 100 MB) to avoid duplicating multi-GB datasets
@@ -393,6 +468,12 @@ def main():
     trained_checkpoints = {}
     for m in selected_models:
         bin_path = os.path.join(args.preprocessed_dir, f"{m}.binpack")
+        # Combine with external data if specified
+        if args.external_data:
+            resolved_ext = resolve_binpack_files(args.external_data)
+            if resolved_ext:
+                bin_path = [bin_path] + resolved_ext
+
         model_lr = args.lr * 1.5 if is_micro_model(m) else args.lr
         best_pt = train_single_model(
             model_name=m,
@@ -404,6 +485,9 @@ def main():
             checkpoints_dir=args.checkpoints_dir,
             warmup_epochs=args.warmup_epochs,
             val_split=args.val_split,
+            augment_flip=args.augment_flip,
+            lambda_wdl=args.lambda_wdl,
+            patience=args.patience,
         )
         trained_checkpoints[m] = best_pt
 

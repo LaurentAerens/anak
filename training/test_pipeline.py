@@ -295,5 +295,56 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         self.assertEqual(len(resolved_comma), 2)
 
 
+    def test_horizontal_flip_augmentation(self):
+        bp_path = os.path.join(self.temp_dir, "flip_test.binpack")
+        b = chess.Board()
+
+        with BinpackWriter(bp_path, model_tag="open") as w:
+            for _ in range(50):
+                w.add_board(b, target_eval=0.5, target_wdl=0.7, openness=0.5)
+
+        loader = FastMemoryMappedBatchLoader(bp_path, batch_size=50, shuffle=False, augment_flip=True)
+        batches = list(loader)
+        self.assertEqual(len(batches), 1)
+        # Verify valid features scattered and shape
+        features = batches[0]["our_features"]
+        self.assertEqual(features.shape, (50, 768))
+        self.assertTrue(torch.all(features >= 0.0))
+        self.assertTrue(torch.all(features <= 1.0))
+        loader.close()
+
+    def test_stockfish_dataset_urls_catalog(self):
+        from download_data import STOCKFISH_D9_URLS
+        self.assertGreaterEqual(len(STOCKFISH_D9_URLS), 10)
+        has_d11 = any("_d11" in u[0] for u in STOCKFISH_D9_URLS)
+        has_d9 = any("_d9" in u[0] for u in STOCKFISH_D9_URLS)
+        self.assertTrue(has_d11)
+        self.assertTrue(has_d9)
+
+    def test_perspective_antisymmetry(self):
+        from model import enforce_perspective_antisymmetry, StandardNNUE
+        from dataset import encode_board_features
+        model = StandardNNUE()
+        enforce_perspective_antisymmetry(model)
+        model.eval()
+
+        # Symmetric board (startpos)
+        b = chess.Board()
+        our_idx, their_idx = encode_board_features(b)
+        our_t = torch.zeros((1, 768), dtype=torch.float32)
+        their_t = torch.zeros((1, 768), dtype=torch.float32)
+        our_t[0, our_idx] = 1.0
+        their_t[0, their_idx] = 1.0
+
+        with torch.no_grad():
+            eval_normal = model(our_t, their_t).item()
+            eval_reversed = model(their_t, our_t).item()
+
+        # Due to tempo bonus, normal vs reversed differs only by tempo
+        # Without tempo (bias removed), they must be exact opposites
+        tempo = model.output.bias.item()
+        self.assertAlmostEqual(eval_normal - tempo, -(eval_reversed - tempo), places=4)
+
+
 if __name__ == "__main__":
     unittest.main()
