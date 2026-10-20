@@ -52,6 +52,8 @@ public ref struct MovePicker
     private MovePickerStage _stage;
     private bool _capturesScored;
     private bool _quietsScored;
+    private bool _movesGenerated;
+    private bool _ttMovePicked;
 
     // 256-bit bitmask tracking picked moves
     private ulong _picked0;
@@ -86,8 +88,9 @@ public ref struct MovePicker
         _prev2Piece = prev2Piece;
         _prev2To = prev2To;
 
-        _legalMoves = new MoveList();
-        MoveGenerator.GenerateLegalMoves(in board, ref _legalMoves);
+        _legalMoves = default;
+        _movesGenerated = false;
+        _ttMovePicked = false;
 
         _scores = default;
         _stage = MovePickerStage.TtMove;
@@ -109,8 +112,34 @@ public ref struct MovePicker
     {
     }
 
-    public readonly int MoveCount => _legalMoves.Count;
+    public int MoveCount
+    {
+        get
+        {
+            EnsureMovesGenerated();
+            return _legalMoves.Count;
+        }
+    }
+
     public readonly MovePickerStage Stage => _stage;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void EnsureMovesGenerated()
+    {
+        if (_movesGenerated) return;
+        _movesGenerated = true;
+        _legalMoves = new MoveList();
+        MoveGenerator.GenerateLegalMoves(in _board, ref _legalMoves);
+
+        if (_ttMovePicked && !_ttMove.IsNull)
+        {
+            int ttIdx = FindMove(_ttMove);
+            if (ttIdx >= 0)
+            {
+                MarkPicked(ttIdx);
+            }
+        }
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private readonly bool IsPicked(int index)
@@ -149,19 +178,25 @@ public ref struct MovePicker
     {
         while (_stage != MovePickerStage.Done)
         {
+            if (_stage != MovePickerStage.TtMove && !_movesGenerated)
+            {
+                EnsureMovesGenerated();
+            }
+
             switch (_stage)
             {
                 case MovePickerStage.TtMove:
                     _stage = MovePickerStage.GoodCaptures;
-                    if (!_ttMove.IsNull)
+                    if (!_ttMove.IsNull && _board.IsLegal(_ttMove))
                     {
-                        int ttIdx = FindMove(_ttMove);
-                        if (ttIdx >= 0)
+                        _ttMovePicked = true;
+                        if (_movesGenerated)
                         {
-                            MarkPicked(ttIdx);
-                            move = _ttMove;
-                            return true;
+                            int ttIdx = FindMove(_ttMove);
+                            if (ttIdx >= 0) MarkPicked(ttIdx);
                         }
+                        move = _ttMove;
+                        return true;
                     }
                     break;
 

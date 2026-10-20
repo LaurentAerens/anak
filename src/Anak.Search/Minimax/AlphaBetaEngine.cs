@@ -39,9 +39,76 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private volatile bool _stopped;
     private SearchWorker[] _workers;
 
+    private int _lmrBase = 75;
+    private int _lmrDivision = 225;
+    private int _rfpMargin = 75;
+    private int _nmpBase = 3;
+    private int _aspirationDelta = 25;
+    private readonly int[,] _lmrTable = new int[MaxSearchDepth, 128];
+
     public TranspositionTable TranspositionTable => _tt;
     public TimeManager TimeManager => _timeManager;
     public IEvaluator Evaluator => _evaluator;
+
+    public int LmrBase
+    {
+        get => _lmrBase;
+        set
+        {
+            _lmrBase = value;
+            InitLmrTable();
+        }
+    }
+
+    public int LmrDivision
+    {
+        get => _lmrDivision;
+        set
+        {
+            _lmrDivision = Math.Max(1, value);
+            InitLmrTable();
+        }
+    }
+
+    public int RfpMargin
+    {
+        get => _rfpMargin;
+        set => _rfpMargin = value;
+    }
+
+    public int NmpBase
+    {
+        get => _nmpBase;
+        set => _nmpBase = value;
+    }
+
+    public int AspirationDelta
+    {
+        get => _aspirationDelta;
+        set => _aspirationDelta = value;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetLmrReduction(int depth, int moveIndex)
+    {
+        int d = Math.Clamp(depth, 0, MaxSearchDepth - 1);
+        int m = Math.Clamp(moveIndex, 0, 127);
+        return _lmrTable[d, m];
+    }
+
+    private void InitLmrTable()
+    {
+        double baseVal = _lmrBase / 100.0;
+        double divVal = _lmrDivision / 100.0;
+        for (int depth = 1; depth < MaxSearchDepth; depth++)
+        {
+            for (int moves = 1; moves < 128; moves++)
+            {
+                double reduction = baseVal + (Math.Log(depth) * Math.Log(moves) / divVal);
+                _lmrTable[depth, moves] = (int)reduction;
+            }
+        }
+    }
 
     public int Threads
     {
@@ -67,6 +134,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         _tt = new TranspositionTable(defaultHashMb);
         _timeManager = new TimeManager();
         _workers = [];
+        InitLmrTable();
         InitWorkers(1);
     }
 
@@ -80,6 +148,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         _tt = tt ?? new TranspositionTable();
         _timeManager = new TimeManager();
         _workers = [];
+        InitLmrTable();
         InitWorkers(1);
     }
 
@@ -350,7 +419,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 // Aspiration Windows for depth >= 6
                 if (currentDepth >= 6)
                 {
-                    int delta = 25;
+                    int delta = _engine.AspirationDelta;
                     int alpha = Math.Max(-Value.InfiniteValue, prevScore - delta);
                     int beta = Math.Min(Value.InfiniteValue, prevScore + delta);
 
@@ -548,7 +617,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     int r = 0;
                     if (depth >= 3 && movesSearched > 1 && !move.IsCapture && !move.IsPromotion)
                     {
-                        r = SearchHeuristics.GetLmrReduction(depth, movesSearched);
+                        r = _engine.GetLmrReduction(depth, movesSearched);
                         r = SearchHeuristics.AdjustLmrForTopology(r, rootOpenness, isPv: true, isTactical: false, inCheck: false);
 
                         int hist = _history.GetScore(movedPiece.Color(), move);
@@ -741,10 +810,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
             _stack[ply].StaticEval = staticEval;
 
+            // 5. Internal Iterative Reductions (IIR): depth >= 4 and no TT move -> depth--
+            if (depth >= 4 && ttMove.IsNull)
+            {
+                depth--;
+            }
+
             // 6. Reverse Futility Pruning (Static Null Move Pruning) for depth <= 4
             if (!isPv && !inCheck && depth <= 4 && _stack[ply].ExcludedMove.IsNull)
             {
-                int rfpMargin = 75 * depth;
+                int rfpMargin = _engine.RfpMargin * depth;
                 if (eval - rfpMargin >= beta)
                 {
                     return eval - rfpMargin;
@@ -759,7 +834,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 (ply >= 1 && _stack[ply - 1].CurrentMove != Move.Null) &&
                 SearchHeuristics.HasNonPawnMaterial(in board, board.SideToMove))
             {
-                int r = SearchHeuristics.GetNmpReduction(depth, eval, beta, openness);
+                int r = SearchHeuristics.GetNmpReduction(depth, eval, beta, openness, _engine.NmpBase);
                 int nullDepth = depth - 1 - r;
 
                 board.MakeNullMove(out BoardState nullState);
@@ -849,10 +924,14 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
                 bool isQuiet = !move.IsCapture && !move.IsPromotion;
 
-                // Futility Pruning for quiet moves at shallow depth
-                if (!isPv && !inCheck && depth <= 3 && isQuiet && movesSearched > 0)
+                // Shallow Futility Pruning for non-tactical quiet moves at shallow depth
+                if (!isPv && !inCheck && isQuiet && movesSearched > 0)
                 {
-                    if (staticEval + (80 * depth) <= alpha)
+                    if (depth <= 2 && eval + (150 * depth) <= alpha)
+                    {
+                        continue;
+                    }
+                    if (depth == 3 && staticEval + (80 * depth) <= alpha)
                     {
                         continue;
                     }
@@ -893,7 +972,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         !move.IsCapture && !move.IsPromotion && !inCheck &&
                         move != _stack[ply].Killer0 && move != _stack[ply].Killer1)
                     {
-                        r = SearchHeuristics.GetLmrReduction(depth, movesSearched);
+                        r = _engine.GetLmrReduction(depth, movesSearched);
                         r = SearchHeuristics.AdjustLmrForTopology(r, openness, isPv, isTactical: false, inCheck: false);
 
                         int hist = _history.GetScore(movedPiece.Color(), move);

@@ -23,7 +23,7 @@ from tqdm import tqdm
 
 from model import StandardNNUE, MicroNNUE, ModelEMA, clamp_nnue_weights
 from loss import ModernNNUELoss, BlunderLoss
-from fast_loader import FastMemoryMappedBatchLoader
+from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
 from binpack import BinpackReader, BinpackWriter, read_binpack_count
 from preprocess import preprocess_data
 from export import export_standard, export_micro
@@ -131,26 +131,47 @@ def verify_model_sanity(model: torch.nn.Module, model_name: str):
 
 def train_single_model(
     model_name: str,
-    binpack_path: str,
+    binpack_path: Union[str, List[str]],
     epochs: int,
     batch_size: int,
     lr: float,
     device: torch.device,
-    checkpoints_dir: str
+    checkpoints_dir: str,
+    warmup_epochs: int = 3,
+    val_split: float = 0.05,
 ) -> str:
     """
     Trains one NNUE model on its preprocessed Stockfish d9 binpack using 100% trainable weights,
-    step-aware ModelEMA, and ModernNNUELoss / BlunderLoss.
+    PyTorch Mixed Precision (AMP: bfloat16/float16), linear warmup + Cosine Annealing,
+    validation split loss tracking, step-aware ModelEMA, and ModernNNUELoss / BlunderLoss.
     Returns path to best checkpoint (.pt).
     """
     print_banner(f"TRAINING {model_name.upper()}-NNUE ({epochs} Epochs on {device})")
-    reader = BinpackReader(binpack_path)
-    total_records = len(reader)
-    reader.close()
+    binpack_files = resolve_binpack_files(binpack_path)
+    if not binpack_files:
+        raise FileNotFoundError(f"No binpack files found for {binpack_path}")
 
-    effective_batch_size = min(batch_size, max(256, total_records // 32))
-    print(f"Source Binpack: {binpack_path} ({total_records:,} positions, {os.path.getsize(binpack_path):,} bytes)")
-    print(f"Batch Size:     {effective_batch_size:,} ({math.ceil(total_records / effective_batch_size):,} steps/epoch)")
+    total_records = sum(len(BinpackReader(f)) for f in binpack_files)
+    train_count = int(total_records * (1.0 - val_split)) if val_split > 0 else total_records
+    effective_batch_size = min(batch_size, max(256, train_count))
+
+    total_bytes = sum(os.path.getsize(f) for f in binpack_files)
+    print(f"Source Binpack(s): {len(binpack_files)} file(s), {total_records:,} positions ({total_bytes:,} bytes)")
+    print(f"Batch Size:        {effective_batch_size:,} ({math.ceil(train_count / effective_batch_size):,} train steps/epoch)")
+    print(f"Validation Split:  {val_split * 100:.1f}% ({total_records - train_count:,} validation positions)")
+
+    # Mixed Precision (AMP) Configuration
+    is_cuda = (device.type == "cuda")
+    has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
+    amp_dtype = torch.bfloat16 if has_bf16 else torch.float16
+    amp_enabled = is_cuda
+    scaler = torch.cuda.amp.GradScaler(enabled=(is_cuda and amp_dtype == torch.float16))
+
+    if is_cuda:
+        precision_str = "bfloat16 (native)" if has_bf16 else "float16 (+ GradScaler)"
+        print(f"Mixed Precision:   ENABLED ({precision_str})")
+    else:
+        print("Mixed Precision:   DISABLED (CPU float32)")
 
     if is_micro_model(model_name):
         model = MicroNNUE().to(device)
@@ -160,11 +181,24 @@ def train_single_model(
         criterion = ModernNNUELoss(lambda_wdl=0.25, eval_scale=2.50)
 
     ema = ModelEMA(model, decay=0.995)
-
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.05)
 
-    best_loss = float("inf")
+    # Linear Warmup followed by Cosine Annealing
+    actual_warmup = min(warmup_epochs, max(0, epochs // 4))
+    if actual_warmup > 0 and epochs > actual_warmup:
+        warmup_sched = torch.optim.lr_scheduler.LinearLR(
+            optimizer, start_factor=0.1, end_factor=1.0, total_iters=actual_warmup
+        )
+        cosine_sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+            optimizer, T_max=epochs - actual_warmup, eta_min=lr * 0.05
+        )
+        scheduler = torch.optim.lr_scheduler.SequentialLR(
+            optimizer, schedulers=[warmup_sched, cosine_sched], milestones=[actual_warmup]
+        )
+    else:
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs, eta_min=lr * 0.05)
+
+    best_metric = float("inf")
     out_tag = "micro" if model_name == "small" else model_name
     best_path = os.path.join(checkpoints_dir, f"{out_tag}_best.pt")
 
@@ -175,31 +209,48 @@ def train_single_model(
         batch_count = 0
         total_positions = 0
 
-        loader = FastMemoryMappedBatchLoader(
-            binpack_path,
+        train_loader = FastMemoryMappedBatchLoader(
+            binpack_files,
             batch_size=effective_batch_size,
             shuffle=True,
-            device=device
+            device=device,
+            val_split=val_split,
+            is_validation=False
         )
+        val_loader = FastMemoryMappedBatchLoader(
+            binpack_files,
+            batch_size=effective_batch_size,
+            shuffle=False,
+            device=device,
+            val_split=val_split,
+            is_validation=True
+        ) if val_split > 0 else None
 
-        pbar = tqdm(loader, desc=f"{model_name.capitalize()} Epoch {epoch}/{epochs}", leave=False)
+        pbar = tqdm(train_loader, desc=f"{model_name.capitalize()} Epoch {epoch}/{epochs}", leave=False)
         for batch in pbar:
             our_feat = batch["our_features"]
             their_feat = batch["their_features"]
             target_wdl = batch["target_wdl"]
             target_eval = batch["target_eval"]
 
-            optimizer.zero_grad()
-            preds = model(our_feat, their_feat)
+            optimizer.zero_grad(set_to_none=True)
+            with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
+                preds = model(our_feat, their_feat)
+                if is_micro_model(model_name):
+                    loss = criterion(preds, target_eval)
+                else:
+                    loss = criterion(preds, target_wdl, target_eval)
 
-            if is_micro_model(model_name):
-                loss = criterion(preds, target_eval)
+            if scaler.is_enabled():
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
             else:
-                loss = criterion(preds, target_wdl, target_eval)
-
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                optimizer.step()
 
             clamp_nnue_weights(model, max_val=1.98)
             ema.update(model)
@@ -207,19 +258,49 @@ def train_single_model(
             total_loss += loss.item()
             batch_count += 1
             total_positions += our_feat.shape[0]
-            pbar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+            elapsed = max(0.001, time.time() - epoch_start)
+            pos_rate = total_positions / elapsed
+            pbar.set_postfix({"loss": f"{loss.item():.4f}", "pos/s": f"{pos_rate:,.0f}"})
+
+        train_loader.close()
+
+        # Validation evaluation
+        avg_val_loss = None
+        if val_loader and len(val_loader) > 0:
+            model.eval()
+            val_loss = 0.0
+            val_batches = 0
+            with torch.no_grad():
+                for v_batch in val_loader:
+                    our_feat = v_batch["our_features"]
+                    their_feat = v_batch["their_features"]
+                    target_wdl = v_batch["target_wdl"]
+                    target_eval = v_batch["target_eval"]
+                    with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
+                        preds = model(our_feat, their_feat)
+                        if is_micro_model(model_name):
+                            v_l = criterion(preds, target_eval)
+                        else:
+                            v_l = criterion(preds, target_wdl, target_eval)
+                    val_loss += v_l.item()
+                    val_batches += 1
+            if val_batches > 0:
+                avg_val_loss = val_loss / val_batches
+            val_loader.close()
 
         scheduler.step()
-        loader.close()
 
         epoch_time = time.time() - epoch_start
         throughput = total_positions / max(0.001, epoch_time)
         avg_loss = total_loss / max(1, batch_count)
+        val_str = f"{avg_val_loss:.4f}" if avg_val_loss is not None else "N/A"
 
-        print(f"  Epoch {epoch:2d}/{epochs} | Loss: {avg_loss:.4f} | Throughput: {throughput:,.0f} pos/sec ({epoch_time:.2f}s) | LR: {scheduler.get_last_lr()[0]:.6f}")
+        print(f"  Epoch {epoch:2d}/{epochs} | Train Loss: {avg_loss:.4f} | Val Loss: {val_str} | Throughput: {throughput:,.0f} pos/sec ({epoch_time:.2f}s) | LR: {scheduler.get_last_lr()[0]:.6f}")
 
-        if avg_loss < best_loss:
-            best_loss = avg_loss
+        eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
+        if eval_metric < best_metric:
+            best_metric = eval_metric
             backup = ema.store_and_apply(model)
             torch.save(model.state_dict(), best_path)
             ema.restore(model, backup)
@@ -229,7 +310,8 @@ def train_single_model(
     torch.save(model.state_dict(), best_path)
     verify_model_sanity(model, model_name)
 
-    print(f"--> Finished {model_name.upper()}! Best Loss: {best_loss:.4f} -> {best_path}")
+    metric_tag = "Best Val Loss" if avg_val_loss is not None else "Best Loss"
+    print(f"--> Finished {model_name.upper()}! {metric_tag}: {best_metric:.4f} -> {best_path}")
     return best_path
 
 
@@ -265,6 +347,8 @@ def main():
         help="Models to train (default: all 8 models: open, closed, endgame, queenless, imbalance, attack, micro, volatility)",
     )
     parser.add_argument("--epochs", type=int, default=100, help="Number of epochs per model (default: 100)")
+    parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear learning rate warmup epochs (default: 3)")
+    parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5%)")
     parser.add_argument("--batch-size", type=int, default=8192, help="Batch size (default: 8192)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate (default: 1e-3)")
     parser.add_argument("--positions-per-model", type=int, default=5_000_000, help="Target Stockfish d9 positions per expert binpack (default: 5,000,000; supports 10,000,000+)")
@@ -318,6 +402,8 @@ def main():
             lr=model_lr,
             device=device,
             checkpoints_dir=args.checkpoints_dir,
+            warmup_epochs=args.warmup_epochs,
+            val_split=args.val_split,
         )
         trained_checkpoints[m] = best_pt
 

@@ -31,6 +31,7 @@ from binpack import (
 from fast_loader import (
     fast_scatter_features,
     FastMemoryMappedBatchLoader,
+    resolve_binpack_files,
 )
 from model import StandardNNUE, MicroNNUE
 
@@ -219,6 +220,79 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         self.assertEqual(arch_id, 1)
         self.assertEqual(hidden_dim, 512)
         self.assertEqual(l1_dim, 64)
+
+
+    def test_multi_file_sharded_binpack_loader(self):
+        shard1 = os.path.join(self.temp_dir, "shard1.binpack")
+        shard2 = os.path.join(self.temp_dir, "shard2.binpack")
+        b = chess.Board()
+
+        with BinpackWriter(shard1, model_tag="open") as w1:
+            for _ in range(120):
+                w1.add_board(b, target_eval=0.1, target_wdl=0.5, openness=0.5)
+
+        with BinpackWriter(shard2, model_tag="open") as w2:
+            for _ in range(80):
+                w2.add_board(b, target_eval=0.2, target_wdl=0.6, openness=0.6)
+
+        # Test loading via list
+        loader = FastMemoryMappedBatchLoader([shard1, shard2], batch_size=50, shuffle=False)
+        self.assertEqual(loader.total_records, 200)
+        self.assertEqual(len(loader), 4)
+
+        seen = 0
+        for batch in loader:
+            seen += batch["our_features"].shape[0]
+        self.assertEqual(seen, 200)
+        loader.close()
+
+        # Test loading via glob pattern
+        glob_pattern = os.path.join(self.temp_dir, "shard*.binpack")
+        loader_glob = FastMemoryMappedBatchLoader(glob_pattern, batch_size=64, shuffle=True)
+        self.assertEqual(loader_glob.total_records, 200)
+        loader_glob.close()
+
+    def test_validation_split_batch_loader(self):
+        bp_path = os.path.join(self.temp_dir, "split_test.binpack")
+        b = chess.Board()
+
+        with BinpackWriter(bp_path, model_tag="open") as w:
+            for _ in range(300):
+                w.add_board(b, target_eval=0.1, target_wdl=0.5, openness=0.5)
+
+        # 10% validation split: 270 train, 30 val
+        train_loader = FastMemoryMappedBatchLoader(bp_path, batch_size=100, val_split=0.10, is_validation=False)
+        val_loader = FastMemoryMappedBatchLoader(bp_path, batch_size=100, val_split=0.10, is_validation=True)
+
+        self.assertEqual(train_loader.total_records, 270)
+        self.assertEqual(val_loader.total_records, 30)
+
+        train_samples = sum(batch["our_features"].shape[0] for batch in train_loader)
+        val_samples = sum(batch["our_features"].shape[0] for batch in val_loader)
+
+        self.assertEqual(train_samples, 270)
+        self.assertEqual(val_samples, 30)
+
+        train_loader.close()
+        val_loader.close()
+
+    def test_resolve_binpack_files(self):
+        f1 = os.path.join(self.temp_dir, "a.binpack")
+        f2 = os.path.join(self.temp_dir, "b.binpack")
+        open(f1, "w").close()
+        open(f2, "w").close()
+
+        # By directory
+        resolved_dir = resolve_binpack_files(self.temp_dir)
+        self.assertEqual(len(resolved_dir), 2)
+
+        # By glob
+        resolved_glob = resolve_binpack_files(os.path.join(self.temp_dir, "*.binpack"))
+        self.assertEqual(len(resolved_glob), 2)
+
+        # By comma-separated string
+        resolved_comma = resolve_binpack_files(f"{f1},{f2}")
+        self.assertEqual(len(resolved_comma), 2)
 
 
 if __name__ == "__main__":

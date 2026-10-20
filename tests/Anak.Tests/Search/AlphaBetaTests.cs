@@ -266,4 +266,54 @@ public class AlphaBetaTests
 
         Assert.NotEqual("e2b5", move.ToUci());
     }
+
+    [Fact]
+    public void AlphaBeta_ConfigurableSpsaOptions_CanBeAdjustedViaUci()
+    {
+        var adapter = new UciEngineAdapter(_ => { });
+
+        Assert.Equal(75, adapter.Options.LmrBase.Value);
+        Assert.Equal(225, adapter.Options.LmrDivision.Value);
+        Assert.Equal(75, adapter.Options.RfpMargin.Value);
+        Assert.Equal(3, adapter.Options.NmpBase.Value);
+        Assert.Equal(25, adapter.Options.AspirationDelta.Value);
+
+        // Modify options
+        Assert.True(adapter.Options.TrySetValue("LmrBase", "80"));
+        Assert.True(adapter.Options.TrySetValue("LmrDivision", "240"));
+        Assert.True(adapter.Options.TrySetValue("RfpMargin", "90"));
+        Assert.True(adapter.Options.TrySetValue("NmpBase", "4"));
+        Assert.True(adapter.Options.TrySetValue("AspirationDelta", "30"));
+
+        Assert.Equal(80, adapter.Options.LmrBase.Value);
+        Assert.Equal(240, adapter.Options.LmrDivision.Value);
+        Assert.Equal(90, adapter.Options.RfpMargin.Value);
+        Assert.Equal(4, adapter.Options.NmpBase.Value);
+        Assert.Equal(30, adapter.Options.AspirationDelta.Value);
+
+        var alphaBeta = (AlphaBetaEngine)adapter.ActiveEngine;
+        Assert.Equal(80, alphaBeta.LmrBase);
+        Assert.Equal(240, alphaBeta.LmrDivision);
+        Assert.Equal(90, alphaBeta.RfpMargin);
+        Assert.Equal(4, alphaBeta.NmpBase);
+        Assert.Equal(30, alphaBeta.AspirationDelta);
+    }
+
+    [Fact]
+    public void AlphaBeta_LmrTable_RecomputesWithNewParameters()
+    {
+        var evaluator = UciEngineAdapter.CreateEvaluator();
+        var engine = new AlphaBetaEngine(evaluator, defaultHashMb: 4)
+        {
+            LmrBase = 75,
+            LmrDivision = 225
+        };
+
+        int rDefault = engine.GetLmrReduction(10, 10);
+
+        // With higher base, reduction should increase or stay same
+        engine.LmrBase = 150;
+        int rHigher = engine.GetLmrReduction(10, 10);
+        Assert.True(rHigher >= rDefault);
+    }
 }

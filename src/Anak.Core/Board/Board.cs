@@ -40,33 +40,33 @@ public struct Board : IEquatable<Board>
 
     public ulong GetHistory(int index) => _history[index];
 
-    public ulong Occupied
+    public readonly ulong Occupied
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => White | Black;
     }
 
-    public ulong Empty
+    public readonly ulong Empty
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         get => ~(White | Black);
     }
 
     // Compatibility properties
-    public ulong ColorMaskWhite => White;
-    public ulong ColorMaskBlack => Black;
-    public ulong PieceMaskPawn => Pawns;
-    public ulong PieceMaskKnight => Knights;
-    public ulong PieceMaskBishop => Bishops;
-    public ulong PieceMaskRook => Rooks;
-    public ulong PieceMaskQueen => Queens;
-    public ulong PieceMaskKing => Kings;
+    public readonly ulong ColorMaskWhite => White;
+    public readonly ulong ColorMaskBlack => Black;
+    public readonly ulong PieceMaskPawn => Pawns;
+    public readonly ulong PieceMaskKnight => Knights;
+    public readonly ulong PieceMaskBishop => Bishops;
+    public readonly ulong PieceMaskRook => Rooks;
+    public readonly ulong PieceMaskQueen => Queens;
+    public readonly ulong PieceMaskKing => Kings;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ulong GetPieces(Color color) => color == Color.White ? White : Black;
+    public readonly ulong GetPieces(Color color) => color == Color.White ? White : Black;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ulong GetPieces(PieceType type) => type switch
+    public readonly ulong GetPieces(PieceType type) => type switch
     {
         PieceType.Pawn => Pawns,
         PieceType.Knight => Knights,
@@ -78,10 +78,10 @@ public struct Board : IEquatable<Board>
     };
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public ulong GetPieces(Piece piece) => GetPieces(piece.Color()) & GetPieces(piece.Type());
+    public readonly ulong GetPieces(Piece piece) => GetPieces(piece.Color()) & GetPieces(piece.Type());
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public Piece GetPieceAt(Square square)
+    public readonly Piece GetPieceAt(Square square)
     {
         ulong bit = 1UL << (byte)square;
         if ((Occupied & bit) == 0) return Piece.None;
@@ -99,7 +99,7 @@ public struct Board : IEquatable<Board>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool IsSquareAttacked(Square sq, Color attackerColor)
+    public readonly bool IsSquareAttacked(Square sq, Color attackerColor)
     {
         int s = (byte)sq;
         ulong attackerPieces = attackerColor == Color.White ? White : Black;
@@ -129,7 +129,7 @@ public struct Board : IEquatable<Board>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool IsInCheck(Color color)
+    public readonly bool IsInCheck(Color color)
     {
         ulong kingBb = Kings & (color == Color.White ? White : Black);
         if (kingBb == 0) return false;
@@ -138,7 +138,7 @@ public struct Board : IEquatable<Board>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool IsInCheck() => IsInCheck(SideToMove);
+    public readonly bool IsInCheck() => IsInCheck(SideToMove);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AddPiece(Square sq, Color color, PieceType type)
@@ -521,6 +521,233 @@ public struct Board : IEquatable<Board>
         MoveList list = default;
         GenerateLegalMoves(ref list);
         return list;
+    }
+
+    /// <summary>
+    /// Fast single-candidate move legality validation for lazy move generation.
+    /// Validates piece color, destination square, piece-specific movement attacks, and king safety.
+    /// Castling falls back to legal move check.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public readonly bool IsLegal(in Move move)
+    {
+        if (move.IsNull) return false;
+
+        // For castling, fall back to legal move check
+        if (move.IsCastling)
+        {
+            MoveList list = default;
+            MoveGenerator.GenerateLegalMoves(in this, ref list);
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] == move) return true;
+            }
+            return false;
+        }
+
+        Square from = move.From;
+        Square to = move.To;
+        if (from == to) return false;
+
+        Color us = SideToMove;
+        Color them = us.Opponent();
+
+        Piece piece = GetPieceAt(from);
+        if (piece == Piece.None || piece.Color() != us) return false;
+
+        ulong toBit = 1UL << (int)to;
+        ulong ourPieces = GetPieces(us);
+        if ((ourPieces & toBit) != 0) return false;
+
+        PieceType pt = piece.Type();
+        ulong enemyPieces = GetPieces(them);
+        ulong occupied = Occupied;
+        bool isCaptureDest = (enemyPieces & toBit) != 0;
+
+        switch (pt)
+        {
+            case PieceType.Pawn:
+            {
+                int rDiff = (int)to.Rank() - (int)from.Rank();
+                int fDiff = (int)to.File() - (int)from.File();
+
+                if (us == Color.White)
+                {
+                    if (fDiff == 0)
+                    {
+                        // Push
+                        if (isCaptureDest || move.IsCapture) return false;
+
+                        if (rDiff == 1)
+                        {
+                            if ((occupied & toBit) != 0) return false;
+                            if (to.Rank() == Rank.Rank8)
+                            {
+                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                            }
+                            else
+                            {
+                                if (move.IsPromotion || move.Type != MoveType.Quiet) return false;
+                            }
+                        }
+                        else if (rDiff == 2)
+                        {
+                            if (from.Rank() != Rank.Rank2) return false;
+                            if (move.Type != MoveType.DoublePawnPush) return false;
+                            Square intermediate = (Square)((int)from + 8);
+                            if ((occupied & ((1UL << (int)intermediate) | toBit)) != 0) return false;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                    else if (fDiff == 1 || fDiff == -1)
+                    {
+                        // Capture or En Passant
+                        if (rDiff != 1) return false;
+
+                        if (move.Type == MoveType.EnPassant)
+                        {
+                            if (EpSquare == Square.None || to != EpSquare) return false;
+                            Square capSq = (Square)((int)to - 8);
+                            if ((Pawns & enemyPieces & (1UL << (int)capSq)) == 0) return false;
+                        }
+                        else
+                        {
+                            if (!isCaptureDest) return false;
+                            if (to.Rank() == Rank.Rank8)
+                            {
+                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                            }
+                            else
+                            {
+                                if (move.Type != MoveType.Capture) return false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                else // Black
+                {
+                    if (fDiff == 0)
+                    {
+                        // Push
+                        if (isCaptureDest || move.IsCapture) return false;
+
+                        if (rDiff == -1)
+                        {
+                            if ((occupied & toBit) != 0) return false;
+                            if (to.Rank() == Rank.Rank1)
+                            {
+                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                            }
+                            else
+                            {
+                                if (move.IsPromotion || move.Type != MoveType.Quiet) return false;
+                            }
+                        }
+                        else if (rDiff == -2)
+                        {
+                            if (from.Rank() != Rank.Rank7) return false;
+                            if (move.Type != MoveType.DoublePawnPush) return false;
+                            Square intermediate = (Square)((int)from - 8);
+                            if ((occupied & ((1UL << (int)intermediate) | toBit)) != 0) return false;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                    else if (fDiff == 1 || fDiff == -1)
+                    {
+                        // Capture or En Passant
+                        if (rDiff != -1) return false;
+
+                        if (move.Type == MoveType.EnPassant)
+                        {
+                            if (EpSquare == Square.None || to != EpSquare) return false;
+                            Square capSq = (Square)((int)to + 8);
+                            if ((Pawns & enemyPieces & (1UL << (int)capSq)) == 0) return false;
+                        }
+                        else
+                        {
+                            if (!isCaptureDest) return false;
+                            if (to.Rank() == Rank.Rank1)
+                            {
+                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                            }
+                            else
+                            {
+                                if (move.Type != MoveType.Capture) return false;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        return false;
+                    }
+                }
+                break;
+            }
+
+            case PieceType.Knight:
+            {
+                if (move.IsPromotion || move.IsEnPassant) return false;
+                if ((Bitboard.KnightAttacks[(int)from] & toBit) == 0) return false;
+                if (isCaptureDest != move.IsCapture) return false;
+                break;
+            }
+
+            case PieceType.Bishop:
+            {
+                if (move.IsPromotion || move.IsEnPassant) return false;
+                if ((MagicBitboards.GetBishopAttacks(from, occupied) & toBit) == 0) return false;
+                if (isCaptureDest != move.IsCapture) return false;
+                break;
+            }
+
+            case PieceType.Rook:
+            {
+                if (move.IsPromotion || move.IsEnPassant) return false;
+                if ((MagicBitboards.GetRookAttacks(from, occupied) & toBit) == 0) return false;
+                if (isCaptureDest != move.IsCapture) return false;
+                break;
+            }
+
+            case PieceType.Queen:
+            {
+                if (move.IsPromotion || move.IsEnPassant) return false;
+                ulong qAttacks = MagicBitboards.GetBishopAttacks(from, occupied) | MagicBitboards.GetRookAttacks(from, occupied);
+                if ((qAttacks & toBit) == 0) return false;
+                if (isCaptureDest != move.IsCapture) return false;
+                break;
+            }
+
+            case PieceType.King:
+            {
+                if (move.IsPromotion || move.IsEnPassant) return false;
+                if ((Bitboard.KingAttacks[(int)from] & toBit) == 0) return false;
+                if (isCaptureDest != move.IsCapture) return false;
+                break;
+            }
+
+            default:
+                return false;
+        }
+
+        // King safety: make move and verify king is not in check
+        ref Board mutableBoard = ref Unsafe.AsRef(in this);
+        if (!mutableBoard.MakeMove(move, out BoardState state))
+        {
+            return false;
+        }
+        bool legal = !mutableBoard.IsInCheck(mutableBoard.SideToMove.Opponent());
+        mutableBoard.UnmakeMove(move, in state);
+        return legal;
     }
 
     public void PushHistory(ulong key)

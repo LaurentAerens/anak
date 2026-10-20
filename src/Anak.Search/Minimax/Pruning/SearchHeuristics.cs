@@ -96,12 +96,12 @@ public static class SearchHeuristics
 
     /// <summary>
     /// Computes dynamic Null-Move Pruning (NMP) reduction:
-    /// R = 3 + depth / 6 + (eval - beta) / 200, adjusted for board openness.
+    /// R = nmpBase + depth / 6 + (eval - beta) / 200, adjusted for board openness.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetNmpReduction(int depth, int eval, int beta, float openness)
+    public static int GetNmpReduction(int depth, int eval, int beta, float openness, int nmpBase = 3)
     {
-        int baseR = 3 + (depth / 6);
+        int baseR = nmpBase + (depth / 6);
         int evalMargin = Math.Clamp((eval - beta) / 200, 0, 3);
         int r = baseR + evalMargin;
 

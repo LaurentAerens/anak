@@ -276,6 +276,11 @@ public sealed class UciOptionRegistry
     public SpinOption MoveRandomness { get; }
     public SpinOption Temperature { get; }
     public ComboOption SearchAlgorithm { get; }
+    public SpinOption LmrBase { get; }
+    public SpinOption LmrDivision { get; }
+    public SpinOption RfpMargin { get; }
+    public SpinOption NmpBase { get; }
+    public SpinOption AspirationDelta { get; }
 
     public UciOptionRegistry()
     {
@@ -292,6 +297,11 @@ public sealed class UciOptionRegistry
         BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: true);
         MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
         Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
+        LmrBase = new SpinOption("LmrBase", defaultValue: 75, min: 0, max: 250);
+        LmrDivision = new SpinOption("LmrDivision", defaultValue: 225, min: 50, max: 500);
+        RfpMargin = new SpinOption("RfpMargin", defaultValue: 75, min: 10, max: 300);
+        NmpBase = new SpinOption("NmpBase", defaultValue: 3, min: 1, max: 10);
+        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 25, min: 5, max: 100);
 
         Register(SearchAlgorithm);
         Register(Hash);
@@ -306,6 +316,11 @@ public sealed class UciOptionRegistry
         Register(BlunderWatchdog);
         Register(MoveRandomness);
         Register(Temperature);
+        Register(LmrBase);
+        Register(LmrDivision);
+        Register(RfpMargin);
+        Register(NmpBase);
+        Register(AspirationDelta);
     }
 
     public void Register(UciOption option)

@@ -144,4 +144,34 @@ public class NnueTests
 
         Assert.Equal(0, allocAfter - allocBefore);
     }
+
+    [Fact]
+    public void MultiTierNnueEvaluator_RootExpertConsistency_RetainsExpertThroughoutDescent()
+    {
+        using var evaluator = new MultiTierNnueEvaluator();
+        var rootBoard = Fen.Parse(Fen.StartPosition);
+
+        evaluator.InitSearch(in rootBoard);
+        NnueWeights? rootWeights = evaluator.ActiveWeights;
+        Assert.NotNull(rootWeights);
+
+        // Make move e2-e4
+        var move = new Move(Square.E2, Square.E4, MoveType.DoublePawnPush);
+        rootBoard.MakeMove(move, out BoardState state);
+
+        evaluator.PushMove(move, Piece.WhitePawn, Piece.None, in rootBoard);
+        Assert.Same(rootWeights, evaluator.ActiveWeights);
+
+        Value val = evaluator.Evaluate(in rootBoard, ReadOnlySpan<Move>.Empty);
+        Assert.InRange(val.Raw, -2000, 2000);
+
+        // Push null move
+        rootBoard.MakeNullMove(out BoardState nullState);
+        evaluator.PushNullMove(in rootBoard);
+        Assert.Same(rootWeights, evaluator.ActiveWeights);
+
+        // Rollback
+        evaluator.RollbackTo(0);
+        Assert.Same(rootWeights, evaluator.ActiveWeights);
+    }
 }

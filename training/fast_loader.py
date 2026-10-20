@@ -1,18 +1,78 @@
 """
 Ultra-Fast Pure-Python Binpack DataLoader for Anak NNUE Training.
 Reads directly from memory-mapped .binpack binary archives.
-Utilizes GPU-accelerated sparse scatter to completely eliminate CPU/PCIe bottlenecks.
+Supports:
+- Multi-file / sharded binpacks (directories, glob patterns, comma-separated, or file lists)
+- Validation split (e.g. 5% split for validation loss tracking)
+- High batch sizes (up to 32,768+ with GPU-accelerated sparse scatter)
+- Zero memory duplication and multi-million positions/sec streaming
 """
 
-from typing import Optional, Union, List
+import glob
 import math
+import os
+from typing import Optional, Union, List
 import numpy as np
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 
 from binpack import BinpackReader, RECORD_DTYPE, SENTINEL_INDEX
 
 FEATURE_COUNT = 768
+
+
+def resolve_binpack_files(source: Union[str, List[str]]) -> List[str]:
+    """
+    Intelligently resolves one or multiple .binpack files from:
+    - A single file path (e.g. 'open.binpack')
+    - A directory containing .binpack files (e.g. './data/shards')
+    - A glob pattern (e.g. 'data/*.binpack')
+    - A comma-separated list of paths (e.g. 'shard1.binpack,shard2.binpack')
+    - A Python list/tuple of paths or patterns
+    """
+    candidates: List[str] = []
+    if isinstance(source, (list, tuple)):
+        for item in source:
+            candidates.extend(resolve_binpack_files(item))
+        return sorted(list(set(candidates)))
+
+    if not isinstance(source, str) or not source.strip():
+        return []
+
+    # Handle comma-separated input
+    if "," in source:
+        for part in source.split(","):
+            part = part.strip()
+            if part:
+                candidates.extend(resolve_binpack_files(part))
+        return sorted(list(set(candidates)))
+
+    # Handle glob patterns (* or ?)
+    if "*" in source or "?" in source:
+        matches = glob.glob(source, recursive=True)
+        for m in matches:
+            if os.path.isfile(m) and m.endswith(".binpack"):
+                candidates.append(os.path.abspath(m))
+        return sorted(list(set(candidates)))
+
+    abs_path = os.path.abspath(source)
+    if os.path.isdir(abs_path):
+        for root, _, files in os.walk(abs_path):
+            for f in sorted(files):
+                if f.endswith(".binpack"):
+                    candidates.append(os.path.abspath(os.path.join(root, f)))
+        return sorted(candidates)
+
+    if os.path.isfile(abs_path):
+        return [abs_path]
+
+    # Try relative to cwd or script dir if not found directly
+    cwd_candidate = os.path.abspath(os.path.join(os.getcwd(), source))
+    if os.path.isfile(cwd_candidate):
+        return [cwd_candidate]
+
+    # Return empty if nothing found
+    return []
 
 
 def fast_scatter_features(
@@ -40,18 +100,33 @@ def fast_scatter_features(
 
 class FastBinpackDataset(Dataset):
     """
-    PyTorch Map-Style Dataset backed by memory-mapped BinpackReader.
-    Supports random access, instant length calculation, and zero memory duplication.
+    PyTorch Map-Style Dataset backed by memory-mapped BinpackReader(s).
+    Supports single or multi-file sharded binpacks with instant length calculation and zero duplication.
     """
-    def __init__(self, binpack_path: str):
-        self.reader = BinpackReader(binpack_path)
-        self.length = len(self.reader)
+    def __init__(self, binpack_source: Union[str, List[str]]):
+        self.files = resolve_binpack_files(binpack_source)
+        if not self.files:
+            raise FileNotFoundError(f"No valid .binpack files found for source: {binpack_source}")
+
+        self.readers: List[BinpackReader] = [BinpackReader(f) for f in self.files]
+        self.file_lengths = [len(r) for r in self.readers]
+        self.offsets = np.cumsum([0] + self.file_lengths)
+        self.total_records = int(self.offsets[-1])
 
     def __len__(self) -> int:
-        return self.length
+        return self.total_records
 
     def __getitem__(self, idx: int):
-        rec = self.reader[idx]
+        if idx < 0 or idx >= self.total_records:
+            raise IndexError(f"Index {idx} out of bounds for dataset of size {self.total_records}")
+
+        if len(self.readers) == 1:
+            rec = self.readers[0][idx]
+        else:
+            file_idx = int(np.searchsorted(self.offsets[1:], idx, side="right"))
+            local_idx = idx - self.offsets[file_idx]
+            rec = self.readers[file_idx][local_idx]
+
         return {
             "our_indices": rec["our_indices"],
             "their_indices": rec["their_indices"],
@@ -62,7 +137,14 @@ class FastBinpackDataset(Dataset):
         }
 
     def close(self):
-        self.reader.close()
+        for r in self.readers:
+            r.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
 
 
 def collate_binpack_batch(batch_list: list) -> dict:
@@ -85,21 +167,52 @@ class FastMemoryMappedBatchLoader:
     High-Performance Zero-Copy Pure-Python Batch Iterator.
     Bypasses PyTorch DataLoader worker overhead by slicing NumPy memory-mapped arrays directly.
     Streams batches at >1,000,000 positions per second into GPU VRAM.
+
+    Supports:
+    - Multi-file / sharded binpacks (directories, glob patterns, or file lists)
+    - Validation split (val_split in [0, 1) and is_validation flag)
+    - High batch sizes scaling up to 16,384 or 32,768+
     """
     def __init__(
         self,
-        binpack_path: str,
+        binpack_path: Union[str, List[str]],
         batch_size: int = 4096,
         shuffle: bool = True,
         device: Optional[torch.device] = None,
-        drop_last: bool = False
+        drop_last: bool = False,
+        val_split: float = 0.0,
+        is_validation: bool = False
     ):
-        self.reader = BinpackReader(binpack_path)
-        self.total_records = len(self.reader)
+        self.files = resolve_binpack_files(binpack_path)
+        if not self.files:
+            raise FileNotFoundError(f"No valid .binpack files found for: {binpack_path}")
+
+        self.readers: List[BinpackReader] = [BinpackReader(f) for f in self.files]
+        self.file_lengths = [len(r) for r in self.readers]
+        self.cumulative_offsets = np.cumsum([0] + self.file_lengths)
+        self.total_raw_records = int(self.cumulative_offsets[-1])
+
         self.batch_size = batch_size
         self.shuffle = shuffle
         self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.drop_last = drop_last
+        self.val_split = max(0.0, min(0.99, float(val_split)))
+        self.is_validation = is_validation
+
+        # Determine partition range for train / val split
+        if self.val_split > 0.0:
+            split_boundary = int(self.total_raw_records * (1.0 - self.val_split))
+            if self.is_validation:
+                self.range_start = split_boundary
+                self.range_end = self.total_raw_records
+            else:
+                self.range_start = 0
+                self.range_end = split_boundary
+        else:
+            self.range_start = 0
+            self.range_end = self.total_raw_records
+
+        self.total_records = max(0, self.range_end - self.range_start)
 
         if self.total_records == 0:
             self.num_batches = 0
@@ -113,13 +226,15 @@ class FastMemoryMappedBatchLoader:
         return self.num_batches
 
     def __iter__(self):
-        if self.total_records == 0:
+        if self.total_records == 0 or self.num_batches == 0:
             return
 
         if self.shuffle:
-            indices = np.random.default_rng().permutation(np.arange(self.total_records, dtype=np.int32))
+            local_indices = np.random.default_rng().permutation(np.arange(self.total_records, dtype=np.int32))
         else:
-            indices = np.arange(self.total_records, dtype=np.int32)
+            local_indices = np.arange(self.total_records, dtype=np.int32)
+
+        is_single_reader = (len(self.readers) == 1)
 
         for b in range(self.num_batches):
             start = b * self.batch_size
@@ -127,8 +242,19 @@ class FastMemoryMappedBatchLoader:
             if self.drop_last and (end - start) < self.batch_size:
                 break
 
-            batch_idx = indices[start:end]
-            records = self.reader.data[batch_idx]
+            batch_global_indices = self.range_start + local_indices[start:end]
+
+            if is_single_reader:
+                records = self.readers[0].data[batch_global_indices]
+            else:
+                # Sharded retrieval across multiple memory-mapped files
+                records = np.empty(len(batch_global_indices), dtype=RECORD_DTYPE)
+                file_idx = np.searchsorted(self.cumulative_offsets[1:], batch_global_indices, side="right")
+                unique_files = np.unique(file_idx)
+                for f_idx in unique_files:
+                    mask = (file_idx == f_idx)
+                    sub_idx = batch_global_indices[mask] - self.cumulative_offsets[f_idx]
+                    records[mask] = self.readers[f_idx].data[sub_idx]
 
             # Fast numpy to torch conversion
             our_idx_t = torch.from_numpy(records["our_indices"].astype(np.int32))
@@ -148,4 +274,11 @@ class FastMemoryMappedBatchLoader:
             }
 
     def close(self):
-        self.reader.close()
+        for r in self.readers:
+            r.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
