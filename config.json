@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "tools\\fastchess\\results\\anak_vs_sf1800_20261020_082813.pgn",
+        "file": "tools\\fastchess\\results\\anak_vs_sf1800_20261020_101537.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -60,16 +60,16 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 13919823768311136644,
+    "seed": 11776624232667207304,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
-    "ratinginterval": 10,
+    "ratinginterval": 1,
     "scoreinterval": 1,
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 100,
+    "rounds": 25,
     "concurrency": 8,
     "force_concurrency": false,
     "recover": false,
@@ -106,9 +106,9 @@
             ],
             "limit": {
                 "tc": {
-                    "increment": 100,
+                    "increment": 50,
                     "fixed_time": 0,
-                    "time": 10000,
+                    "time": 3000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -143,9 +143,9 @@
             ],
             "limit": {
                 "tc": {
-                    "increment": 100,
+                    "increment": 50,
                     "fixed_time": 0,
-                    "time": 10000,
+                    "time": 3000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -157,15 +157,15 @@
     ],
     "stats": {
         "Anak-Dev vs Stockfish-1800": {
-            "wins": 0,
-            "losses": 200,
-            "draws": 0,
-            "penta_WW": 0,
-            "penta_WD": 0,
-            "penta_WL": 0,
+            "wins": 17,
+            "losses": 29,
+            "draws": 4,
+            "penta_WW": 2,
+            "penta_WD": 2,
+            "penta_WL": 11,
             "penta_DD": 0,
-            "penta_LD": 0,
-            "penta_LL": 100
+            "penta_LD": 2,
+            "penta_LL": 8
         }
     }
 }

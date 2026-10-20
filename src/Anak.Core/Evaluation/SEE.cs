@@ -96,12 +96,6 @@ public static class StaticExchangeEvaluator
             d++;
             gain[d] = GetPieceValue(currentAttacker) - gain[d - 1];
 
-            // Pruning: if standing pat or minimax cannot improve
-            if (Math.Max(-gain[d - 1], gain[d]) < 0)
-            {
-                break;
-            }
-
             ulong sidePieces = side == Color.White ? board.White : board.Black;
             ulong sideAttackers = attackers & sidePieces & occupied;
             if (sideAttackers == 0)

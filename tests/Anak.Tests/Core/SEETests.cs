@@ -50,4 +50,19 @@ public class SEETests
         int see = StaticExchangeEvaluator.Evaluate(in board, bishopTakesBishop);
         Assert.InRange(see, -50, 50);
     }
+
+    [Fact]
+    public void SEE_QuietBishopMoveToKnightAttackedPawnDefendedSquare_ReturnsMinorTradeNotHanging()
+    {
+        // Italian Game: 1. e4 e5 2. Nf3 Nc6 3. Bc4
+        // Square c4 is attacked by nothing or if Black has a Knight on a5/e5 and White defends with d3/b3.
+        // Specifically: White plays Bc4 where Black Knight on a5 attacks c4 and White Pawn on d3 defends c4.
+        Board board = Fen.Parse("r1bqkbnr/pppp1ppp/8/n3p3/4P3/3P1N2/PPP2PPP/RNBQKB1R w KQkq - 1 4");
+        Move bc4 = new(Square.F1, Square.C4, MoveType.Quiet);
+
+        int see = StaticExchangeEvaluator.Evaluate(in board, bc4);
+        // Bishop (330) captured by Knight (320) and recaptured by Pawn -> net -10 cp (minor exchange), NOT -330 cp
+        Assert.Equal(-10, see);
+        Assert.True(StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, bc4, -50));
+    }
 }

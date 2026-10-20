@@ -28,6 +28,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     private readonly DefaultEvaluator _fallbackEvaluator;
     private readonly short[] _stackWhite = new short[256 * 512];
     private readonly short[] _stackBlack = new short[256 * 512];
+    private readonly ulong[] _stackKeys = new ulong[256];
     private int _stackDepth = -1;
     private bool _disposed;
 
@@ -226,6 +227,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             {
                 NnueAccumulator.ComputeFull(in rootBoard, weights, wPtr, bPtr);
             }
+            _stackKeys[0] = rootBoard.ZobristKey;
             _stackDepth = 0;
         }
         else
@@ -261,6 +263,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         }
 
         _stackDepth++;
+        _stackKeys[_stackDepth] = boardAfter.ZobristKey;
     }
 
     /// <summary>
@@ -309,7 +312,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         }
 
         // Fast incremental evaluation path during active search
-        if (_stackDepth >= 0 && _activeFullWeights != null)
+        if (_stackDepth >= 0 && _activeFullWeights != null && _stackKeys[_stackDepth] == board.ZobristKey)
         {
             NnueWeights weights = _activeFullWeights;
             int dim = weights.HiddenDim;

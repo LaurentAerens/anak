@@ -4,9 +4,7 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Anak.Protocol</RootNamespace>
     <AssemblyName>anak</AssemblyName>
-    <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
   </PropertyGroup>
 
   <ItemGroup>

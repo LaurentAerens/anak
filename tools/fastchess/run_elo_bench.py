@@ -216,8 +216,8 @@ def ensure_stockfish():
         raise RuntimeError("Please install Stockfish on non-Windows platforms or place stockfish binary in tools/fastchess/bin/")
 
 
-def ensure_anak(force_rebuild: bool = False):
-    if not force_rebuild and ANAK_EXE.exists():
+def ensure_anak(skip_build: bool = False):
+    if skip_build and ANAK_EXE.exists():
         return
 
     print("[+] Building and publishing Anak in Release configuration ...")
@@ -261,7 +261,9 @@ def parse_args():
     parser.add_argument("--sprt", action="store_true",
                         help="Enable SPRT (Sequential Probability Ratio Test) with bounds [0, 30] Elo for early stopping")
     parser.add_argument("--rebuild", action="store_true",
-                        help="Force rebuild of Anak (candidate build) before benchmark")
+                        help="Force rebuild of Anak (candidate build) before benchmark (enabled by default)")
+    parser.add_argument("--no-build", action="store_true",
+                        help="Skip rebuilding Anak if binary already exists")
     parser.add_argument("--archive-baseline", type=str, default=None, metavar="TAG",
                         help="Archive the current engine build as a named baseline (e.g. 'v0.0.1') and exit")
     parser.add_argument("--record", type=str, default=None, metavar="VERSION_TAG",
@@ -341,7 +343,7 @@ def main():
     print("=" * 70)
 
     # Ensure required binaries
-    ensure_anak(force_rebuild=args.rebuild)
+    ensure_anak(skip_build=args.no_build)
     ensure_fastchess()
     if args.opponent == "stockfish":
         ensure_stockfish()

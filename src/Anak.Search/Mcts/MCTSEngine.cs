@@ -275,42 +275,26 @@ public sealed class MCTSEngine
                         bool ttHit = _tt.TryGet(currentBoard.ZobristKey, out TTEntry ttLeaf);
                         Move ttHintMove = ttHit ? ttLeaf.BestMove : Move.Null;
 
-                        // DAG Transposition Subtree Reuse: Seed leaf visits conservatively so PUCT invariants hold
-                        if (ttHit && ttLeaf.Visits > 0 && leafNode.Visits == 0)
-                        {
-                            uint seedVisits = Math.Min(ttLeaf.Visits, 4u);
-                            leafNode.Visits = seedVisits;
-                            leafNode.TotalValue = ttLeaf.Value * seedVisits;
-                        }
-
                         // Initialize leaf children priors with tactical policy heuristics
                         InitializeChildPriors(in currentBoard, leafMoves.AsReadOnlySpan(), leafFirstChild, ttHintMove);
                     }
 
-                    if (_tt.TryGet(currentBoard.ZobristKey, out TTEntry ttCached) && ttCached.Visits > 0)
+                    // Evaluate leaf position using IEvaluator
+                    Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
+                    int effectiveCp = eval.Raw;
+
+                    // Asymmetric Tactical Watchdog & Quiescent Capture Resolution:
+                    // Checks if side-to-move at leaf can immediately win hanging material or punish a bad exchange.
+                    if (depth >= 1 && effectiveCp < 600)
                     {
-                        // Skip redundant NNUE evaluation on TT hit
-                        leafScore = ttCached.Value;
+                        effectiveCp = ResolveTacticalCaptures(in currentBoard, leafMoves.AsReadOnlySpan(), effectiveCp, multiTier);
                     }
-                    else
-                    {
-                        // Evaluate leaf position using IEvaluator
-                        Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
-                        int effectiveCp = eval.Raw;
 
-                        // Asymmetric Tactical Watchdog & Quiescent Capture Resolution:
-                        // Checks if side-to-move at leaf can immediately win hanging material or punish a bad exchange.
-                        if (depth >= 1 && effectiveCp < 600)
-                        {
-                            effectiveCp = ResolveTacticalCaptures(in currentBoard, leafMoves.AsReadOnlySpan(), effectiveCp, multiTier);
-                        }
+                    // Map centipawn value to [-1.0, 1.0] using hyperbolic tangent
+                    leafScore = MathF.Tanh(effectiveCp / 400.0f);
 
-                        // Map centipawn value to [-1.0, 1.0] using hyperbolic tangent
-                        leafScore = MathF.Tanh(effectiveCp / 400.0f);
-
-                        // Transposition Table store with DAG reuse
-                        _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
-                    }
+                    // Transposition Table store with DAG reuse
+                    _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
                 }
             }
 
@@ -356,11 +340,18 @@ public sealed class MCTSEngine
                         }
                     }
 
-                    node.BestChildOffset = bestOffset;
-                    Move bestChildMove = _arena[fc + bestOffset].Move;
+                    if (maxVisits > 0)
+                    {
+                        node.BestChildOffset = bestOffset;
+                        Move bestChildMove = _arena[fc + bestOffset].Move;
 
-                    // DAG Transposition Table update
-                    _tt.Store(keyPath[i], bestChildMove, node.Visits, node.Q, 0.0f, _tt.CurrentAge);
+                        // DAG Transposition Table update
+                        _tt.Store(keyPath[i], bestChildMove, node.Visits, node.Q, 0.0f, _tt.CurrentAge);
+                    }
+                    else
+                    {
+                        _tt.Store(keyPath[i], Move.Null, node.Visits, node.Q, 0.0f, _tt.CurrentAge);
+                    }
                 }
 
                 // Negamax flip: parent perspective is inverted from child perspective
@@ -634,12 +625,25 @@ public sealed class MCTSEngine
         // Final info report
         if (infoCallback != null)
         {
+            if (!selectedBestMove.IsNull && _arena[rootIndex].IsExpanded)
+            {
+                ref MCTSNode rNode = ref _arena[rootIndex];
+                int rfc = rNode.FirstChildIndex;
+                for (ushort c = 0; c < rNode.NumChildren; c++)
+                {
+                    if (_arena[rfc + c].Move == selectedBestMove)
+                    {
+                        rNode.BestChildOffset = c;
+                        break;
+                    }
+                }
+            }
+
             long elapsed = Math.Max(1, _timeManager.ElapsedMilliseconds);
             List<Move> pv = ExtractPv(rootIndex);
-            if (!selectedBestMove.IsNull)
+            if (!selectedBestMove.IsNull && pv.Count == 0)
             {
-                if (pv.Count > 0) pv[0] = selectedBestMove;
-                else pv.Add(selectedBestMove);
+                pv.Add(selectedBestMove);
             }
             ulong nps = (iteration * 1000UL) / (ulong)elapsed;
 
@@ -683,7 +687,7 @@ public sealed class MCTSEngine
 
         float parentVisitsSqrt = MathF.Sqrt(Math.Max(1.0f, sumChildVisits));
         float cpuct = _parameters.Cpuct;
-        float defaultFpu = _parameters.FpuValue != 0.0f ? _parameters.FpuValue : (parentNode.Q - 0.20f);
+        float defaultFpu = _parameters.FpuValue != 0.0f ? _parameters.FpuValue : parentNode.Q;
 
         float bestPuct = float.NegativeInfinity;
         int bestChildIdx = -1;
@@ -870,7 +874,7 @@ public sealed class MCTSEngine
             else
             {
                 weight += 20.0f;
-                int mvvLva = (victimVal * 10) - (attackerVal / 10);
+                int mvvLva = (victimVal / 10) - (attackerVal / 100);
                 weight += Math.Max(0, mvvLva);
                 if (seeGain > 0)
                 {
@@ -885,7 +889,7 @@ public sealed class MCTSEngine
         else
         {
             // Quiet move: check if blundering into a losing capture
-            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, 0))
+            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -50))
             {
                 weight = 1.0f; // Blundering piece
             }
@@ -982,16 +986,9 @@ public sealed class MCTSEngine
                         InitializeChildPriors(in currentBoard, leafMoves.AsReadOnlySpan(), leafFirstChild, ttHintMove, arena);
                     }
 
-                    if (_tt.TryGet(currentBoard.ZobristKey, out TTEntry ttCached) && ttCached.Visits > 0)
-                    {
-                        leafScore = ttCached.Value;
-                    }
-                    else
-                    {
-                        Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
-                        leafScore = MathF.Tanh(eval.Raw / 400.0f);
-                        _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
-                    }
+                    Value eval = _evaluator.Evaluate(in currentBoard, leafMoves.AsReadOnlySpan());
+                    leafScore = MathF.Tanh(eval.Raw / 400.0f);
+                    _tt.Store(currentBoard.ZobristKey, Move.Null, 1, leafScore, 0.0f, _tt.CurrentAge);
                 }
             }
 
@@ -1022,9 +1019,16 @@ public sealed class MCTSEngine
                         }
                     }
 
-                    node.BestChildOffset = bestOffset;
-                    Move bestChildMove = arena[fc + bestOffset].Move;
-                    _tt.Store(keyPath[i], bestChildMove, node.Visits, node.Q, 0.0f, _tt.CurrentAge);
+                    if (maxVisits > 0)
+                    {
+                        node.BestChildOffset = bestOffset;
+                        Move bestChildMove = arena[fc + bestOffset].Move;
+                        _tt.Store(keyPath[i], bestChildMove, node.Visits, node.Q, 0.0f, _tt.CurrentAge);
+                    }
+                    else
+                    {
+                        _tt.Store(keyPath[i], Move.Null, node.Visits, node.Q, 0.0f, _tt.CurrentAge);
+                    }
                 }
 
                 currentReward = -currentReward;
