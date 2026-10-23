@@ -8,12 +8,10 @@ This document tracks the estimated Elo rating progression of Anak releases and p
 
 | Version | Release Date | Estimated Elo | 95% CI | Reference Opponent | Score | W / L / D | TC | PGN Archive |
 | :--- | :---: | :---: | :---: | :--- | :---: | :---: | :---: | :--- |
-| [**v0.0.1**](https://github.com/laerens/anak/releases/tag/v0.0.1) | 2026-10-19 | **1616** | &plusmn;215 | Stockfish 19 (1800 Elo) | 2.0 / 10 (20%) | 2 / 8 / 0 | 3+0.05 | [`anak_vs_sf1800_20261019_230409.pgn`](tools/fastchess/results/anak_vs_sf1800_20261019_230409.pgn) |
-| [**v0.0.2**](https://github.com/laerens/anak/releases/tag/v0.0.2) | 2026-10-20 | **1616** | - | Baseline v0.0.1 | - | 0 / 0 / 0 | 3+0.05 | - |
-| [**v0.0.3**](https://github.com/laerens/anak/releases/tag/v0.0.3) | 2026-10-20 | **1659** | &plusmn;23 | Stockfish 19 (1800 Elo) | 307.5 / 1000 (30.8%) | 297 / 682 / 21 | 3+0.05 | [`anak_vs_sf1800_20261020_152301.pgn`](tools/fastchess/results/anak_vs_sf1800_20261020_152301.pgn) |
-
-> **Machine-Readable Registry**: All rating metadata is also stored in [`tools/fastchess/ratings.json`](tools/fastchess/ratings.json).
-
+| [**v0.0.1**](https://github.com/laerens/anak/releases/tag/v0.0.1) | 2026-10-19 | **1616** | &plusmn;215 | Stockfish 19 (1800 Elo) | 2 / 10 (20.0%) | 2 / 8 / 0 | 3+0.05 | [`anak_vs_sf1800_20261019_230409.pgn`](tools/fastchess/results/anak_vs_sf1800_20261019_230409.pgn) |
+| [**v0.0.2**](https://github.com/laerens/anak/releases/tag/v0.0.2) | 2026-10-20 | **1616** | - | Baseline v0.0.1 | - (50.0%) | 0 / 0 / 0 | 3+0.05 | - |
+| [**v0.0.3**](https://github.com/laerens/anak/releases/tag/v0.0.3) | 2026-10-20 | **1659** | &plusmn;23 | Stockfish 19 (1800 Elo) | 307.5 / 1000 (30.75%) | 297 / 682 / 21 | 3+0.05 | [`anak_vs_sf1800_20261020_152301.pgn`](tools/fastchess/results/anak_vs_sf1800_20261020_152301.pgn) |
+| [**v0.0.4**](https://github.com/laerens/anak/releases/tag/v0.0.4) | 2026-10-23 | **1678** | &plusmn;18 | Anak v0.0.3 (Known Elo: 1659) | 527 / 1000 (52.7%) | 366 / 312 / 322 | 3+0.05 | [`anak_dev_vs_v0.0.3_20261023_204146.pgn`](tools/fastchess/results/anak_dev_vs_v0.0.3_20261023_204146.pgn) |
 ---
 
 ## ⚔️ Self-Benchmarking (Candidate vs Baseline)

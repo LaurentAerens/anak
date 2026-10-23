@@ -44,6 +44,21 @@
       "tc": "3+0.05",
       "pgn": "tools/fastchess/results/anak_vs_sf1800_20261020_152301.pgn",
       "notes": "Transition to Alpha-Beta (Negamax with PVS & Incremental Multi-Tier NNUE); +20.5 Elo over v0.0.2 in 1000-game match (529.5/1000)"
+    },
+    "v0.0.4": {
+      "version": "v0.0.4",
+      "date": "2026-10-23",
+      "estimated_elo": 1678,
+      "elo_margin": 18,
+      "baseline_opponent": "Anak v0.0.3 (Known Elo: 1659)",
+      "score": "527 / 1000",
+      "wins": 366,
+      "losses": 312,
+      "draws": 322,
+      "perf_percent": 52.7,
+      "tc": "3+0.05",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v0.0.3_20261023_204146.pgn",
+      "notes": "v0.0.4 release with 8 retrained multi-expert NNUE models, PolyGlot opening book, Syzygy tablebases, SPSA tuned search heuristics (+18.8 Elo over v0.0.3 in 1000 games)"
     }
   }
 }

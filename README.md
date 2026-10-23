@@ -331,7 +331,7 @@ The runner automatically compiles `anak.exe`, matches candidate vs baseline usin
 | [**v0.0.1**](https://github.com/laerens/anak/releases/tag/v0.0.1) | MCTS + Multi-Tier NNUE | **1616** | Stockfish 19 (1800 Elo) |
 | [**v0.0.2**](https://github.com/laerens/anak/releases/tag/v0.0.2) | MCTS + Multi-Tier NNUE | **1616** | Baseline v0.0.1 |
 | [**v0.0.3**](https://github.com/laerens/anak/releases/tag/v0.0.3) | Alpha-Beta (Negamax/PVS) | **1659** | Stockfish 19 (1800 Elo) |
-| **v0.0.4-dev** | Alpha-Beta + Lazy Movegen + SPSA | *Active Dev* | Baseline v0.0.3 |
+| [**v0.0.4**](https://github.com/laerens/anak/releases/tag/v0.0.4) | Alpha-Beta + NNUE Retrain + Book + Syzygy + SPSA | **1678** | Anak v0.0.3 (+18.8 Elo) |
 
 See [BENCHMARKS.md](BENCHMARKS.md) and [tools/fastchess/README.md](tools/fastchess/README.md) for complete details.
 
