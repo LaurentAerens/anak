@@ -220,7 +220,7 @@ public class MinimaxFoundationsTests
         {
             for (int moves = 1; moves < 32; moves++)
             {
-                int expected = (int)(0.75 + (Math.Log(depth) * Math.Log(moves) / 2.25));
+                int expected = (int)((SearchHeuristics.TunedLmrBase / 100.0) + (Math.Log(depth) * Math.Log(moves) / (SearchHeuristics.TunedLmrDivision / 100.0)));
                 Assert.Equal(expected, SearchHeuristics.GetBaseLmr(depth, moves));
             }
         }

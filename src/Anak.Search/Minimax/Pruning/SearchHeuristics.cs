@@ -17,6 +17,13 @@ public static class SearchHeuristics
     public const int MaxLmrDepth = 128;
     public const int MaxLmrMoves = 128;
 
+    // SPSA Tuned Search Parameters
+    public const int TunedLmrBase = 76;             // default: 75  (0.76)
+    public const int TunedLmrDivision = 227;        // default: 225 (2.27)
+    public const int TunedRfpMargin = 73;          // default: 75
+    public const int TunedNmpBase = 3;              // default: 3
+    public const int TunedAspirationDelta = 26;      // default: 25
+
     /// <summary>
     /// Pre-computed LMR reduction table: [depth, moveIndex].
     /// </summary>
@@ -28,7 +35,7 @@ public static class SearchHeuristics
         {
             for (int moves = 1; moves < MaxLmrMoves; moves++)
             {
-                double reduction = 0.75 + (Math.Log(depth) * Math.Log(moves) / 2.25);
+                double reduction = (TunedLmrBase / 100.0) + (Math.Log(depth) * Math.Log(moves) / (TunedLmrDivision / 100.0));
                 LmrTable[depth, moves] = (int)reduction;
             }
         }
@@ -99,7 +106,7 @@ public static class SearchHeuristics
     /// R = nmpBase + depth / 6 + (eval - beta) / 200, adjusted for board openness.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetNmpReduction(int depth, int eval, int beta, float openness, int nmpBase = 3)
+    public static int GetNmpReduction(int depth, int eval, int beta, float openness, int nmpBase = TunedNmpBase)
     {
         int baseR = nmpBase + (depth / 6);
         int evalMargin = Math.Clamp((eval - beta) / 200, 0, 3);

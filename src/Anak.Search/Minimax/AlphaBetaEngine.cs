@@ -39,11 +39,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private volatile bool _stopped;
     private SearchWorker[] _workers;
 
-    private int _lmrBase = 75;
-    private int _lmrDivision = 225;
-    private int _rfpMargin = 75;
-    private int _nmpBase = 3;
-    private int _aspirationDelta = 25;
+    private int _lmrBase = SearchHeuristics.TunedLmrBase;
+    private int _lmrDivision = SearchHeuristics.TunedLmrDivision;
+    private int _rfpMargin = SearchHeuristics.TunedRfpMargin;
+    private int _nmpBase = SearchHeuristics.TunedNmpBase;
+    private int _aspirationDelta = SearchHeuristics.TunedAspirationDelta;
     private readonly int[,] _lmrTable = new int[MaxSearchDepth, 128];
 
     public TranspositionTable TranspositionTable => _tt;

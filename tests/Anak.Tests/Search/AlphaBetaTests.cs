@@ -272,11 +272,11 @@ public class AlphaBetaTests
     {
         var adapter = new UciEngineAdapter(_ => { });
 
-        Assert.Equal(75, adapter.Options.LmrBase.Value);
-        Assert.Equal(225, adapter.Options.LmrDivision.Value);
-        Assert.Equal(75, adapter.Options.RfpMargin.Value);
-        Assert.Equal(3, adapter.Options.NmpBase.Value);
-        Assert.Equal(25, adapter.Options.AspirationDelta.Value);
+        Assert.Equal(SearchHeuristics.TunedLmrBase, adapter.Options.LmrBase.Value);
+        Assert.Equal(SearchHeuristics.TunedLmrDivision, adapter.Options.LmrDivision.Value);
+        Assert.Equal(SearchHeuristics.TunedRfpMargin, adapter.Options.RfpMargin.Value);
+        Assert.Equal(SearchHeuristics.TunedNmpBase, adapter.Options.NmpBase.Value);
+        Assert.Equal(SearchHeuristics.TunedAspirationDelta, adapter.Options.AspirationDelta.Value);
 
         // Modify options
         Assert.True(adapter.Options.TrySetValue("LmrBase", "80"));

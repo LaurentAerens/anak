@@ -1,3 +1,4 @@
+using System.Globalization;
 using Anak.Core;
 using Anak.Protocol.Uci;
 using Anak.Search;
@@ -195,7 +196,7 @@ public static class AnalyzeRunner
             cp = (int)(MathF.Atanh(clamped) * 400.0f);
         }
         float pawns = cp / 100.0f;
-        return $"{(pawns >= 0 ? "+" : "")}{pawns:F2} ({cp:+0;-0;0} cp)";
+        return $"{(pawns >= 0 ? "+" : "")}{pawns.ToString("F2", CultureInfo.InvariantCulture)} ({cp:+0;-0;0} cp)";
     }
 
     /// <summary>
