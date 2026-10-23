@@ -19,21 +19,27 @@ jobs:
           - rid: linux-x64
             ext: ''
             bin: anak
+            archive: tar.gz
           - rid: linux-arm64
             ext: ''
             bin: anak
+            archive: tar.gz
           - rid: win-x64
             ext: '.exe'
             bin: anak.exe
+            archive: zip
           - rid: win-arm64
             ext: '.exe'
             bin: anak.exe
+            archive: zip
           - rid: osx-x64
             ext: ''
             bin: anak
+            archive: tar.gz
           - rid: osx-arm64
             ext: ''
             bin: anak
+            archive: tar.gz
 
     steps:
       - name: Checkout code
@@ -54,14 +60,49 @@ jobs:
             -p:PublishSingleFile=true \
             -o publish/
 
-      - name: Package binary and compute SHA-256
+      - name: Package binary, bundle companion assets, and compute SHA-256
         run: |
           mkdir -p asset
           TARGET_NAME="anak-${{ matrix.rid }}${{ matrix.ext }}"
-          cp publish/${{ matrix.bin }} asset/${TARGET_NAME}
-          chmod +x asset/${TARGET_NAME}
+          cp "publish/${{ matrix.bin }}" "asset/${TARGET_NAME}"
+          chmod +x "asset/${TARGET_NAME}"
+
+          # Stage bundle directory
+          BUNDLE_DIR="anak-${{ matrix.rid }}"
+          mkdir -p "${BUNDLE_DIR}"
+          cp "publish/${{ matrix.bin }}" "${BUNDLE_DIR}/${{ matrix.bin }}"
+          chmod +x "${BUNDLE_DIR}/${{ matrix.bin }}"
+
+          # Copy companion neural network weights if present
+          if [ -d "networks" ] && [ -n "$(find networks -maxdepth 1 -name '*.nnue' -print -quit 2>/dev/null)" ]; then
+            mkdir -p "${BUNDLE_DIR}/networks"
+            cp networks/*.nnue "${BUNDLE_DIR}/networks/"
+          elif [ -d "publish/networks" ] && [ -n "$(find publish/networks -maxdepth 1 -name '*.nnue' -print -quit 2>/dev/null)" ]; then
+            mkdir -p "${BUNDLE_DIR}/networks"
+            cp publish/networks/*.nnue "${BUNDLE_DIR}/networks/"
+          fi
+
+          # Copy opening book if present
+          if [ -f "book.bin" ]; then
+            cp "book.bin" "${BUNDLE_DIR}/"
+          elif [ -f "publish/book.bin" ]; then
+            cp "publish/book.bin" "${BUNDLE_DIR}/"
+          fi
+
+          # Archive bundle based on platform format (.zip for Windows, .tar.gz for Linux/macOS)
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            zip -r "asset/anak-${{ matrix.rid }}.zip" "${BUNDLE_DIR}"
+          else
+            tar -czvf "asset/anak-${{ matrix.rid }}.tar.gz" "${BUNDLE_DIR}"
+          fi
+
+          # Compute SHA-256 checksums for each release asset
           cd asset
-          sha256sum ${TARGET_NAME} > ${TARGET_NAME}.sha256
+          for f in *; do
+            if [ -f "$f" ] && [ "${f##*.}" != "sha256" ]; then
+              sha256sum "$f" > "$f.sha256"
+            fi
+          done
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4

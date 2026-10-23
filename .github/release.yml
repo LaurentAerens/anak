@@ -1,0 +1,43 @@
+changelog:
+  categories:
+    - title: "🚀 Features"
+      labels:
+        - "feature"
+        - "enhancement"
+        - "features"
+    - title: "⚡ Performance"
+      labels:
+        - "performance"
+        - "perf"
+        - "optimization"
+        - "speed"
+    - title: "🐛 Bug Fixes"
+      labels:
+        - "fix"
+        - "bug"
+        - "bugfix"
+        - "bugs"
+    - title: "🛠️ Tooling"
+      labels:
+        - "tooling"
+        - "tools"
+        - "ci"
+        - "ci/cd"
+        - "automation"
+        - "testing"
+    - title: "🧰 Maintenance"
+      labels:
+        - "maintenance"
+        - "dependencies"
+        - "chore"
+        - "refactor"
+        - "docs"
+        - "documentation"
+    - title: "Other Changes"
+      labels:
+        - "*"
+  exclude:
+    labels:
+      - "skip-changelog"
+    authors:
+      - "dependabot[bot]"

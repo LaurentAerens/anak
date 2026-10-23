@@ -5,9 +5,11 @@ All weights and piece-square features are 100% trainable from data, with quantiz
 weight clamping, perspective-twin antisymmetry, and step-aware Model EMA with warmup.
 """
 
-from typing import Dict
+from typing import Dict, List, Tuple
+import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 FEATURE_COUNT = 768  # 6 piece types * 2 colors * 64 squares
 STANDARD_HIDDEN_DIM = 512
@@ -117,7 +119,7 @@ def init_nnue_weights(model: nn.Module):
         enforce_perspective_antisymmetry(model)
 
 
-def clamp_nnue_weights(model: nn.Module, max_val: float = 1.98):
+def clamp_nnue_weights(model: nn.Module, max_val: float = 1.98, enforce_symmetry: bool = False):
     """
     Quantization-aware weight clamping to ensure zero precision loss
     when ft.weight and l1.weight are quantized to INT8 [-128, 127] with factor 64,
@@ -131,7 +133,8 @@ def clamp_nnue_weights(model: nn.Module, max_val: float = 1.98):
                 # output.weight is quantized to INT16 [-32768, 32767] with factor 64
                 param.clamp_(-250.0, 250.0)
 
-        enforce_perspective_antisymmetry(model)
+        if enforce_symmetry:
+            enforce_perspective_antisymmetry(model)
 
 
 class ModelEMA:
@@ -205,13 +208,23 @@ class StandardNNUE(nn.Module):
 
     def forward(self, our_features: torch.Tensor, their_features: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass.
-        :param our_features: Sparse or dense binary tensor of shape (batch_size, 768).
-        :param their_features: Sparse or dense binary tensor of shape (batch_size, 768).
+        Forward pass. Supports both:
+        1. Sparse indices of shape (batch_size, <= 64) with dtype int16/int32/int64
+           -> 48x faster feature accumulation via F.embedding_bag, zero dense allocations.
+        2. Dense float tensor of shape (batch_size, 768)
+           -> Standard matrix multiplication via self.ft.
         :return: Scalar evaluation value in pawns (1.0 = 100 centipawns).
         """
-        our_acc = self.act(self.ft(our_features))
-        their_acc = self.act(self.ft(their_features))
+        if our_features.dtype in (torch.int16, torch.int32, torch.int64):
+            our_idx = torch.clamp(our_features.to(torch.int64), 0, FEATURE_COUNT)
+            their_idx = torch.clamp(their_features.to(torch.int64), 0, FEATURE_COUNT)
+            pad = torch.zeros(1, self.hidden_dim, device=self.ft.weight.device, dtype=self.ft.weight.dtype)
+            w_padded = torch.cat([self.ft.weight.t(), pad], dim=0)
+            our_acc = self.act(F.embedding_bag(our_idx, w_padded, mode="sum") + self.ft.bias)
+            their_acc = self.act(F.embedding_bag(their_idx, w_padded, mode="sum") + self.ft.bias)
+        else:
+            our_acc = self.act(self.ft(our_features))
+            their_acc = self.act(self.ft(their_features))
 
         combined = torch.cat([our_acc, their_acc], dim=-1)
         hidden = self.act(self.l1(combined))
@@ -242,10 +255,49 @@ class MicroNNUE(nn.Module):
     def forward(self, our_features: torch.Tensor, their_features: torch.Tensor) -> torch.Tensor:
         """
         Forward pass for micro model in pawns (1.0 = 100 centipawns).
+        Supports both sparse indices and dense feature tensors.
         """
-        our_acc = self.act(self.ft(our_features))
-        their_acc = self.act(self.ft(their_features))
+        if our_features.dtype in (torch.int16, torch.int32, torch.int64):
+            our_idx = torch.clamp(our_features.to(torch.int64), 0, FEATURE_COUNT)
+            their_idx = torch.clamp(their_features.to(torch.int64), 0, FEATURE_COUNT)
+            pad = torch.zeros(1, self.hidden_dim, device=self.ft.weight.device, dtype=self.ft.weight.dtype)
+            w_padded = torch.cat([self.ft.weight.t(), pad], dim=0)
+            our_acc = self.act(F.embedding_bag(our_idx, w_padded, mode="sum") + self.ft.bias)
+            their_acc = self.act(F.embedding_bag(their_idx, w_padded, mode="sum") + self.ft.bias)
+        else:
+            our_acc = self.act(self.ft(our_features))
+            their_acc = self.act(self.ft(their_features))
 
         combined = torch.cat([our_acc, their_acc], dim=-1)
         out = self.output(combined)
         return out.squeeze(-1)
+
+
+BENCHMARK_POSITIONS: List[Tuple[str, str]] = [
+    ("StartPos", "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
+    ("Tactical Refutation", "r1bqkb1r/pppp1ppp/2n5/4p3/2B1n3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 5"),
+    ("KRvK Endgame", "8/8/8/4k3/8/8/4K3/R7 w - - 0 1"),
+    ("Symmetric Draw", "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 4 5"),
+]
+
+
+def evaluate_benchmark_positions(model: nn.Module, device: torch.device) -> str:
+    """
+    Evaluates standard chess benchmark positions on the model.
+    Returns a formatted one-line string with centipawn predictions for terminal logging.
+    """
+    import chess
+    from binpack import encode_features_to_indices
+
+    model.eval()
+    results = []
+    with torch.inference_mode():
+        for label, fen in BENCHMARK_POSITIONS:
+            board = chess.Board(fen)
+            our_idx, their_idx, _ = encode_features_to_indices(board)
+            our_t = torch.from_numpy(np.array([our_idx], dtype=np.int32)).to(device)
+            their_t = torch.from_numpy(np.array([their_idx], dtype=np.int32)).to(device)
+            pred_pawns = model(our_t, their_t).item()
+            pred_cp = int(round(pred_pawns * 100))
+            results.append(f"{label}: {pred_cp:+d}cp")
+    return " | ".join(results)

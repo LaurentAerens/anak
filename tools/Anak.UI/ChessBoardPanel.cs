@@ -22,6 +22,7 @@ public sealed class ChessBoardPanel : Control
     private Square _selectedSquare = Square.None;
     private readonly List<ChessMove> _legalMovesFromSelected = [];
     private ChessMove _lastMove = ChessMove.Null;
+    private ChessMove _bestMove = ChessMove.Null;
 
     private static readonly DrawingColor _lightSquareColor = DrawingColor.FromArgb(240, 217, 181);
     private static readonly DrawingColor _darkSquareColor = DrawingColor.FromArgb(181, 136, 99);
@@ -30,6 +31,8 @@ public sealed class ChessBoardPanel : Control
     private static readonly DrawingColor _checkColor = DrawingColor.FromArgb(180, 235, 75, 75);
     private static readonly DrawingColor _legalMoveDotColor = DrawingColor.FromArgb(100, 50, 50, 50);
     private static readonly DrawingColor _legalCaptureRingColor = DrawingColor.FromArgb(140, 180, 30, 30);
+    private static readonly DrawingColor _bestMoveArrowColor = DrawingColor.FromArgb(160, 46, 185, 102); // Translucent green
+    private static readonly DrawingColor _bestMoveArrowOutline = DrawingColor.FromArgb(210, 30, 140, 75);
 
     public event Action<ChessMove>? MoveMade;
 
@@ -42,6 +45,7 @@ public sealed class ChessBoardPanel : Control
             _board = value;
             _selectedSquare = Square.None;
             _legalMovesFromSelected.Clear();
+            _bestMove = ChessMove.Null;
             Invalidate();
         }
     }
@@ -65,6 +69,20 @@ public sealed class ChessBoardPanel : Control
         {
             _lastMove = value;
             Invalidate();
+        }
+    }
+
+    [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
+    public ChessMove BestMove
+    {
+        get => _bestMove;
+        set
+        {
+            if (_bestMove != value)
+            {
+                _bestMove = value;
+                Invalidate();
+            }
         }
     }
 
@@ -153,6 +171,7 @@ public sealed class ChessBoardPanel : Control
             {
                 _selectedSquare = Square.None;
                 _legalMovesFromSelected.Clear();
+                _bestMove = ChessMove.Null;
                 _lastMove = matchedMove.Value;
                 MoveMade?.Invoke(matchedMove.Value);
                 Invalidate();
@@ -284,6 +303,74 @@ public sealed class ChessBoardPanel : Control
             using var pieceBrush = new SolidBrush(isWhitePiece ? DrawingColor.White : DrawingColor.FromArgb(20, 20, 20));
             g.DrawString(symbol.ToString(), pieceFont, pieceBrush, rect, sf);
         }
+
+        // 4. Draw Best Move / PV Arrow
+        DrawBestMoveArrow(g, sqSize);
+    }
+
+    private void DrawBestMoveArrow(Graphics g, int sqSize)
+    {
+        if (_bestMove.IsNull || _bestMove.From == _bestMove.To)
+        {
+            return;
+        }
+
+        Point fromPt = SquareToCoordinates(_bestMove.From);
+        Point toPt = SquareToCoordinates(_bestMove.To);
+
+        PointF start = new(fromPt.X + (sqSize / 2f), fromPt.Y + (sqSize / 2f));
+        PointF end = new(toPt.X + (sqSize / 2f), toPt.Y + (sqSize / 2f));
+
+        float dx = end.X - start.X;
+        float dy = end.Y - start.Y;
+        float length = MathF.Sqrt((dx * dx) + (dy * dy));
+        if (length < 1f)
+        {
+            return;
+        }
+
+        float ux = dx / length;
+        float uy = dy / length;
+
+        // Normal perpendicular vector
+        float nx = -uy;
+        float ny = ux;
+
+        float shaftWidth = sqSize * 0.18f;
+        float headLength = Math.Min(sqSize * 0.42f, length * 0.5f);
+        float headWidth = sqSize * 0.46f;
+        float startOffset = sqSize * 0.18f;
+        float endOffset = sqSize * 0.14f;
+
+        PointF pStart = new(start.X + (ux * startOffset), start.Y + (uy * startOffset));
+        PointF pEnd = new(end.X - (ux * endOffset), end.Y - (uy * endOffset));
+        PointF pHeadBase = new(pEnd.X - (ux * headLength), pEnd.Y - (uy * headLength));
+
+        PointF pStartLeft = new(pStart.X + (nx * (shaftWidth / 2f)), pStart.Y + (ny * (shaftWidth / 2f)));
+        PointF pStartRight = new(pStart.X - (nx * (shaftWidth / 2f)), pStart.Y - (ny * (shaftWidth / 2f)));
+
+        PointF pShaftLeft = new(pHeadBase.X + (nx * (shaftWidth / 2f)), pHeadBase.Y + (ny * (shaftWidth / 2f)));
+        PointF pShaftRight = new(pHeadBase.X - (nx * (shaftWidth / 2f)), pHeadBase.Y - (ny * (shaftWidth / 2f)));
+
+        PointF pHeadLeft = new(pHeadBase.X + (nx * (headWidth / 2f)), pHeadBase.Y + (ny * (headWidth / 2f)));
+        PointF pHeadRight = new(pHeadBase.X - (nx * (headWidth / 2f)), pHeadBase.Y - (ny * (headWidth / 2f)));
+
+        PointF[] arrowPoints =
+        [
+            pStartLeft,
+            pShaftLeft,
+            pHeadLeft,
+            pEnd,
+            pHeadRight,
+            pShaftRight,
+            pStartRight
+        ];
+
+        using var brush = new SolidBrush(_bestMoveArrowColor);
+        g.FillPolygon(brush, arrowPoints);
+
+        using var pen = new Pen(_bestMoveArrowOutline, 1.5f) { LineJoin = LineJoin.Round };
+        g.DrawPolygon(pen, arrowPoints);
     }
 
     private void DrawCoordinates(Graphics g, int file, int rank, Point pt, int sqSize, bool isLight)

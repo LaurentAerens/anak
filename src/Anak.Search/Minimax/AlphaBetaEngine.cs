@@ -299,6 +299,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
         public ulong Nodes;
         public int SelDepth;
+        public ulong BetaCutoffs;
+        public ulong FirstMoveCutoffs;
 
         private readonly SearchStack[] _stack;
         private readonly HistoryTable _history;
@@ -306,6 +308,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly ContinuationHistory _continuationHistory;
         private readonly CorrectionHistory _correctionHistory;
         private readonly Move[,] _counterMoves;
+        private readonly List<RootMoveCandidate> _rootCandidates = [];
 
         public SearchWorker(int id, AlphaBetaEngine engine, IEvaluator evaluator, TranspositionTable tt)
         {
@@ -340,6 +343,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
         {
             Nodes = 0;
             SelDepth = 0;
+            BetaCutoffs = 0;
+            FirstMoveCutoffs = 0;
+            _rootCandidates.Clear();
             for (int i = 0; i < MaxStackSize; i++)
             {
                 _stack[i].Reset();
@@ -487,6 +493,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 ulong totalNodes = _engine.GetTotalNodes();
                 ulong nps = elapsedMs > 0 ? (totalNodes * 1000UL) / (ulong)elapsedMs : 0;
 
+                float? cutoffEff = BetaCutoffs > 0
+                    ? (float)(FirstMoveCutoffs * 100.0 / BetaCutoffs)
+                    : null;
+
                 var stats = new SearchStatistics
                 {
                     Depth = currentDepth,
@@ -497,6 +507,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     BestMove = bestMove,
                     Pv = pv,
                     HashfullPermille = _tt.HashfullPermille(),
+                    BetaCutoffEfficiency = cutoffEff,
                 };
 
                 if (score >= TTEntry.MateBound)
@@ -517,6 +528,37 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 {
                     stats.ScoreCp = score;
                     stats.RootScore = MathF.Tanh(score / 400.0f);
+                }
+
+                // Populate top candidate moves
+                if (_rootCandidates.Count > 0)
+                {
+                    var byMove = new Dictionary<Move, RootMoveCandidate>();
+                    foreach (var c in _rootCandidates)
+                    {
+                        byMove[c.Move] = c;
+                    }
+
+                    var sorted = byMove.Values
+                        .OrderByDescending(c => c.MateIn > 0 ? 100000 - c.MateIn : (c.MateIn < 0 ? -100000 - c.MateIn : c.ScoreCp))
+                        .ToList();
+
+                    int bestIdx = sorted.FindIndex(c => c.Move == bestMove);
+                    if (bestIdx > 0)
+                    {
+                        var bm = sorted[bestIdx];
+                        sorted.RemoveAt(bestIdx);
+                        sorted.Insert(0, bm);
+                    }
+
+                    List<RootMoveCandidate> top5 = [];
+                    for (int i = 0; i < Math.Min(5, sorted.Count); i++)
+                    {
+                        var cand = sorted[i];
+                        List<Move> candPv = cand.Move == bestMove ? pv : ExtractPv(in board, cand.Move);
+                        top5.Add(cand with { Pv = candPv });
+                    }
+                    stats.TopMoves = top5;
                 }
 
                 infoCallback?.Invoke(stats);
@@ -595,6 +637,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
             int quietsCount = 0;
             float rootOpenness = depth >= 3 ? PawnTopology.CalculateOpenness(in board) : 0.5f;
 
+            if (Id == 0)
+            {
+                _rootCandidates.Clear();
+            }
+
             while (picker.Next(out Move move))
             {
                 Piece movedPiece = board.GetPieceAt(move.From);
@@ -645,6 +692,26 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 board.UnmakeMove(move, in state);
                 _incEval?.RollbackTo(0);
 
+                if (Id == 0)
+                {
+                    int moveCp = 0;
+                    int moveMate = 0;
+                    if (score >= TTEntry.MateBound)
+                    {
+                        moveMate = (Value.MateValue - score + 1) / 2;
+                    }
+                    else if (score <= -TTEntry.MateBound)
+                    {
+                        moveMate = (-Value.MateValue - score - 1) / 2;
+                    }
+                    else
+                    {
+                        moveCp = score;
+                    }
+
+                    _rootCandidates.Add(new RootMoveCandidate(move, moveCp, moveMate));
+                }
+
                 if (_engine._stopped || cancellationToken.IsCancellationRequested)
                 {
                     return 0;
@@ -671,6 +738,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         if (score >= beta)
                         {
                             // Beta cutoff at root
+                            BetaCutoffs++;
+                            if (movesSearched == 1)
+                            {
+                                FirstMoveCutoffs++;
+                            }
                             UpdateHistoriesOnCutoff(in board, move, movedPiece, depth, quietsSearched[..quietsCount], quietsSearchedPiece[..quietsCount], prev1Piece: Piece.None, prev1To: Square.None, prev2Piece: Piece.None, prev2To: Square.None);
                             break;
                         }
@@ -1025,6 +1097,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         if (score >= beta)
                         {
                             // Beta Cutoff: Update heuristics
+                            BetaCutoffs++;
+                            if (movesSearched == 1)
+                            {
+                                FirstMoveCutoffs++;
+                            }
                             UpdateHistoriesOnCutoff(in board, move, movedPiece, depth, quietsSearched[..quietsCount], quietsSearchedPiece[..quietsCount], prev1Piece, prev1To, prev2Piece, prev2To);
 
                             // Killer move storage in SearchStack

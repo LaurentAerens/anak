@@ -647,6 +647,26 @@ public sealed class MCTSEngine : ISearchEngine
             }
             ulong nps = (iteration * 1000UL) / (ulong)elapsed;
 
+            List<RootMoveCandidate> mctsTop = [];
+            if (rootNode.IsExpanded && rootNode.NumChildren > 0)
+            {
+                var children = new List<(Move Move, uint Visits, float Q)>();
+                for (ushort c = 0; c < rootNode.NumChildren; c++)
+                {
+                    ref readonly MCTSNode child = ref _arena[rootNode.FirstChildIndex + c];
+                    if (child.Visits > 0 && !child.Move.IsNull)
+                    {
+                        children.Add((child.Move, child.Visits, child.Q));
+                    }
+                }
+                foreach (var ch in children.OrderByDescending(c => c.Visits).Take(5))
+                {
+                    double winProb = Math.Clamp((ch.Q + 1.0) / 2.0, 0.001, 0.999);
+                    int cp = (int)(400.0 * Math.Log10(winProb / (1.0 - winProb)));
+                    mctsTop.Add(new RootMoveCandidate(ch.Move, cp, 0, [ch.Move]));
+                }
+            }
+
             infoCallback(new SearchStatistics
             {
                 Depth = pv.Count,
@@ -658,7 +678,8 @@ public sealed class MCTSEngine : ISearchEngine
                 Pv = pv,
                 HashfullPermille = _tt.HashfullPermille(),
                 TbHits = 0,
-                RootScore = _arena[rootIndex].Q
+                RootScore = _arena[rootIndex].Q,
+                TopMoves = mctsTop
             });
         }
 

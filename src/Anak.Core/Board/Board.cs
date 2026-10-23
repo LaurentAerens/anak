@@ -141,6 +141,9 @@ public struct Board : IEquatable<Board>
     public readonly bool IsInCheck() => IsInCheck(SideToMove);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly bool IsCheck() => IsInCheck();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AddPiece(Square sq, Color color, PieceType type)
     {
         ulong bit = 1UL << (byte)sq;
