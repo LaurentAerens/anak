@@ -64,8 +64,9 @@ books/
 *.rtbz
 *.ctbw
 *.ctbz
-syzygy/
+/syzygy/
 tablebases/
+!src/Anak.Data/Syzygy/
 
 # NNUE Network Binaries & Machine Learning Checkpoints
 *.nnue
