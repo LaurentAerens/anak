@@ -281,6 +281,9 @@ public class AlphaBetaTests
         Assert.Equal(SearchHeuristics.TunedConthistPenalty, adapter.Options.ConthistPenalty.Value);
         Assert.Equal(SearchHeuristics.TunedHistoryThreshold, adapter.Options.HistoryThreshold.Value);
         Assert.Equal(46, adapter.Options.ScoreDropThreshold.Value);
+        Assert.Equal(SearchHeuristics.TunedRfpImprovingMultiplier, adapter.Options.RfpImprovingMultiplier.Value);
+        Assert.Equal(SearchHeuristics.TunedSingularMargin, adapter.Options.SingularMargin.Value);
+        Assert.Equal(SearchHeuristics.TunedQsDeltaMargin, adapter.Options.QsDeltaMargin.Value);
 
         // Modify options
         Assert.True(adapter.Options.TrySetValue("LmrBase", "80"));
@@ -292,6 +295,9 @@ public class AlphaBetaTests
         Assert.True(adapter.Options.TrySetValue("ConthistPenalty", "5000"));
         Assert.True(adapter.Options.TrySetValue("HistoryThreshold", "2500"));
         Assert.True(adapter.Options.TrySetValue("ScoreDropThreshold", "60"));
+        Assert.True(adapter.Options.TrySetValue("RfpImprovingMultiplier", "140"));
+        Assert.True(adapter.Options.TrySetValue("SingularMargin", "3"));
+        Assert.True(adapter.Options.TrySetValue("QsDeltaMargin", "250"));
 
         Assert.Equal(80, adapter.Options.LmrBase.Value);
         Assert.Equal(240, adapter.Options.LmrDivision.Value);
@@ -302,6 +308,9 @@ public class AlphaBetaTests
         Assert.Equal(5000, adapter.Options.ConthistPenalty.Value);
         Assert.Equal(2500, adapter.Options.HistoryThreshold.Value);
         Assert.Equal(60, adapter.Options.ScoreDropThreshold.Value);
+        Assert.Equal(140, adapter.Options.RfpImprovingMultiplier.Value);
+        Assert.Equal(3, adapter.Options.SingularMargin.Value);
+        Assert.Equal(250, adapter.Options.QsDeltaMargin.Value);
 
         var alphaBeta = (AlphaBetaEngine)adapter.ActiveEngine;
         Assert.Equal(80, alphaBeta.LmrBase);
@@ -313,6 +322,9 @@ public class AlphaBetaTests
         Assert.Equal(5000, alphaBeta.ConthistPenalty);
         Assert.Equal(2500, alphaBeta.HistoryThreshold);
         Assert.Equal(60, alphaBeta.ScoreDropThreshold);
+        Assert.Equal(140, alphaBeta.RfpImprovingMultiplier);
+        Assert.Equal(3, alphaBeta.SingularMargin);
+        Assert.Equal(250, alphaBeta.QsDeltaMargin);
     }
 
     [Fact]

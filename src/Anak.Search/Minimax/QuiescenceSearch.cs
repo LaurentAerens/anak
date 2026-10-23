@@ -22,6 +22,7 @@ public sealed class QuiescenceSearch
 
     public const int MaxQsDepth = 128;
     public const int DeltaMargin = 900;
+    public int DeltaSafetyMargin { get; set; } = SearchHeuristics.TunedQsDeltaMargin;
 
     public QuiescenceSearch(IEvaluator evaluator, TranspositionTable? tt = null, CorrectionHistory? correctionHistory = null, IIncrementalEvaluator? incEval = null)
     {
@@ -134,7 +135,7 @@ public sealed class QuiescenceSearch
                         ? StaticExchangeEvaluator.GetPieceValue(captured.Type())
                         : 0;
 
-                    if (standPat + victimVal + 200 < alpha)
+                    if (standPat + victimVal + DeltaSafetyMargin < alpha)
                     {
                         continue;
                     }

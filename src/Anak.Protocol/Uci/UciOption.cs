@@ -285,6 +285,9 @@ public sealed class UciOptionRegistry
     public SpinOption ConthistPenalty { get; }
     public SpinOption HistoryThreshold { get; }
     public SpinOption ScoreDropThreshold { get; }
+    public SpinOption RfpImprovingMultiplier { get; }
+    public SpinOption SingularMargin { get; }
+    public SpinOption QsDeltaMargin { get; }
 
     public UciOptionRegistry()
     {
@@ -310,6 +313,9 @@ public sealed class UciOptionRegistry
         ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3966, min: 1000, max: 8000);
         HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2047, min: 500, max: 5000);
         ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 46, min: 10, max: 150);
+        RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 130, min: 100, max: 250);
+        SingularMargin = new SpinOption("SingularMargin", defaultValue: 2, min: 1, max: 8);
+        QsDeltaMargin = new SpinOption("QsDeltaMargin", defaultValue: 200, min: 50, max: 500);
 
         Register(SearchAlgorithm);
         Register(Hash);
@@ -333,6 +339,9 @@ public sealed class UciOptionRegistry
         Register(ConthistPenalty);
         Register(HistoryThreshold);
         Register(ScoreDropThreshold);
+        Register(RfpImprovingMultiplier);
+        Register(SingularMargin);
+        Register(QsDeltaMargin);
     }
 
     public void Register(UciOption option)

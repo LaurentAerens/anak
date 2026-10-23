@@ -26,6 +26,9 @@ public static class SearchHeuristics
     public const int TunedConthistReward = 2548;    // default: 2500
     public const int TunedConthistPenalty = 3966;   // default: 4000
     public const int TunedHistoryThreshold = 2047;  // default: 2000
+    public const int TunedRfpImprovingMultiplier = 130; // default: 130 (1.30x)
+    public const int TunedSingularMargin = 2;           // default: 2
+    public const int TunedQsDeltaMargin = 200;          // default: 200
 
     /// <summary>
     /// Pre-computed LMR reduction table: [depth, moveIndex].

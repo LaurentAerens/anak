@@ -127,6 +127,9 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.ConthistPenalty = _options.ConthistPenalty.Value;
         _alphaBetaEngine.HistoryThreshold = _options.HistoryThreshold.Value;
         _alphaBetaEngine.ScoreDropThreshold = _options.ScoreDropThreshold.Value;
+        _alphaBetaEngine.RfpImprovingMultiplier = _options.RfpImprovingMultiplier.Value;
+        _alphaBetaEngine.SingularMargin = _options.SingularMargin.Value;
+        _alphaBetaEngine.QsDeltaMargin = _options.QsDeltaMargin.Value;
 
         _options.LmrBase.ValueChanged += val => _alphaBetaEngine.LmrBase = val;
         _options.LmrDivision.ValueChanged += val => _alphaBetaEngine.LmrDivision = val;
@@ -137,6 +140,9 @@ public sealed class UciEngineAdapter
         _options.ConthistPenalty.ValueChanged += val => _alphaBetaEngine.ConthistPenalty = val;
         _options.HistoryThreshold.ValueChanged += val => _alphaBetaEngine.HistoryThreshold = val;
         _options.ScoreDropThreshold.ValueChanged += val => _alphaBetaEngine.ScoreDropThreshold = val;
+        _options.RfpImprovingMultiplier.ValueChanged += val => _alphaBetaEngine.RfpImprovingMultiplier = val;
+        _options.SingularMargin.ValueChanged += val => _alphaBetaEngine.SingularMargin = val;
+        _options.QsDeltaMargin.ValueChanged += val => _alphaBetaEngine.QsDeltaMargin = val;
 
         // Initialize board to standard start position
         _board = Fen.Parse(Fen.StartPosition);

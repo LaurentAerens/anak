@@ -47,6 +47,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private int _conthistReward = SearchHeuristics.TunedConthistReward;
     private int _conthistPenalty = SearchHeuristics.TunedConthistPenalty;
     private int _historyThreshold = SearchHeuristics.TunedHistoryThreshold;
+    private int _rfpImprovingMultiplier = SearchHeuristics.TunedRfpImprovingMultiplier;
+    private int _singularMargin = SearchHeuristics.TunedSingularMargin;
+    private int _qsDeltaMargin = SearchHeuristics.TunedQsDeltaMargin;
     private readonly int[,] _lmrTable = new int[MaxSearchDepth, 128];
 
     public TranspositionTable TranspositionTable => _tt;
@@ -113,6 +116,34 @@ public sealed class AlphaBetaEngine : ISearchEngine
     {
         get => _timeManager.ScoreDropThreshold;
         set => _timeManager.ScoreDropThreshold = value;
+    }
+
+    public int RfpImprovingMultiplier
+    {
+        get => _rfpImprovingMultiplier;
+        set => _rfpImprovingMultiplier = value;
+    }
+
+    public int SingularMargin
+    {
+        get => _singularMargin;
+        set => _singularMargin = value;
+    }
+
+    public int QsDeltaMargin
+    {
+        get => _qsDeltaMargin;
+        set
+        {
+            _qsDeltaMargin = value;
+            if (_workers != null)
+            {
+                foreach (var w in _workers)
+                {
+                    w.SetQsDeltaMargin(value);
+                }
+            }
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -364,6 +395,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
             _correctionHistory = new CorrectionHistory();
             _counterMoves = new Move[13, 64];
             _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval);
+            _qsearch.DeltaSafetyMargin = engine.QsDeltaMargin;
+        }
+
+        public void SetQsDeltaMargin(int margin)
+        {
+            _qsearch.DeltaSafetyMargin = margin;
         }
 
         public void ResetForSearch()
@@ -937,7 +974,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 int rfpMargin = _engine.RfpMargin * depth;
                 if (improving)
                 {
-                    rfpMargin = (rfpMargin * 13) / 10;
+                    rfpMargin = (rfpMargin * _engine.RfpImprovingMultiplier) / 100;
                 }
                 if (eval - rfpMargin >= beta)
                 {
@@ -983,7 +1020,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 entry.Depth >= depth - 3 && entry.Flags != TTFlags.UpperBound &&
                 _stack[ply].ExcludedMove.IsNull)
             {
-                int singularBeta = ttScore - (2 * depth);
+                int singularBeta = ttScore - (_engine.SingularMargin * depth);
                 _stack[ply].ExcludedMove = entry.BestMove;
                 int sDepth = (depth - 1) / 2;
 

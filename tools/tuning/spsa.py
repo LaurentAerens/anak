@@ -51,26 +51,26 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
         name="LmrBase",
         default=79.0,
-        min_val=20.0,
-        max_val=150.0,
-        c=4.0,
-        a=60.0,
+        min_val=30.0,
+        max_val=160.0,
+        c=6.0,
+        a=150.0,
     ),
     SpsaParam(
         name="LmrDivision",
         default=229.0,
-        min_val=100.0,
+        min_val=120.0,
         max_val=400.0,
-        c=8.0,
-        a=120.0,
+        c=12.0,
+        a=300.0,
     ),
     SpsaParam(
         name="RfpMargin",
         default=72.0,
         min_val=30.0,
         max_val=150.0,
-        c=4.0,
-        a=60.0,
+        c=6.0,
+        a=150.0,
     ),
     SpsaParam(
         name="NmpBase",
@@ -78,82 +78,71 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         min_val=1.0,
         max_val=6.0,
         c=0.5,
-        a=3.0,
+        a=5.0,
     ),
     SpsaParam(
         name="AspirationDelta",
         default=25.0,
         min_val=10.0,
         max_val=60.0,
-        c=2.0,
-        a=25.0,
+        c=3.0,
+        a=75.0,
     ),
     SpsaParam(
         name="ConthistReward",
         default=2548.0,
         min_val=1000.0,
         max_val=5000.0,
-        c=200.0,
-        a=25000.0,
+        c=250.0,
+        a=50000.0,
     ),
     SpsaParam(
         name="ConthistPenalty",
         default=3966.0,
         min_val=1500.0,
         max_val=7000.0,
-        c=250.0,
-        a=30000.0,
+        c=300.0,
+        a=60000.0,
     ),
     SpsaParam(
         name="HistoryThreshold",
         default=2047.0,
         min_val=800.0,
         max_val=4000.0,
-        c=150.0,
-        a=20000.0,
+        c=200.0,
+        a=40000.0,
     ),
     SpsaParam(
         name="ScoreDropThreshold",
         default=46.0,
-        min_val=20.0,
-        max_val=100.0,
-        c=5.0,
-        a=100.0,
+        min_val=15.0,
+        max_val=120.0,
+        c=6.0,
+        a=150.0,
     ),
-]
-
-BATCH_A_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
         name="RfpImprovingMultiplier",
         default=130.0,
         min_val=100.0,
-        max_val=220.0,
-        c=5.0,
-        a=80.0,
-    ),
-    SpsaParam(
-        name="FutilityMargin",
-        default=150.0,
-        min_val=70.0,
-        max_val=250.0,
+        max_val=200.0,
         c=8.0,
-        a=120.0,
+        a=200.0,
     ),
     SpsaParam(
         name="SingularMargin",
         default=2.0,
         min_val=1.0,
-        max_val=5.0,
+        max_val=6.0,
         c=0.5,
-        a=2.0,
+        a=5.0,
     ),
     SpsaParam(
         name="QsDeltaMargin",
         default=200.0,
         min_val=80.0,
-        max_val=350.0,
+        max_val=400.0,
         c=15.0,
-        a=200.0,
+        a=350.0,
     ),
 ]
 
@@ -611,8 +600,8 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["all", "a"], default="a",
-                        help="Parameter batch to tune ('a' for Tactical Pruning & Extensions, 'all' for full set)")
+    parser.add_argument("--batch", type=str, choices=["all"], default="all",
+                        help="Parameter batch to tune ('all' for comprehensive 12-parameter search & time suite)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--output", type=str, default=None, help="Path to spsa_progress.json output")
     return parser.parse_args()
@@ -627,7 +616,7 @@ def main():
     openings_path = Path(args.openings) if args.openings else default_openings
     progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / "spsa_progress.json")
 
-    param_set = BATCH_A_PARAMETERS if args.batch == "a" else DEFAULT_PARAMETERS
+    param_set = DEFAULT_PARAMETERS
 
     tuner = SpsaTuner(
         params=param_set,
