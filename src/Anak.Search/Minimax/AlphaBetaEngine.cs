@@ -55,6 +55,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
     public TranspositionTable TranspositionTable => _tt;
     public TimeManager TimeManager => _timeManager;
     public IEvaluator Evaluator => _evaluator;
+    public int LastScoreCp { get; internal set; }
 
     public int LmrBase
     {
@@ -593,6 +594,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 else
                 {
                     stats.ScoreCp = score;
+                    _engine.LastScoreCp = score;
                     stats.RootScore = MathF.Tanh(score / 400.0f);
                 }
 

@@ -1,6 +1,7 @@
 using Anak.Core;
 using Anak.Protocol.Analyze;
 using Anak.Protocol.Bench;
+using Anak.Protocol.Datagen;
 using Anak.Protocol.Uci;
 
 namespace Anak.Protocol;
@@ -131,6 +132,58 @@ public static class Program
                 }
 
                 AnalyzeRunner.Run(fen, pgn, depth, threads, hash, Console.WriteLine);
+                return;
+            }
+
+            if (command is "datagen")
+            {
+                var options = new DatagenOptions();
+
+                for (int i = 1; i < args.Length; i++)
+                {
+                    string arg = args[i].ToLowerInvariant();
+                    if (arg is "--games" or "-g" && i + 1 < args.Length && int.TryParse(args[i + 1], out int g))
+                    {
+                        options.Games = g;
+                        i++;
+                    }
+                    else if (arg is "--threads" or "-t" && i + 1 < args.Length && int.TryParse(args[i + 1], out int t))
+                    {
+                        options.Threads = t;
+                        i++;
+                    }
+                    else if (arg is "--depth" or "-d" && i + 1 < args.Length && int.TryParse(args[i + 1], out int d))
+                    {
+                        options.Depth = d;
+                        i++;
+                    }
+                    else if (arg is "--nodes" or "-n" && i + 1 < args.Length && int.TryParse(args[i + 1], out int n))
+                    {
+                        options.Nodes = n;
+                        i++;
+                    }
+                    else if (arg is "--random-plies" or "-r" && i + 1 < args.Length && int.TryParse(args[i + 1], out int r))
+                    {
+                        options.RandomPlies = r;
+                        i++;
+                    }
+                    else if (arg is "--output" or "-o" && i + 1 < args.Length)
+                    {
+                        options.OutputDir = args[i + 1];
+                        i++;
+                    }
+                    else if (arg is "--syzygy" && i + 1 < args.Length)
+                    {
+                        options.SyzygyPath = args[i + 1];
+                        i++;
+                    }
+                    else if (arg is "--epd")
+                    {
+                        options.ExportEpd = true;
+                    }
+                }
+
+                DatagenRunner.Run(options, Console.WriteLine);
                 return;
             }
         }
