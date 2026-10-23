@@ -123,12 +123,20 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.RfpMargin = _options.RfpMargin.Value;
         _alphaBetaEngine.NmpBase = _options.NmpBase.Value;
         _alphaBetaEngine.AspirationDelta = _options.AspirationDelta.Value;
+        _alphaBetaEngine.ConthistReward = _options.ConthistReward.Value;
+        _alphaBetaEngine.ConthistPenalty = _options.ConthistPenalty.Value;
+        _alphaBetaEngine.HistoryThreshold = _options.HistoryThreshold.Value;
+        _alphaBetaEngine.ScoreDropThreshold = _options.ScoreDropThreshold.Value;
 
         _options.LmrBase.ValueChanged += val => _alphaBetaEngine.LmrBase = val;
         _options.LmrDivision.ValueChanged += val => _alphaBetaEngine.LmrDivision = val;
         _options.RfpMargin.ValueChanged += val => _alphaBetaEngine.RfpMargin = val;
         _options.NmpBase.ValueChanged += val => _alphaBetaEngine.NmpBase = val;
         _options.AspirationDelta.ValueChanged += val => _alphaBetaEngine.AspirationDelta = val;
+        _options.ConthistReward.ValueChanged += val => _alphaBetaEngine.ConthistReward = val;
+        _options.ConthistPenalty.ValueChanged += val => _alphaBetaEngine.ConthistPenalty = val;
+        _options.HistoryThreshold.ValueChanged += val => _alphaBetaEngine.HistoryThreshold = val;
+        _options.ScoreDropThreshold.ValueChanged += val => _alphaBetaEngine.ScoreDropThreshold = val;
 
         // Initialize board to standard start position
         _board = Fen.Parse(Fen.StartPosition);

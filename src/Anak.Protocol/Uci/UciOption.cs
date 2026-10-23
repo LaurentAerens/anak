@@ -281,6 +281,10 @@ public sealed class UciOptionRegistry
     public SpinOption RfpMargin { get; }
     public SpinOption NmpBase { get; }
     public SpinOption AspirationDelta { get; }
+    public SpinOption ConthistReward { get; }
+    public SpinOption ConthistPenalty { get; }
+    public SpinOption HistoryThreshold { get; }
+    public SpinOption ScoreDropThreshold { get; }
 
     public UciOptionRegistry()
     {
@@ -302,6 +306,10 @@ public sealed class UciOptionRegistry
         RfpMargin = new SpinOption("RfpMargin", defaultValue: 73, min: 10, max: 300);
         NmpBase = new SpinOption("NmpBase", defaultValue: 3, min: 1, max: 10);
         AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 26, min: 5, max: 100);
+        ConthistReward = new SpinOption("ConthistReward", defaultValue: 2500, min: 500, max: 6000);
+        ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 4000, min: 1000, max: 8000);
+        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2000, min: 500, max: 5000);
+        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 50, min: 10, max: 150);
 
         Register(SearchAlgorithm);
         Register(Hash);
@@ -321,6 +329,10 @@ public sealed class UciOptionRegistry
         Register(RfpMargin);
         Register(NmpBase);
         Register(AspirationDelta);
+        Register(ConthistReward);
+        Register(ConthistPenalty);
+        Register(HistoryThreshold);
+        Register(ScoreDropThreshold);
     }
 
     public void Register(UciOption option)

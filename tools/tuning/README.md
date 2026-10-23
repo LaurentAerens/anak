@@ -8,15 +8,19 @@ SPSA is the standard gradient-free optimization algorithm used by top chess engi
 
 ## 1. Targeted Search Heuristics
 
-The tuner optimizes 5 critical parameters in Anak's alpha-beta minimax search:
+The tuner optimizes 9 critical parameters in Anak's alpha-beta minimax search and dynamic time management:
 
 | Parameter | UCI Option | Default | Range | Description |
 | :--- | :--- | :---: | :---: | :--- |
-| **LMR Base** | `LmrBase` | `75` (0.75) | `20 .. 150` | Constant term in Late Move Reduction formula: $R = \text{base} + \frac{\ln(d) \cdot \ln(m)}{\text{div}}$ |
-| **LMR Division** | `LmrDivision` | `225` (2.25) | `100 .. 400` | Logarithmic divisor scaling LMR reductions for deep/late quiet moves |
-| **RFP Margin** | `RfpMargin` | `75` | `30 .. 150` | Reverse Futility Pruning (Static Null Move) multiplier: $\text{margin} = \text{rfp} \cdot \text{depth}$ |
+| **LMR Base** | `LmrBase` | `76` (0.76) | `20 .. 150` | Constant term in Late Move Reduction formula: $R = \text{base} + \frac{\ln(d) \cdot \ln(m)}{\text{div}}$ |
+| **LMR Division** | `LmrDivision` | `227` (2.27) | `100 .. 400` | Logarithmic divisor scaling LMR reductions for deep/late quiet moves |
+| **RFP Margin** | `RfpMargin` | `73` | `30 .. 150` | Reverse Futility Pruning (Static Null Move) multiplier: $\text{margin} = \text{rfp} \cdot \text{depth}$ |
 | **NMP Base** | `NmpBase` | `3` | `1 .. 6` | Base reduction for dynamic Null Move Pruning: $R = \text{nmp} + \lfloor d / 6 \rfloor + \dots$ |
-| **Aspiration Delta** | `AspirationDelta` | `25` | `10 .. 60` | Initial search aspiration window radius: $[\text{score} - \delta, \text{score} + \delta]$ |
+| **Aspiration Delta** | `AspirationDelta` | `26` | `10 .. 60` | Initial search aspiration window radius: $[\text{score} - \delta, \text{score} + \delta]$ |
+| **Continuation History Reward** | `ConthistReward` | `2500` | `1000 .. 5000` | Threshold above which 1-ply continuation history reduces LMR ($r{-}{-}$) |
+| **Continuation History Penalty** | `ConthistPenalty` | `4000` | `1500 .. 7000` | Magnitude below which 1-ply continuation history increases LMR ($r{+}{+}$) |
+| **History Threshold** | `HistoryThreshold` | `2000` | `800 .. 4000` | Butterfly history score threshold for LMR adjustments ($\pm H$) |
+| **Score-Drop Panic Threshold** | `ScoreDropThreshold` | `50` | `20 .. 100` | Centipawn score-drop threshold triggering soft time limit extension |
 
 ---
 

@@ -231,11 +231,15 @@ Anak communicates using the standard Universal Chess Interface (UCI) protocol an
 | `SyzygyProbeDepth`| spin | `1` | Minimum search depth to probe Syzygy tablebases (1 to 100). |
 | `MoveRandomness` | spin | `10` | MCTS move randomness factor (0 to 100). |
 | `Temperature` | spin | `0` | MCTS Softmax temperature for move selection (0 to 100). |
-| `LmrBase` | spin | `75` | Base Late Move Reduction constant ($0.75$). |
-| `LmrDivision` | spin | `225` | Logarithmic divisor scaling LMR reductions ($2.25$). |
-| `RfpMargin` | spin | `75` | Reverse Futility Pruning (Static Null Move) margin per depth ($75$ cp). |
+| `LmrBase` | spin | `76` | Base Late Move Reduction constant ($0.76$). |
+| `LmrDivision` | spin | `227` | Logarithmic divisor scaling LMR reductions ($2.27$). |
+| `RfpMargin` | spin | `73` | Reverse Futility Pruning (Static Null Move) margin per depth ($73$ cp). |
 | `NmpBase` | spin | `3` | Dynamic Null Move Pruning base reduction ($R = 3$). |
-| `AspirationDelta` | spin | `25` | Search aspiration window radius ($\pm 25$ cp). |
+| `AspirationDelta` | spin | `26` | Search aspiration window radius ($\pm 26$ cp). |
+| `ConthistReward` | spin | `2500` | 1-ply Continuation history reward threshold ($r{-}{-}$). |
+| `ConthistPenalty` | spin | `4000` | 1-ply Continuation history penalty threshold ($r{+}{+}$). |
+| `HistoryThreshold` | spin | `2000` | Butterfly history score threshold for LMR ($\pm 2000$). |
+| `ScoreDropThreshold` | spin | `50` | Score drop panic time extension threshold ($50$ cp). |
 
 ### Shipped Opening Book & Endgame Tablebases
 
@@ -290,7 +294,7 @@ See the [**Training Documentation & Pipeline Guide**](training/README.md) for fu
 
 An automated **Simultaneous Perturbation Stochastic Approximation (SPSA)** tuning harness is available in `tools/tuning/` to optimize search heuristics and pruning margins:
 
-- **Targeted Heuristics**: `LmrBase`, `LmrDivision`, `RfpMargin`, `NmpBase`, and `AspirationDelta`.
+- **Targeted Heuristics**: `LmrBase`, `LmrDivision`, `RfpMargin`, `NmpBase`, `AspirationDelta`, `ConthistReward`, `ConthistPenalty`, `HistoryThreshold`, and `ScoreDropThreshold`.
 - **Features**: Simultaneous gradient approximation, JSON progress tracking, automatic C# snippet generation, and multi-core parallel games.
 
 ```bash

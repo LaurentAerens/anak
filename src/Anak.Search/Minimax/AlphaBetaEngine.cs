@@ -44,6 +44,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private int _rfpMargin = SearchHeuristics.TunedRfpMargin;
     private int _nmpBase = SearchHeuristics.TunedNmpBase;
     private int _aspirationDelta = SearchHeuristics.TunedAspirationDelta;
+    private int _conthistReward = SearchHeuristics.TunedConthistReward;
+    private int _conthistPenalty = SearchHeuristics.TunedConthistPenalty;
+    private int _historyThreshold = SearchHeuristics.TunedHistoryThreshold;
     private readonly int[,] _lmrTable = new int[MaxSearchDepth, 128];
 
     public TranspositionTable TranspositionTable => _tt;
@@ -86,6 +89,30 @@ public sealed class AlphaBetaEngine : ISearchEngine
     {
         get => _aspirationDelta;
         set => _aspirationDelta = value;
+    }
+
+    public int ConthistReward
+    {
+        get => _conthistReward;
+        set => _conthistReward = value;
+    }
+
+    public int ConthistPenalty
+    {
+        get => _conthistPenalty;
+        set => _conthistPenalty = value;
+    }
+
+    public int HistoryThreshold
+    {
+        get => _historyThreshold;
+        set => _historyThreshold = value;
+    }
+
+    public int ScoreDropThreshold
+    {
+        get => _timeManager.ScoreDropThreshold;
+        set => _timeManager.ScoreDropThreshold = value;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -670,8 +697,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         r = SearchHeuristics.AdjustLmrForTopology(r, rootOpenness, isPv: true, isTactical: false, inCheck: false);
 
                         int hist = _history.GetScore(movedPiece.Color(), move);
-                        if (hist < -2000) r++;
-                        else if (hist > 2000) r--;
+                        if (hist < -_engine.HistoryThreshold) r++;
+                        else if (hist > _engine.HistoryThreshold) r--;
                         r = Math.Clamp(r, 0, depth - 2);
                     }
 
@@ -1074,12 +1101,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             }
 
                             int hist = _history.GetScore(movedPiece.Color(), move);
-                            if (hist < -2000) r++;
-                            else if (hist > 2000) r--;
+                            if (hist < -_engine.HistoryThreshold) r++;
+                            else if (hist > _engine.HistoryThreshold) r--;
 
                             int conthist1 = _continuationHistory.Get1PlyScore(prev1Piece, prev1To, movedPiece, move.To);
-                            if (conthist1 > 2500) r--;
-                            else if (conthist1 < -4000) r++;
+                            if (conthist1 > _engine.ConthistReward) r--;
+                            else if (conthist1 < -_engine.ConthistPenalty) r++;
 
                             r = Math.Clamp(r, 0, depth - 2);
                         }

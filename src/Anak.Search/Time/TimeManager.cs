@@ -27,6 +27,7 @@ public sealed class TimeManager
     public long HardLimitMs => _hardLimitMs;
     public bool HasTimeLimit => _hasTimeLimit;
     public int StableMoveDepths => _stableMoveDepths;
+    public int ScoreDropThreshold { get; set; } = 50;
 
     /// <summary>
     /// Initializes time allocation based on remaining clock, increment, and move limits.
@@ -175,12 +176,12 @@ public sealed class TimeManager
     }
 
     /// <summary>
-    /// Extends soft time limit up to 1.5x (capped by hard limit) when evaluation drops sharply (> 50 cp).
+    /// Extends soft time limit up to 1.5x (capped by hard limit) when evaluation drops sharply (> ScoreDropThreshold cp).
     /// </summary>
     public void HandleScoreDrop(int currentScore, int prevScore, int depth)
     {
         if (!_hasTimeLimit || depth < 6) return;
-        if (Math.Abs(prevScore) < Value.MateValue - 100 && currentScore < prevScore - 50)
+        if (Math.Abs(prevScore) < Value.MateValue - 100 && currentScore < prevScore - ScoreDropThreshold)
         {
             _softLimitMs = Math.Min(_hardLimitMs, (long)(_softLimitMs * 1.5f));
         }

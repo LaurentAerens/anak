@@ -277,6 +277,10 @@ public class AlphaBetaTests
         Assert.Equal(SearchHeuristics.TunedRfpMargin, adapter.Options.RfpMargin.Value);
         Assert.Equal(SearchHeuristics.TunedNmpBase, adapter.Options.NmpBase.Value);
         Assert.Equal(SearchHeuristics.TunedAspirationDelta, adapter.Options.AspirationDelta.Value);
+        Assert.Equal(SearchHeuristics.TunedConthistReward, adapter.Options.ConthistReward.Value);
+        Assert.Equal(SearchHeuristics.TunedConthistPenalty, adapter.Options.ConthistPenalty.Value);
+        Assert.Equal(SearchHeuristics.TunedHistoryThreshold, adapter.Options.HistoryThreshold.Value);
+        Assert.Equal(50, adapter.Options.ScoreDropThreshold.Value);
 
         // Modify options
         Assert.True(adapter.Options.TrySetValue("LmrBase", "80"));
@@ -284,12 +288,20 @@ public class AlphaBetaTests
         Assert.True(adapter.Options.TrySetValue("RfpMargin", "90"));
         Assert.True(adapter.Options.TrySetValue("NmpBase", "4"));
         Assert.True(adapter.Options.TrySetValue("AspirationDelta", "30"));
+        Assert.True(adapter.Options.TrySetValue("ConthistReward", "3000"));
+        Assert.True(adapter.Options.TrySetValue("ConthistPenalty", "5000"));
+        Assert.True(adapter.Options.TrySetValue("HistoryThreshold", "2500"));
+        Assert.True(adapter.Options.TrySetValue("ScoreDropThreshold", "60"));
 
         Assert.Equal(80, adapter.Options.LmrBase.Value);
         Assert.Equal(240, adapter.Options.LmrDivision.Value);
         Assert.Equal(90, adapter.Options.RfpMargin.Value);
         Assert.Equal(4, adapter.Options.NmpBase.Value);
         Assert.Equal(30, adapter.Options.AspirationDelta.Value);
+        Assert.Equal(3000, adapter.Options.ConthistReward.Value);
+        Assert.Equal(5000, adapter.Options.ConthistPenalty.Value);
+        Assert.Equal(2500, adapter.Options.HistoryThreshold.Value);
+        Assert.Equal(60, adapter.Options.ScoreDropThreshold.Value);
 
         var alphaBeta = (AlphaBetaEngine)adapter.ActiveEngine;
         Assert.Equal(80, alphaBeta.LmrBase);
@@ -297,6 +309,10 @@ public class AlphaBetaTests
         Assert.Equal(90, alphaBeta.RfpMargin);
         Assert.Equal(4, alphaBeta.NmpBase);
         Assert.Equal(30, alphaBeta.AspirationDelta);
+        Assert.Equal(3000, alphaBeta.ConthistReward);
+        Assert.Equal(5000, alphaBeta.ConthistPenalty);
+        Assert.Equal(2500, alphaBeta.HistoryThreshold);
+        Assert.Equal(60, alphaBeta.ScoreDropThreshold);
     }
 
     [Fact]
