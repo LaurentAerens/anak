@@ -163,6 +163,7 @@ def parse_args():
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--lambda-wdl", type=float, default=0.35, help="WDL loss weight factor (default: 0.35)")
     parser.add_argument("--augment-flip", action="store_true", default=True, help="Apply random horizontal board reflection during training (default: True)")
+    parser.add_argument("--compile", action="store_true", default=False, help="Enable PyTorch 2.x torch.compile for CUDA kernel fusion on modern GPUs (e.g. RTX 4090)")
     parser.add_argument("--output", type=str, default="./checkpoints", help="Output directory for checkpoints")
     parser.add_argument("--max-samples", type=int, default=None, help="Limit number of samples per epoch")
     parser.add_argument("--deploy", action="store_true", default=True,
@@ -185,19 +186,15 @@ def main():
     has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
     amp_dtype = torch.bfloat16 if has_bf16 else torch.float16
     amp_enabled = is_cuda
-    scaler = torch.cuda.amp.GradScaler(enabled=(is_cuda and amp_dtype == torch.float16))
-
-    # 1. Check for Preprocessed Binary Pack(s)
-    binpack_files = find_preprocessed_binpacks(args.model, explicit_path=args.binpack)
-    use_fast_loader = len(binpack_files) > 0
-
-    print("=" * 75)
-    print(f"=== Training Anak NNUE: {args.model.upper()} Model on {device} ===")
-    print("=" * 75)
+    scaler = torch.amp.GradScaler("cuda", enabled=(is_cuda and amp_dtype == torch.float16))
 
     if is_cuda:
-        precision_str = "bfloat16 (native)" if has_bf16 else "float16 (+ GradScaler)"
+        precision_str = "bfloat16 (native Tensor Cores)" if has_bf16 else "float16 (+ GradScaler)"
         print(f"--> Mixed Precision (AMP): ENABLED ({precision_str})")
+        if hasattr(torch, "set_float32_matmul_precision"):
+            torch.set_float32_matmul_precision("high")
+        if hasattr(torch.backends, "cudnn") and torch.backends.cudnn.is_available():
+            torch.backends.cudnn.benchmark = True
     else:
         print(f"--> Mixed Precision (AMP): DISABLED (CPU float32)")
         print(f"--> CPU Multi-Threading:   {cpu_threads} threads enabled (saturating all physical and logical cores)")
@@ -241,6 +238,13 @@ def main():
     ema = ModelEMA(model, decay=0.995)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
+    if args.compile and is_cuda and hasattr(torch, "compile"):
+        try:
+            print("--> PyTorch 2.x torch.compile: ENABLED (Triton kernel fusion)")
+            model = torch.compile(model, mode="reduce-overhead")
+        except Exception as e:
+            print(f"Notice: torch.compile skipped ({e})")
+
     # Linear Warmup followed by Cosine Annealing
     warmup_epochs = min(args.warmup_epochs, max(0, args.epochs // 4))
     if warmup_epochs > 0 and args.epochs > warmup_epochs:
@@ -265,6 +269,7 @@ def main():
         total_raw = sum(len(BinpackReader(f)) for f in binpack_files)
         train_count = int(total_raw * (1.0 - args.val_split)) if args.val_split > 0 else total_raw
         effective_batch_size = min(args.batch_size, max(256, train_count))
+        prefetch_cnt = 16 if is_cuda else 4
         train_loader = FastMemoryMappedBatchLoader(
             binpack_files,
             batch_size=effective_batch_size,
@@ -273,6 +278,7 @@ def main():
             val_split=args.val_split,
             is_validation=False,
             augment_flip=args.augment_flip,
+            prefetch_batches=prefetch_cnt,
         )
         val_loader = FastMemoryMappedBatchLoader(
             binpack_files,

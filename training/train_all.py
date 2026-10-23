@@ -151,6 +151,7 @@ def train_single_model(
     min_delta: float = 1e-4,
     mix_sources: Optional[Union[str, List[str]]] = None,
     mix_ratio: float = 0.20,
+    compile_model: bool = False,
 ) -> str:
     """
     Trains one NNUE model on its preprocessed Stockfish d9/d11 binpack using 100% trainable weights,
@@ -185,11 +186,15 @@ def train_single_model(
     has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
     amp_dtype = torch.bfloat16 if has_bf16 else torch.float16
     amp_enabled = is_cuda
-    scaler = torch.cuda.amp.GradScaler(enabled=(is_cuda and amp_dtype == torch.float16))
+    scaler = torch.amp.GradScaler("cuda", enabled=(is_cuda and amp_dtype == torch.float16))
 
     if is_cuda:
-        precision_str = "bfloat16 (native)" if has_bf16 else "float16 (+ GradScaler)"
+        precision_str = "bfloat16 (native Tensor Cores)" if has_bf16 else "float16 (+ GradScaler)"
         print(f"Mixed Precision:   ENABLED ({precision_str})")
+        if hasattr(torch, "set_float32_matmul_precision"):
+            torch.set_float32_matmul_precision("high")
+        if hasattr(torch.backends, "cudnn") and torch.backends.cudnn.is_available():
+            torch.backends.cudnn.benchmark = True
     else:
         print("Mixed Precision:   DISABLED (CPU float32)")
 
@@ -199,6 +204,13 @@ def train_single_model(
     else:
         model = StandardNNUE().to(device)
         criterion = ModernNNUELoss(lambda_wdl=lambda_wdl, eval_scale=2.50)
+
+    if compile_model and is_cuda and hasattr(torch, "compile"):
+        try:
+            print("--> PyTorch 2.x torch.compile: ENABLED (Triton kernel fusion)")
+            model = torch.compile(model, mode="reduce-overhead")
+        except Exception as e:
+            print(f"Notice: torch.compile skipped ({e})")
 
     ema = ModelEMA(model, decay=0.999)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
@@ -224,6 +236,7 @@ def train_single_model(
     best_path = os.path.join(checkpoints_dir, f"{out_tag}_best.pt")
     latest_path = os.path.join(checkpoints_dir, f"{out_tag}_latest.pt")
 
+    prefetch_cnt = 16 if is_cuda else 4
     train_loader = FastMemoryMappedBatchLoader(
         binpack_files,
         batch_size=effective_batch_size,
@@ -234,6 +247,7 @@ def train_single_model(
         augment_flip=augment_flip,
         mix_sources=mix_sources,
         mix_ratio=mix_ratio,
+        prefetch_batches=prefetch_cnt,
     )
     val_loader = FastMemoryMappedBatchLoader(
         binpack_files,
@@ -399,6 +413,7 @@ def main():
         default=None,
         help="Convenience preset: 'quick' (500k pos, 30 ep), 'standard' (5M pos, 60 ep), 'large' (15M pos, 80 ep), 'massive' (30M+ pos, 100 ep, full d9/d11)",
     )
+    parser.add_argument("--compile", action="store_true", default=False, help="Enable PyTorch 2.x torch.compile for CUDA kernel fusion on modern GPUs (e.g. RTX 4090)")
     parser.add_argument("--epochs", type=int, default=80, help="Number of epochs per model (default: 80)")
     parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear learning rate warmup epochs (default: 3)")
     parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5 percent)")
@@ -516,6 +531,7 @@ def main():
             min_delta=args.min_delta,
             mix_sources=valid_mix,
             mix_ratio=args.mix_ratio,
+            compile_model=args.compile,
         )
         trained_checkpoints[m] = best_pt
 
