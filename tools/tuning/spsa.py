@@ -46,11 +46,11 @@ class SpsaParam:
         return int(round(self.current))
 
 
-# Target Tunable Parameters for Anak Search Heuristics
+# Target Tunable Parameters for Anak Search Heuristics (Tuned values from Step 3.4)
 DEFAULT_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
         name="LmrBase",
-        default=79.0,
+        default=80.0,
         min_val=30.0,
         max_val=160.0,
         c=6.0,
@@ -82,7 +82,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="AspirationDelta",
-        default=25.0,
+        default=27.0,
         min_val=10.0,
         max_val=60.0,
         c=3.0,
@@ -90,7 +90,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="ConthistReward",
-        default=2548.0,
+        default=2598.0,
         min_val=1000.0,
         max_val=5000.0,
         c=250.0,
@@ -98,7 +98,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="ConthistPenalty",
-        default=3966.0,
+        default=3839.0,
         min_val=1500.0,
         max_val=7000.0,
         c=300.0,
@@ -106,7 +106,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="HistoryThreshold",
-        default=2047.0,
+        default=2101.0,
         min_val=800.0,
         max_val=4000.0,
         c=200.0,
@@ -114,7 +114,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="ScoreDropThreshold",
-        default=46.0,
+        default=45.0,
         min_val=15.0,
         max_val=120.0,
         c=6.0,
@@ -122,7 +122,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="RfpImprovingMultiplier",
-        default=130.0,
+        default=115.0,
         min_val=100.0,
         max_val=200.0,
         c=8.0,
@@ -130,6 +130,119 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="SingularMargin",
+        default=6.0,
+        min_val=1.0,
+        max_val=8.0,
+        c=0.5,
+        a=5.0,
+    ),
+    SpsaParam(
+        name="QsDeltaMargin",
+        default=188.0,
+        min_val=80.0,
+        max_val=400.0,
+        c=15.0,
+        a=350.0,
+    ),
+]
+
+# Batch B, C, D Hidden Parameters Suite
+BATCH_BCD_PARAMETERS: List[SpsaParam] = [
+    # Batch B: History Dynamics & Pawn Correction
+    SpsaParam(
+        name="HistoryBonusScale",
+        default=1.0,
+        min_val=1.0,
+        max_val=32.0,
+        c=2.0,
+        a=50.0,
+    ),
+    SpsaParam(
+        name="HistoryMaxBonus",
+        default=2000.0,
+        min_val=500.0,
+        max_val=4000.0,
+        c=150.0,
+        a=30000.0,
+    ),
+    SpsaParam(
+        name="CorrHistDivisor",
+        default=16.0,
+        min_val=4.0,
+        max_val=64.0,
+        c=3.0,
+        a=70.0,
+    ),
+
+    # Batch C: Dynamic Time Management
+    SpsaParam(
+        name="TimeMovesToGo",
+        default=40.0,
+        min_val=15.0,
+        max_val=60.0,
+        c=3.0,
+        a=75.0,
+    ),
+    SpsaParam(
+        name="TimeIncFactor",
+        default=70.0,
+        min_val=20.0,
+        max_val=100.0,
+        c=5.0,
+        a=120.0,
+    ),
+    SpsaParam(
+        name="TimeHardMultiplier",
+        default=170.0,
+        min_val=110.0,
+        max_val=250.0,
+        c=10.0,
+        a=250.0,
+    ),
+    SpsaParam(
+        name="TimeStableScale",
+        default=80.0,
+        min_val=40.0,
+        max_val=100.0,
+        c=6.0,
+        a=150.0,
+    ),
+    SpsaParam(
+        name="TimeFlipScale",
+        default=180.0,
+        min_val=110.0,
+        max_val=250.0,
+        c=10.0,
+        a=250.0,
+    ),
+
+    # Batch D: Search & Pruning Thresholds
+    SpsaParam(
+        name="FutilityMarginD1D2",
+        default=150.0,
+        min_val=50.0,
+        max_val=300.0,
+        c=12.0,
+        a=300.0,
+    ),
+    SpsaParam(
+        name="FutilityMarginD3",
+        default=80.0,
+        min_val=30.0,
+        max_val=200.0,
+        c=8.0,
+        a=200.0,
+    ),
+    SpsaParam(
+        name="LmpBase",
+        default=3.0,
+        min_val=1.0,
+        max_val=10.0,
+        c=0.5,
+        a=5.0,
+    ),
+    SpsaParam(
+        name="LmpMultiplier",
         default=2.0,
         min_val=1.0,
         max_val=6.0,
@@ -137,12 +250,12 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         a=5.0,
     ),
     SpsaParam(
-        name="QsDeltaMargin",
-        default=200.0,
-        min_val=80.0,
-        max_val=400.0,
-        c=15.0,
-        a=350.0,
+        name="IirMinDepth",
+        default=4.0,
+        min_val=3.0,
+        max_val=8.0,
+        c=0.5,
+        a=5.0,
     ),
 ]
 
@@ -213,6 +326,39 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
         lines.append(f"public const int TunedSingularMargin = {int(round(params['SingularMargin']))};")
     if "QsDeltaMargin" in params:
         lines.append(f"public const int TunedQsDeltaMargin = {int(round(params['QsDeltaMargin']))};")
+
+    # Batch B
+    if "HistoryBonusScale" in params:
+        lines.append(f"public const int TunedHistoryBonusScale = {int(round(params['HistoryBonusScale']))};")
+    if "HistoryMaxBonus" in params:
+        lines.append(f"public const int TunedHistoryMaxBonus = {int(round(params['HistoryMaxBonus']))};")
+    if "CorrHistDivisor" in params:
+        lines.append(f"public const int TunedCorrHistDivisor = {int(round(params['CorrHistDivisor']))};")
+
+    # Batch C
+    if "TimeMovesToGo" in params:
+        lines.append(f"public const int TunedTimeMovesToGo = {int(round(params['TimeMovesToGo']))};")
+    if "TimeIncFactor" in params:
+        lines.append(f"public const int TunedTimeIncFactor = {int(round(params['TimeIncFactor']))};")
+    if "TimeHardMultiplier" in params:
+        lines.append(f"public const int TunedTimeHardMultiplier = {int(round(params['TimeHardMultiplier']))};")
+    if "TimeStableScale" in params:
+        lines.append(f"public const int TunedTimeStableScale = {int(round(params['TimeStableScale']))};")
+    if "TimeFlipScale" in params:
+        lines.append(f"public const int TunedTimeFlipScale = {int(round(params['TimeFlipScale']))};")
+
+    # Batch D
+    if "FutilityMarginD1D2" in params:
+        lines.append(f"public const int TunedFutilityMarginD1D2 = {int(round(params['FutilityMarginD1D2']))};")
+    if "FutilityMarginD3" in params:
+        lines.append(f"public const int TunedFutilityMarginD3 = {int(round(params['FutilityMarginD3']))};")
+    if "LmpBase" in params:
+        lines.append(f"public const int TunedLmpBase = {int(round(params['LmpBase']))};")
+    if "LmpMultiplier" in params:
+        lines.append(f"public const int TunedLmpMultiplier = {int(round(params['LmpMultiplier']))};")
+    if "IirMinDepth" in params:
+        lines.append(f"public const int TunedIirMinDepth = {int(round(params['IirMinDepth']))};")
+
     if "ScoreDropThreshold" in params:
         lines.append("")
         lines.append("// In src/Anak.Search/Time/TimeManager.cs:")
@@ -600,8 +746,8 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["all"], default="all",
-                        help="Parameter batch to tune ('all' for comprehensive 12-parameter search & time suite)")
+    parser.add_argument("--batch", type=str, choices=["bcd", "all", "search"], default="bcd",
+                        help="Parameter batch to tune ('bcd' for 13 new hidden constants, 'all' for all 25 parameters, 'search' for 12 search heuristics)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--output", type=str, default=None, help="Path to spsa_progress.json output")
     return parser.parse_args()
@@ -616,7 +762,12 @@ def main():
     openings_path = Path(args.openings) if args.openings else default_openings
     progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / "spsa_progress.json")
 
-    param_set = DEFAULT_PARAMETERS
+    if args.batch == "bcd":
+        param_set = BATCH_BCD_PARAMETERS
+    elif args.batch == "search":
+        param_set = DEFAULT_PARAMETERS
+    else:
+        param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS
 
     tuner = SpsaTuner(
         params=param_set,
