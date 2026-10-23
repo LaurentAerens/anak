@@ -882,6 +882,20 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
             _stack[ply].StaticEval = staticEval;
 
+            // Improving heuristic: position is improving if static eval is higher than 2 plies ago for the same side
+            bool improving = false;
+            if (!inCheck)
+            {
+                if (ply >= 2 && !_stack[ply - 2].InCheck && _stack[ply - 2].StaticEval != -Value.InfiniteValue)
+                {
+                    improving = staticEval > _stack[ply - 2].StaticEval;
+                }
+                else if (ply >= 4 && !_stack[ply - 4].InCheck && _stack[ply - 4].StaticEval != -Value.InfiniteValue)
+                {
+                    improving = staticEval > _stack[ply - 4].StaticEval;
+                }
+            }
+
             // 5. Internal Iterative Reductions (IIR): depth >= 4 and no TT move -> depth--
             if (depth >= 4 && ttMove.IsNull)
             {
@@ -892,6 +906,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             if (!isPv && !inCheck && depth <= 4 && _stack[ply].ExcludedMove.IsNull)
             {
                 int rfpMargin = _engine.RfpMargin * depth;
+                if (improving)
+                {
+                    rfpMargin = (rfpMargin * 13) / 10;
+                }
                 if (eval - rfpMargin >= beta)
                 {
                     return eval - rfpMargin;

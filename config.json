@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "tools\\fastchess\\results\\anak_dev_vs_v0.0.3_20261023_204146.pgn",
+        "file": "tools\\fastchess\\results\\anak_dev_vs_v0.0.4_20261023_210708.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -60,7 +60,7 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 7844359433875822771,
+    "seed": 16045567134849494702,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -69,7 +69,7 @@
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 500,
+    "rounds": 125,
     "concurrency": 16,
     "force_concurrency": false,
     "recover": false,
@@ -118,9 +118,9 @@
             "variant": 0
         },
         {
-            "name": "Anak-v0.0.3",
+            "name": "Anak-v0.0.4",
             "dir": "",
-            "cmd": "tools\\fastchess\\baselines\\v0.0.3\\anak.exe",
+            "cmd": "tools\\fastchess\\baselines\\v0.0.4\\anak.exe",
             "args": "",
             "restart": false,
             "options": [
@@ -148,16 +148,16 @@
         }
     ],
     "stats": {
-        "Anak-Dev vs Anak-v0.0.3": {
-            "wins": 366,
-            "losses": 312,
-            "draws": 322,
-            "penta_WW": 63,
-            "penta_WD": 129,
-            "penta_WL": 111,
-            "penta_DD": 53,
-            "penta_LD": 87,
-            "penta_LL": 57
+        "Anak-Dev vs Anak-v0.0.4": {
+            "wins": 98,
+            "losses": 81,
+            "draws": 71,
+            "penta_WW": 19,
+            "penta_WD": 28,
+            "penta_WL": 32,
+            "penta_DD": 8,
+            "penta_LD": 27,
+            "penta_LL": 11
         }
     }
 }
