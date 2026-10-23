@@ -10,7 +10,7 @@ namespace Anak.Core;
 /// </summary>
 public static class StaticExchangeEvaluator
 {
-    private static readonly int[] PieceValues =
+    private static readonly int[] _pieceValues =
     [
         0,     // None
         100,   // Pawn
