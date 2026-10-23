@@ -117,7 +117,7 @@ def init_nnue_weights(model: nn.Module):
         enforce_perspective_antisymmetry(model)
 
 
-def clamp_nnue_weights(model: nn.Module, max_val: float = 1.98):
+def clamp_nnue_weights(model: nn.Module, max_val: float = 1.98, enforce_symmetry: bool = False):
     """
     Quantization-aware weight clamping to ensure zero precision loss
     when ft.weight and l1.weight are quantized to INT8 [-128, 127] with factor 64,
@@ -131,7 +131,8 @@ def clamp_nnue_weights(model: nn.Module, max_val: float = 1.98):
                 # output.weight is quantized to INT16 [-32768, 32767] with factor 64
                 param.clamp_(-250.0, 250.0)
 
-        enforce_perspective_antisymmetry(model)
+        if enforce_symmetry:
+            enforce_perspective_antisymmetry(model)
 
 
 class ModelEMA:
