@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "tools\\fastchess\\results\\anak_dev_vs_main_20261023_220658.pgn",
+        "file": "tools\\fastchess\\results\\anak_dev_vs_main_20261023_221828.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -60,7 +60,7 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 2128624650606175611,
+    "seed": 12910081722325847465,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -149,14 +149,14 @@
     ],
     "stats": {
         "Anak-Dev vs Anak-main": {
-            "wins": 75,
+            "wins": 95,
             "losses": 84,
-            "draws": 91,
-            "penta_WW": 10,
-            "penta_WD": 30,
-            "penta_WL": 25,
-            "penta_DD": 15,
-            "penta_LD": 31,
+            "draws": 71,
+            "penta_WW": 20,
+            "penta_WD": 23,
+            "penta_WL": 32,
+            "penta_DD": 12,
+            "penta_LD": 24,
             "penta_LL": 14
         }
     }

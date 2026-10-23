@@ -1076,6 +1076,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             int hist = _history.GetScore(movedPiece.Color(), move);
                             if (hist < -2000) r++;
                             else if (hist > 2000) r--;
+
+                            int conthist1 = _continuationHistory.Get1PlyScore(prev1Piece, prev1To, movedPiece, move.To);
+                            if (conthist1 > 2500) r--;
+                            else if (conthist1 < -4000) r++;
+
                             r = Math.Clamp(r, 0, depth - 2);
                         }
                         else if (move.IsCapture && !move.IsPromotion && movesSearched > 4)
