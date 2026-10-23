@@ -22,7 +22,7 @@
         "enabled": false
     },
     "opening": {
-        "file": "C:\\Users\\laerens\\source\\repos\\Personal\\anak\\tools\\fastchess\\openings.epd",
+        "file": "tools\\fastchess\\openings.epd",
         "format": 0,
         "order": 0,
         "plies": -1,
@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "",
+        "file": "tools\\fastchess\\results\\anak_dev_vs_v0.0.3_20261023_164528.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -60,7 +60,7 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 13117992999666439499,
+    "seed": 3819556919177647159,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -69,8 +69,8 @@
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 1,
-    "concurrency": 2,
+    "rounds": 500,
+    "concurrency": 16,
     "force_concurrency": false,
     "recover": false,
     "noswap": false,
@@ -89,46 +89,26 @@
     },
     "engines": [
         {
-            "name": "Anak-Plus",
+            "name": "Anak-Dev",
             "dir": "",
-            "cmd": "C:\\Users\\laerens\\source\\repos\\Personal\\anak\\tools\\fastchess\\bin\\anak\\anak.exe",
+            "cmd": "tools\\fastchess\\bin\\anak\\anak.exe",
             "args": "",
             "restart": false,
             "options": [
-                [
-                    "Hash",
-                    "16"
-                ],
                 [
                     "Threads",
                     "1"
                 ],
                 [
-                    "LmrBase",
-                    "79"
-                ],
-                [
-                    "LmrDivision",
-                    "233"
-                ],
-                [
-                    "RfpMargin",
-                    "79"
-                ],
-                [
-                    "NmpBase",
-                    "2"
-                ],
-                [
-                    "AspirationDelta",
-                    "27"
+                    "Hash",
+                    "64"
                 ]
             ],
             "limit": {
                 "tc": {
-                    "increment": 10,
+                    "increment": 50,
                     "fixed_time": 0,
-                    "time": 1000,
+                    "time": 3000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -138,46 +118,26 @@
             "variant": 0
         },
         {
-            "name": "Anak-Minus",
+            "name": "Anak-v0.0.3",
             "dir": "",
-            "cmd": "C:\\Users\\laerens\\source\\repos\\Personal\\anak\\tools\\fastchess\\bin\\anak\\anak.exe",
+            "cmd": "tools\\fastchess\\baselines\\v0.0.3\\anak.exe",
             "args": "",
             "restart": false,
             "options": [
-                [
-                    "Hash",
-                    "16"
-                ],
                 [
                     "Threads",
                     "1"
                 ],
                 [
-                    "LmrBase",
-                    "71"
-                ],
-                [
-                    "LmrDivision",
-                    "217"
-                ],
-                [
-                    "RfpMargin",
-                    "71"
-                ],
-                [
-                    "NmpBase",
-                    "4"
-                ],
-                [
-                    "AspirationDelta",
-                    "23"
+                    "Hash",
+                    "64"
                 ]
             ],
             "limit": {
                 "tc": {
-                    "increment": 10,
+                    "increment": 50,
                     "fixed_time": 0,
-                    "time": 1000,
+                    "time": 3000,
                     "moves": 0,
                     "timemargin": 0
                 },
@@ -188,16 +148,16 @@
         }
     ],
     "stats": {
-        "Anak-Plus vs Anak-Minus": {
-            "wins": 1,
-            "losses": 1,
-            "draws": 0,
-            "penta_WW": 0,
-            "penta_WD": 0,
-            "penta_WL": 1,
-            "penta_DD": 0,
-            "penta_LD": 0,
-            "penta_LL": 0
+        "Anak-Dev vs Anak-v0.0.3": {
+            "wins": 451,
+            "losses": 407,
+            "draws": 142,
+            "penta_WW": 102,
+            "penta_WD": 63,
+            "penta_WL": 184,
+            "penta_DD": 9,
+            "penta_LD": 61,
+            "penta_LL": 81
         }
     }
 }

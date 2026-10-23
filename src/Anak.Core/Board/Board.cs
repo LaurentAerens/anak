@@ -141,6 +141,9 @@ public struct Board : IEquatable<Board>
     public readonly bool IsInCheck() => IsInCheck(SideToMove);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly bool IsCheck() => IsInCheck();
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AddPiece(Square sq, Color color, PieceType type)
     {
         ulong bit = 1UL << (byte)sq;
@@ -567,173 +570,173 @@ public struct Board : IEquatable<Board>
         switch (pt)
         {
             case PieceType.Pawn:
-            {
-                int rDiff = (int)to.Rank() - (int)from.Rank();
-                int fDiff = (int)to.File() - (int)from.File();
-
-                if (us == Color.White)
                 {
-                    if (fDiff == 0)
-                    {
-                        // Push
-                        if (isCaptureDest || move.IsCapture) return false;
+                    int rDiff = (int)to.Rank() - (int)from.Rank();
+                    int fDiff = (int)to.File() - (int)from.File();
 
-                        if (rDiff == 1)
+                    if (us == Color.White)
+                    {
+                        if (fDiff == 0)
                         {
-                            if ((occupied & toBit) != 0) return false;
-                            if (to.Rank() == Rank.Rank8)
+                            // Push
+                            if (isCaptureDest || move.IsCapture) return false;
+
+                            if (rDiff == 1)
                             {
-                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                if ((occupied & toBit) != 0) return false;
+                                if (to.Rank() == Rank.Rank8)
+                                {
+                                    if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                }
+                                else
+                                {
+                                    if (move.IsPromotion || move.Type != MoveType.Quiet) return false;
+                                }
+                            }
+                            else if (rDiff == 2)
+                            {
+                                if (from.Rank() != Rank.Rank2) return false;
+                                if (move.Type != MoveType.DoublePawnPush) return false;
+                                Square intermediate = (Square)((int)from + 8);
+                                if ((occupied & ((1UL << (int)intermediate) | toBit)) != 0) return false;
                             }
                             else
                             {
-                                if (move.IsPromotion || move.Type != MoveType.Quiet) return false;
+                                return false;
                             }
                         }
-                        else if (rDiff == 2)
+                        else if (fDiff == 1 || fDiff == -1)
                         {
-                            if (from.Rank() != Rank.Rank2) return false;
-                            if (move.Type != MoveType.DoublePawnPush) return false;
-                            Square intermediate = (Square)((int)from + 8);
-                            if ((occupied & ((1UL << (int)intermediate) | toBit)) != 0) return false;
+                            // Capture or En Passant
+                            if (rDiff != 1) return false;
+
+                            if (move.Type == MoveType.EnPassant)
+                            {
+                                if (EpSquare == Square.None || to != EpSquare) return false;
+                                Square capSq = (Square)((int)to - 8);
+                                if ((Pawns & enemyPieces & (1UL << (int)capSq)) == 0) return false;
+                            }
+                            else
+                            {
+                                if (!isCaptureDest) return false;
+                                if (to.Rank() == Rank.Rank8)
+                                {
+                                    if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                }
+                                else
+                                {
+                                    if (move.Type != MoveType.Capture) return false;
+                                }
+                            }
                         }
                         else
                         {
                             return false;
                         }
                     }
-                    else if (fDiff == 1 || fDiff == -1)
+                    else // Black
                     {
-                        // Capture or En Passant
-                        if (rDiff != 1) return false;
+                        if (fDiff == 0)
+                        {
+                            // Push
+                            if (isCaptureDest || move.IsCapture) return false;
 
-                        if (move.Type == MoveType.EnPassant)
-                        {
-                            if (EpSquare == Square.None || to != EpSquare) return false;
-                            Square capSq = (Square)((int)to - 8);
-                            if ((Pawns & enemyPieces & (1UL << (int)capSq)) == 0) return false;
-                        }
-                        else
-                        {
-                            if (!isCaptureDest) return false;
-                            if (to.Rank() == Rank.Rank8)
+                            if (rDiff == -1)
                             {
-                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                if ((occupied & toBit) != 0) return false;
+                                if (to.Rank() == Rank.Rank1)
+                                {
+                                    if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                }
+                                else
+                                {
+                                    if (move.IsPromotion || move.Type != MoveType.Quiet) return false;
+                                }
+                            }
+                            else if (rDiff == -2)
+                            {
+                                if (from.Rank() != Rank.Rank7) return false;
+                                if (move.Type != MoveType.DoublePawnPush) return false;
+                                Square intermediate = (Square)((int)from - 8);
+                                if ((occupied & ((1UL << (int)intermediate) | toBit)) != 0) return false;
                             }
                             else
                             {
-                                if (move.Type != MoveType.Capture) return false;
+                                return false;
                             }
                         }
-                    }
-                    else
-                    {
-                        return false;
-                    }
-                }
-                else // Black
-                {
-                    if (fDiff == 0)
-                    {
-                        // Push
-                        if (isCaptureDest || move.IsCapture) return false;
-
-                        if (rDiff == -1)
+                        else if (fDiff == 1 || fDiff == -1)
                         {
-                            if ((occupied & toBit) != 0) return false;
-                            if (to.Rank() == Rank.Rank1)
+                            // Capture or En Passant
+                            if (rDiff != -1) return false;
+
+                            if (move.Type == MoveType.EnPassant)
                             {
-                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                if (EpSquare == Square.None || to != EpSquare) return false;
+                                Square capSq = (Square)((int)to + 8);
+                                if ((Pawns & enemyPieces & (1UL << (int)capSq)) == 0) return false;
                             }
                             else
                             {
-                                if (move.IsPromotion || move.Type != MoveType.Quiet) return false;
+                                if (!isCaptureDest) return false;
+                                if (to.Rank() == Rank.Rank1)
+                                {
+                                    if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                }
+                                else
+                                {
+                                    if (move.Type != MoveType.Capture) return false;
+                                }
                             }
-                        }
-                        else if (rDiff == -2)
-                        {
-                            if (from.Rank() != Rank.Rank7) return false;
-                            if (move.Type != MoveType.DoublePawnPush) return false;
-                            Square intermediate = (Square)((int)from - 8);
-                            if ((occupied & ((1UL << (int)intermediate) | toBit)) != 0) return false;
                         }
                         else
                         {
                             return false;
                         }
                     }
-                    else if (fDiff == 1 || fDiff == -1)
-                    {
-                        // Capture or En Passant
-                        if (rDiff != -1) return false;
-
-                        if (move.Type == MoveType.EnPassant)
-                        {
-                            if (EpSquare == Square.None || to != EpSquare) return false;
-                            Square capSq = (Square)((int)to + 8);
-                            if ((Pawns & enemyPieces & (1UL << (int)capSq)) == 0) return false;
-                        }
-                        else
-                        {
-                            if (!isCaptureDest) return false;
-                            if (to.Rank() == Rank.Rank1)
-                            {
-                                if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
-                            }
-                            else
-                            {
-                                if (move.Type != MoveType.Capture) return false;
-                            }
-                        }
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                    break;
                 }
-                break;
-            }
 
             case PieceType.Knight:
-            {
-                if (move.IsPromotion || move.IsEnPassant) return false;
-                if ((Bitboard.KnightAttacks[(int)from] & toBit) == 0) return false;
-                if (isCaptureDest != move.IsCapture) return false;
-                break;
-            }
+                {
+                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if ((Bitboard.KnightAttacks[(int)from] & toBit) == 0) return false;
+                    if (isCaptureDest != move.IsCapture) return false;
+                    break;
+                }
 
             case PieceType.Bishop:
-            {
-                if (move.IsPromotion || move.IsEnPassant) return false;
-                if ((MagicBitboards.GetBishopAttacks(from, occupied) & toBit) == 0) return false;
-                if (isCaptureDest != move.IsCapture) return false;
-                break;
-            }
+                {
+                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if ((MagicBitboards.GetBishopAttacks(from, occupied) & toBit) == 0) return false;
+                    if (isCaptureDest != move.IsCapture) return false;
+                    break;
+                }
 
             case PieceType.Rook:
-            {
-                if (move.IsPromotion || move.IsEnPassant) return false;
-                if ((MagicBitboards.GetRookAttacks(from, occupied) & toBit) == 0) return false;
-                if (isCaptureDest != move.IsCapture) return false;
-                break;
-            }
+                {
+                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if ((MagicBitboards.GetRookAttacks(from, occupied) & toBit) == 0) return false;
+                    if (isCaptureDest != move.IsCapture) return false;
+                    break;
+                }
 
             case PieceType.Queen:
-            {
-                if (move.IsPromotion || move.IsEnPassant) return false;
-                ulong qAttacks = MagicBitboards.GetBishopAttacks(from, occupied) | MagicBitboards.GetRookAttacks(from, occupied);
-                if ((qAttacks & toBit) == 0) return false;
-                if (isCaptureDest != move.IsCapture) return false;
-                break;
-            }
+                {
+                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    ulong qAttacks = MagicBitboards.GetBishopAttacks(from, occupied) | MagicBitboards.GetRookAttacks(from, occupied);
+                    if ((qAttacks & toBit) == 0) return false;
+                    if (isCaptureDest != move.IsCapture) return false;
+                    break;
+                }
 
             case PieceType.King:
-            {
-                if (move.IsPromotion || move.IsEnPassant) return false;
-                if ((Bitboard.KingAttacks[(int)from] & toBit) == 0) return false;
-                if (isCaptureDest != move.IsCapture) return false;
-                break;
-            }
+                {
+                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if ((Bitboard.KingAttacks[(int)from] & toBit) == 0) return false;
+                    if (isCaptureDest != move.IsCapture) return false;
+                    break;
+                }
 
             default:
                 return false;

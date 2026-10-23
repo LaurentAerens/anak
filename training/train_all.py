@@ -23,7 +23,14 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from model import StandardNNUE, MicroNNUE, ModelEMA, clamp_nnue_weights, enforce_perspective_antisymmetry
+from model import (
+    StandardNNUE,
+    MicroNNUE,
+    ModelEMA,
+    clamp_nnue_weights,
+    enforce_perspective_antisymmetry,
+    evaluate_benchmark_positions,
+)
 from loss import ModernNNUELoss, BlunderLoss
 from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
 from binpack import BinpackReader, BinpackWriter, read_binpack_count
@@ -32,6 +39,7 @@ from export import export_standard, export_micro
 from dataset import find_pgn_files, encode_board_features, calculate_openness
 from download_data import download_stockfish_d9_binpacks, convert_stockfish_d9_to_anak, STOCKFISH_D9_URLS
 from generate_data import BuiltinTacticalEvaluator, load_seed_openings
+from hardware import auto_tune_hardware, HardwareProfiler
 
 
 def print_banner(text: str):
@@ -173,6 +181,10 @@ def train_single_model(
     mix_sources: Optional[Union[str, List[str]]] = None,
     mix_ratio: float = 0.20,
     resume: bool = False,
+    compile_model: bool = False,
+    workers: Optional[int] = None,
+    prefetch_batches: Optional[int] = None,
+    chunk_size: Optional[int] = None,
 ) -> str:
     """
     Trains one NNUE model on its preprocessed Stockfish d9/d11 binpack using 100% trainable weights,
@@ -207,11 +219,15 @@ def train_single_model(
     has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
     amp_dtype = torch.bfloat16 if has_bf16 else torch.float16
     amp_enabled = is_cuda
-    scaler = torch.cuda.amp.GradScaler(enabled=(is_cuda and amp_dtype == torch.float16))
+    scaler = torch.amp.GradScaler("cuda", enabled=(is_cuda and amp_dtype == torch.float16))
 
     if is_cuda:
-        precision_str = "bfloat16 (native)" if has_bf16 else "float16 (+ GradScaler)"
+        precision_str = "bfloat16 (native Tensor Cores)" if has_bf16 else "float16 (+ GradScaler)"
         print(f"Mixed Precision:   ENABLED ({precision_str})")
+        if hasattr(torch, "set_float32_matmul_precision"):
+            torch.set_float32_matmul_precision("high")
+        if hasattr(torch.backends, "cudnn") and torch.backends.cudnn.is_available():
+            torch.backends.cudnn.benchmark = True
     else:
         print("Mixed Precision:   DISABLED (CPU float32)")
 
@@ -222,8 +238,25 @@ def train_single_model(
         model = StandardNNUE().to(device)
         criterion = ModernNNUELoss(lambda_wdl=lambda_wdl, eval_scale=2.50)
 
-    ema = ModelEMA(model, decay=0.999)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
+    if compile_model and is_cuda and hasattr(torch, "compile"):
+        try:
+            print("--> PyTorch 2.x torch.compile: ENABLED (Triton kernel fusion)")
+            model = torch.compile(model, mode="reduce-overhead")
+        except Exception as e:
+            print(f"Notice: torch.compile skipped ({e})")
+
+    is_micro = is_micro_model(model_name)
+    ema = ModelEMA(model, decay=0.990 if is_micro else 0.999)
+
+    # Fused AdamW optimizer on CUDA (single kernel launch for all parameters and momentum buffers)
+    adamw_kwargs = {"lr": lr, "weight_decay": 0.0 if is_micro else 1e-5}
+    if is_cuda:
+        try:
+            optimizer = torch.optim.AdamW(model.parameters(), fused=True, **adamw_kwargs)
+        except Exception:
+            optimizer = torch.optim.AdamW(model.parameters(), **adamw_kwargs)
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), **adamw_kwargs)
 
     # Linear Warmup followed by Cosine Annealing
     actual_warmup = min(warmup_epochs, max(0, epochs // 4))
@@ -281,138 +314,169 @@ def train_single_model(
         verify_model_sanity(model, model_name)
         return best_path
 
-    for epoch in range(start_epoch, epochs + 1):
-        epoch_start = time.time()
-        model.train()
-        total_loss = 0.0
-        batch_count = 0
-        total_positions = 0
+    train_loader = FastMemoryMappedBatchLoader(
+        binpack_files,
+        batch_size=effective_batch_size,
+        shuffle=True,
+        device=device,
+        val_split=val_split,
+        is_validation=False,
+        augment_flip=augment_flip,
+        mix_sources=mix_sources,
+        mix_ratio=mix_ratio,
+        prefetch_batches=prefetch_batches or (16 if is_cuda else 4),
+        num_workers=workers,
+        chunk_size=chunk_size or 65536,
+    )
+    val_batch_size = (effective_batch_size * 2) if is_cuda else effective_batch_size
+    val_loader = FastMemoryMappedBatchLoader(
+        binpack_files,
+        batch_size=val_batch_size,
+        shuffle=False,
+        device=device,
+        val_split=val_split,
+        is_validation=True,
+        augment_flip=False,
+        prefetch_batches=2,
+        num_workers=2,
+        chunk_size=chunk_size or 65536,
+    ) if val_split > 0 else None
 
-        train_loader = FastMemoryMappedBatchLoader(
-            binpack_files,
-            batch_size=effective_batch_size,
-            shuffle=True,
-            device=device,
-            val_split=val_split,
-            is_validation=False,
-            augment_flip=augment_flip,
-            mix_sources=mix_sources,
-            mix_ratio=mix_ratio,
-        )
-        val_loader = FastMemoryMappedBatchLoader(
-            binpack_files,
-            batch_size=effective_batch_size,
-            shuffle=False,
-            device=device,
-            val_split=val_split,
-            is_validation=True,
-            augment_flip=False,
-        ) if val_split > 0 else None
+    try:
+        for epoch in range(start_epoch, epochs + 1):
+            epoch_start = time.time()
+            model.train()
+            total_loss = 0.0
+            batch_count = 0
+            total_positions = 0
 
-        pbar = tqdm(train_loader, desc=f"{model_name.capitalize()} Epoch {epoch}/{epochs}", leave=False)
-        for batch in pbar:
-            our_feat = batch["our_features"]
-            their_feat = batch["their_features"]
-            target_wdl = batch["target_wdl"]
-            target_eval = batch["target_eval"]
+            pbar = tqdm(train_loader, desc=f"{model_name.capitalize()} Epoch {epoch}/{epochs}", leave=False)
+            for batch in pbar:
+                our_in = batch.get("our_indices", batch["our_features"]).to(device, non_blocking=is_cuda)
+                their_in = batch.get("their_indices", batch["their_features"]).to(device, non_blocking=is_cuda)
+                target_wdl = batch["target_wdl"].to(device, non_blocking=is_cuda)
+                target_eval = batch["target_eval"].to(device, non_blocking=is_cuda)
 
-            optimizer.zero_grad(set_to_none=True)
-            with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
-                preds = model(our_feat, their_feat)
-                if is_micro_model(model_name):
-                    loss = criterion(preds, target_eval)
+                optimizer.zero_grad(set_to_none=True)
+                with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
+                    preds = model(our_in, their_in)
+                    if is_micro_model(model_name):
+                        loss = criterion(preds, target_eval)
+                    else:
+                        loss = criterion(preds, target_wdl, target_eval)
+
+                if scaler.is_enabled():
+                    scaler.scale(loss).backward()
+                    scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    scaler.step(optimizer)
+                    scaler.update()
                 else:
-                    loss = criterion(preds, target_wdl, target_eval)
+                    loss.backward()
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+                    optimizer.step()
 
-            if scaler.is_enabled():
-                scaler.scale(loss).backward()
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                scaler.step(optimizer)
-                scaler.update()
-            else:
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
+                clamp_nnue_weights(model, max_val=1.98)
+                ema.update(model)
 
-            clamp_nnue_weights(model, max_val=1.98)
-            ema.update(model)
+                total_loss += loss.item()
+                batch_count += 1
+                total_positions += our_in.shape[0]
 
-            total_loss += loss.item()
-            batch_count += 1
-            total_positions += our_feat.shape[0]
+                elapsed = max(0.001, time.time() - epoch_start)
+                pos_rate = total_positions / elapsed
+                pbar.set_postfix({"loss": f"{loss.item():.4f}", "pos/s": f"{pos_rate:,.0f}"})
 
-            elapsed = max(0.001, time.time() - epoch_start)
-            pos_rate = total_positions / elapsed
-            pbar.set_postfix({"loss": f"{loss.item():.4f}", "pos/s": f"{pos_rate:,.0f}"})
-
-        train_loader.close()
-
-        # Enforce perspective antisymmetry after each epoch
-        enforce_perspective_antisymmetry(model)
-
-        # Validation evaluation
-        avg_val_loss = None
-        if val_loader and len(val_loader) > 0:
-            model.eval()
-            val_loss = 0.0
-            val_batches = 0
-            with torch.no_grad():
-                for v_batch in val_loader:
-                    our_feat = v_batch["our_features"]
-                    their_feat = v_batch["their_features"]
-                    target_wdl = v_batch["target_wdl"]
-                    target_eval = v_batch["target_eval"]
-                    with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
-                        preds = model(our_feat, their_feat)
-                        if is_micro_model(model_name):
-                            v_l = criterion(preds, target_eval)
-                        else:
-                            v_l = criterion(preds, target_wdl, target_eval)
-                    val_loss += v_l.item()
-                    val_batches += 1
-            if val_batches > 0:
-                avg_val_loss = val_loss / val_batches
-            val_loader.close()
-
-        scheduler.step()
-
-        epoch_time = time.time() - epoch_start
-        throughput = total_positions / max(0.001, epoch_time)
-        avg_loss = total_loss / max(1, batch_count)
-        val_str = f"{avg_val_loss:.4f}" if avg_val_loss is not None else "N/A"
-
-        print(f"  Epoch {epoch:2d}/{epochs} | Train Loss: {avg_loss:.4f} | Val Loss: {val_str} | Throughput: {throughput:,.0f} pos/sec ({epoch_time:.2f}s) | LR: {scheduler.get_last_lr()[0]:.6f}")
-
-        eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
-        if eval_metric < (best_metric - min_delta):
-            best_metric = eval_metric
-            epochs_without_improvement = 0
-            backup = ema.store_and_apply(model)
+            # Enforce perspective antisymmetry after each epoch
             enforce_perspective_antisymmetry(model)
-            clamp_nnue_weights(model)
-            torch.save(model.state_dict(), best_path)
-            ema.restore(model, backup)
-        else:
-            epochs_without_improvement += 1
 
-        # Always save latest checkpoint with full state for seamless resumption
-        checkpoint_data = {
-            "epoch": epoch,
-            "model_state_dict": model.state_dict(),
-            "optimizer_state_dict": optimizer.state_dict(),
-            "scheduler_state_dict": scheduler.state_dict(),
-            "scaler_state_dict": scaler.state_dict() if scaler.is_enabled() else None,
-            "best_metric": best_metric,
-            "epochs_without_improvement": epochs_without_improvement,
-            "ema_state_dict": {k: v.cpu() for k, v in ema.shadow.items()} if hasattr(ema, "shadow") else None,
-        }
-        torch.save(checkpoint_data, latest_path)
+            # Accelerated validation with torch.inference_mode
+            avg_val_loss = None
+            if val_loader and len(val_loader) > 0:
+                model.eval()
+                val_loss = 0.0
+                val_batches = 0
+                with torch.inference_mode():
+                    for v_batch in val_loader:
+                        v_our_in = v_batch.get("our_indices", v_batch["our_features"]).to(device, non_blocking=is_cuda)
+                        v_their_in = v_batch.get("their_indices", v_batch["their_features"]).to(device, non_blocking=is_cuda)
+                        v_target_wdl = v_batch["target_wdl"].to(device, non_blocking=is_cuda)
+                        v_target_eval = v_batch["target_eval"].to(device, non_blocking=is_cuda)
+                        with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
+                            preds = model(v_our_in, v_their_in)
+                            if is_micro_model(model_name):
+                                v_l = criterion(preds, v_target_eval)
+                            else:
+                                v_l = criterion(preds, v_target_wdl, v_target_eval)
+                        val_loss += v_l.item()
+                        val_batches += 1
+                if val_batches > 0:
+                    avg_val_loss = val_loss / val_batches
 
-        # Early stopping check
-        if patience > 0 and epochs_without_improvement >= patience:
-            print(f"  [Early Stopping] No improvement in validation loss for {patience} epochs. Halting early at epoch {epoch}/{epochs}.")
-            break
+            scheduler.step()
+
+            epoch_time = time.time() - epoch_start
+            throughput = total_positions / max(0.001, epoch_time)
+            avg_loss = total_loss / max(1, batch_count)
+            val_str = f"{avg_val_loss:.4f}" if avg_val_loss is not None else "N/A"
+
+            print(f"  Epoch {epoch:2d}/{epochs} | Train Loss: {avg_loss:.4f} | Val Loss: {val_str} | Throughput: {throughput:,.0f} pos/sec ({epoch_time:.2f}s) | LR: {scheduler.get_last_lr()[0]:.6f}")
+
+            # Canonical benchmark FEN sanity check
+            try:
+                fen_summary = evaluate_benchmark_positions(model, device)
+                print(f"    [FEN Sanity Check] {fen_summary}")
+            except Exception:
+                pass
+
+            eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
+            if eval_metric < (best_metric - min_delta):
+                best_metric = eval_metric
+                epochs_without_improvement = 0
+                backup = ema.store_and_apply(model)
+                enforce_perspective_antisymmetry(model)
+                clamp_nnue_weights(model)
+                torch.save(model.state_dict(), best_path)
+
+                # Auto-export quantized .nnue binary to networks/
+                try:
+                    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                    net_dir = os.path.join(repo_root, "networks")
+                    os.makedirs(net_dir, exist_ok=True)
+                    out_nnue_name = f"{out_tag}.nnue"
+                    nnue_dest = os.path.join(net_dir, out_nnue_name)
+                    if is_micro_model(model_name):
+                        export_micro(model, nnue_dest)
+                    else:
+                        export_standard(model, nnue_dest)
+                except Exception:
+                    pass
+
+                ema.restore(model, backup)
+            else:
+                epochs_without_improvement += 1
+
+            # Always save latest checkpoint with full state for seamless resumption
+            checkpoint_data = {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "scheduler_state_dict": scheduler.state_dict(),
+                "scaler_state_dict": scaler.state_dict() if scaler.is_enabled() else None,
+                "best_metric": best_metric,
+                "epochs_without_improvement": epochs_without_improvement,
+                "ema_state_dict": {k: v.cpu() for k, v in ema.shadow.items()} if hasattr(ema, "shadow") else None,
+            }
+            torch.save(checkpoint_data, latest_path)
+
+            # Early stopping check
+            if patience > 0 and epochs_without_improvement >= patience:
+                print(f"  [Early Stopping] No improvement in validation loss for {patience} epochs. Halting early at epoch {epoch}/{epochs}.")
+                break
+    finally:
+        train_loader.close()
+        if val_loader:
+            val_loader.close()
 
     if os.path.isfile(best_path):
         raw = torch.load(best_path, map_location=device)
@@ -529,10 +593,16 @@ def main():
         default=None,
         help="Convenience preset: 'quick' (500k pos, 30 ep), 'standard' (5M pos, 60 ep), 'large' (15M pos, 80 ep), 'massive' (30M+ pos, 100 ep, full d9/d11)",
     )
+    parser.add_argument("--auto", action="store_true", default=True, help="Automatically scan hardware and pin optimal settings (default: True)")
+    parser.add_argument("--no-auto", dest="auto", action="store_false", help="Disable automatic hardware tuning")
+    parser.add_argument("--compile", action="store_true", default=None, help="Enable PyTorch 2.x torch.compile for CUDA kernel fusion on modern GPUs (e.g. RTX 4090)")
     parser.add_argument("--epochs", type=int, default=80, help="Number of epochs per model (default: 80)")
     parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear learning rate warmup epochs (default: 3)")
     parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5 percent)")
-    parser.add_argument("--batch-size", type=int, default=16384 if torch.cuda.is_available() else 4096, help="Batch size (default: 16384 on GPU, 4096 on CPU)")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto-tuned if omitted: 32768 on 24GB GPU, 8192 on CPU)")
+    parser.add_argument("--workers", type=int, default=None, help="Parallel worker threads for data loading (auto-tuned if omitted)")
+    parser.add_argument("--prefetch-batches", type=int, default=None, help="Number of prefetch batches in RAM (auto-tuned if omitted: 16-24 on GPU)")
+    parser.add_argument("--chunk-size", type=int, default=None, help="Sequential disk read chunk size (auto-tuned if omitted: 65536 - 131072)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate (default: 1e-3)")
     parser.add_argument("--lambda-wdl", type=float, default=0.35, help="WDL weight in ModernNNUELoss (default: 0.35)")
     parser.add_argument("--mix-ratio", type=float, default=0.20, help="Fraction of batch sampled from other expert datasets (default: 0.20 = 80 percent target, 20 percent mix)")
@@ -633,11 +703,36 @@ def main():
         args.spsa = True
 
     overall_start = time.time()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Automatic Hardware Detection & Profile Pinning
+    if args.auto:
+        hw_cfg = auto_tune_hardware(
+            user_batch_size=args.batch_size,
+            user_workers=args.workers,
+            user_compile=args.compile,
+            is_massive_preset=(args.preset == "massive"),
+            verbose=True,
+        )
+        effective_batch_size = hw_cfg["batch_size"]
+        effective_workers = hw_cfg["workers"]
+        effective_prefetch = args.prefetch_batches or hw_cfg["prefetch_batches"]
+        effective_chunk_size = args.chunk_size or hw_cfg["chunk_size"]
+        compile_model = hw_cfg["compile_model"]
+        device = hw_cfg["device"]
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        effective_batch_size = args.batch_size or (16384 if device.type == "cuda" else 8192)
+        effective_workers = args.workers
+        effective_prefetch = args.prefetch_batches or (16 if device.type == "cuda" else 4)
+        effective_chunk_size = args.chunk_size or 65536
+        compile_model = bool(args.compile)
+        if device.type == "cpu":
+            torch.set_num_threads(os.cpu_count() or 4)
+
     print_banner(f"ANAK 8-MODEL MULTI-EXPERT NNUE TRAINING PIPELINE (PyTorch on {device})")
     print(f"Target Models:      {', '.join(m.upper() for m in selected_models)}")
     print(f"Target Positions:   {args.positions_per_model:,} per expert model")
-    print(f"Epochs & Batch:     {args.epochs} epochs | Batch Size: {args.batch_size:,}")
+    print(f"Epochs & Batch:     {args.epochs} epochs | Pinned Batch Size: {effective_batch_size:,}")
     print(f"Data Augmentation:  {'Horizontal Board Reflection' if args.augment_flip else 'Disabled'}")
     print(f"Dataset Archives:   Depth-9 & {'Depth-11 Included' if args.include_d11 else 'Depth-9 Only'}")
     print(f"Resumption Mode:    {'ENABLED (--continue)' if args.resume else 'Disabled'}")
@@ -688,7 +783,12 @@ def main():
             if resolved_ext:
                 bin_path = [bin_path] + resolved_ext
 
-        model_lr = args.lr * 1.5 if is_micro_model(m) else args.lr
+        is_micro = is_micro_model(m)
+        model_batch_size = (effective_batch_size * 2) if (is_micro and device.type == "cuda") else effective_batch_size
+        model_lr = (args.lr * 2.0) if is_micro else args.lr
+        model_epochs = max(10, args.epochs // 2) if is_micro else args.epochs
+        model_patience = max(3, args.patience // 2) if (is_micro and args.patience > 0) else args.patience
+
         # Collect mix sources from all other expert binpacks that exist on disk
         other_binpacks = [os.path.join(args.preprocessed_dir, f"{other}.binpack") for other in ALL_8_MODELS if other != m]
         valid_mix = [p for p in other_binpacks if os.path.isfile(p)]
@@ -696,8 +796,8 @@ def main():
         best_pt = train_single_model(
             model_name=m,
             binpack_path=bin_path,
-            epochs=args.epochs,
-            batch_size=args.batch_size,
+            epochs=model_epochs,
+            batch_size=model_batch_size,
             lr=model_lr,
             device=device,
             checkpoints_dir=args.checkpoints_dir,
@@ -705,11 +805,15 @@ def main():
             val_split=args.val_split,
             augment_flip=args.augment_flip,
             lambda_wdl=args.lambda_wdl,
-            patience=args.patience,
+            patience=model_patience,
             min_delta=args.min_delta,
             mix_sources=valid_mix,
             mix_ratio=args.mix_ratio,
             resume=args.resume,
+            compile_model=compile_model,
+            workers=effective_workers,
+            prefetch_batches=effective_prefetch,
+            chunk_size=effective_chunk_size,
         )
         trained_checkpoints[m] = best_pt
         if m not in pipeline_state.get("completed_models", []):

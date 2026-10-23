@@ -45,7 +45,7 @@ public sealed class PolyGlotBook
             return File.Exists(bookFile) ? Path.GetFullPath(bookFile) : null;
         }
 
-        string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         string directCandidate = Path.Combine(baseDir, bookFile);
         if (File.Exists(directCandidate))
             return Path.GetFullPath(directCandidate);
@@ -54,9 +54,9 @@ public sealed class PolyGlotBook
         if (File.Exists(assetsCandidate))
             return Path.GetFullPath(assetsCandidate);
 
-        // Search parent directories up to 5 levels
+        // Search parent directories up to 7 levels
         string? parent = Directory.GetParent(baseDir)?.FullName;
-        for (int i = 0; i < 5 && parent != null; i++)
+        for (int i = 0; i < 7 && parent != null; i++)
         {
             string check = Path.Combine(parent, bookFile);
             if (File.Exists(check))

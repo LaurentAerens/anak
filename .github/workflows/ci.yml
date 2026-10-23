@@ -9,19 +9,25 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
+  pages: write
+  id-token: write
 
 jobs:
   build-and-test:
-    name: Build & Test (.NET 11)
-    runs-on: ubuntu-latest
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup .NET SDK 11
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '11.0.x'
           dotnet-quality: 'preview'
@@ -30,13 +36,58 @@ jobs:
         run: dotnet restore
 
       - name: dotnet format --verify-no-changes
+        if: matrix.os == 'ubuntu-latest'
         run: dotnet format --verify-no-changes
 
       - name: dotnet build -c Release --no-restore
         run: dotnet build -c Release --no-restore
 
-      - name: dotnet test -c Release --no-build --verbosity normal
-        run: dotnet test -c Release --no-build --verbosity normal
+      - name: dotnet test with coverage
+        run: dotnet test -c Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
 
       - name: Perft sanity check
-        run: dotnet run --project src/Anak.Protocol -c Release -- --perft 4
+        run: dotnet run --project src/Anak.Protocol -c Release --no-build -- --perft 4
+
+      - name: NPS benchmark regression check
+        run: dotnet run --project src/Anak.Protocol -c Release --no-build -- bench
+
+      - name: Generate Code Coverage Report
+        if: matrix.os == 'ubuntu-latest'
+        uses: danielpalme/ReportGenerator-GitHub-Action@5.4.4
+        with:
+          reports: 'coverage/**/coverage.cobertura.xml'
+          targetdir: 'coveragereport'
+          reporttypes: 'MarkdownSummaryGithub;Html;Badges'
+
+      - name: Publish Coverage Summary to GitHub Step Summary
+        if: matrix.os == 'ubuntu-latest'
+        run: cat coveragereport/SummaryGithub.md >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Coverage Report Artifact
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: coveragereport
+
+      - name: Upload GitHub Pages Artifact
+        if: matrix.os == 'ubuntu-latest' && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: coveragereport
+
+  deploy-coverage:
+    name: Deploy Coverage to GitHub Pages
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

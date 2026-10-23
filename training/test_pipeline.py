@@ -385,6 +385,71 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         tempo = model.output.bias.item()
         self.assertAlmostEqual(eval_normal - tempo, -(eval_reversed - tempo), places=4)
 
+    def test_hardware_profiler_and_auto_tune(self):
+        from hardware import HardwareProfiler, auto_tune_hardware
+        profiler = HardwareProfiler()
+        self.assertGreaterEqual(profiler.cpu_count, 1)
+        self.assertGreater(profiler.ram_gb, 0.0)
+
+        cfg = auto_tune_hardware(verbose=False)
+        self.assertIn("batch_size", cfg)
+        self.assertGreaterEqual(cfg["batch_size"], 1024)
+        self.assertIn("workers", cfg)
+        self.assertGreaterEqual(cfg["workers"], 1)
+        self.assertIn("prefetch_batches", cfg)
+        self.assertGreaterEqual(cfg["prefetch_batches"], 1)
+        self.assertIn("chunk_size", cfg)
+        self.assertGreaterEqual(cfg["chunk_size"], 1024)
+
+        # Micro vs Standard NNUE profile differentiation
+        cfg_std = auto_tune_hardware(is_micro=False, verbose=False)
+        cfg_micro = auto_tune_hardware(is_micro=True, verbose=False)
+        self.assertGreaterEqual(cfg_micro["batch_size"], cfg_std["batch_size"])
+        self.assertGreaterEqual(cfg_micro["lr"], cfg_std["lr"])
+        self.assertLessEqual(cfg_micro["weight_decay"], cfg_std["weight_decay"])
+        self.assertLessEqual(cfg_micro["recommended_epochs"], cfg_std["recommended_epochs"])
+
+    def test_sparse_embedding_forward_parity(self):
+        from model import StandardNNUE, MicroNNUE, evaluate_benchmark_positions
+        from binpack import encode_features_to_indices
+
+        device = torch.device("cpu")
+        std_model = StandardNNUE().to(device)
+        micro_model = MicroNNUE().to(device)
+
+        b = chess.Board()
+        our_idx, their_idx, _ = encode_features_to_indices(b)
+
+        # Dense float tensors
+        dense_our = torch.zeros((1, 768), dtype=torch.float32)
+        dense_their = torch.zeros((1, 768), dtype=torch.float32)
+        for idx in our_idx:
+            if idx < 768:
+                dense_our[0, idx] = 1.0
+        for idx in their_idx:
+            if idx < 768:
+                dense_their[0, idx] = 1.0
+
+        # Sparse int tensors
+        sparse_our = torch.from_numpy(np.array([our_idx], dtype=np.int32))
+        sparse_their = torch.from_numpy(np.array([their_idx], dtype=np.int32))
+
+        with torch.inference_mode():
+            std_dense = std_model(dense_our, dense_their).item()
+            std_sparse = std_model(sparse_our, sparse_their).item()
+            self.assertAlmostEqual(std_dense, std_sparse, places=4)
+
+            micro_dense = micro_model(dense_our, dense_their).item()
+            micro_sparse = micro_model(sparse_our, sparse_their).item()
+            self.assertAlmostEqual(micro_dense, micro_sparse, places=4)
+
+        # Test benchmark evaluator
+        summary = evaluate_benchmark_positions(std_model, device)
+        self.assertIn("StartPos", summary)
+        self.assertIn("Tactical Refutation", summary)
+        self.assertIn("KRvK Endgame", summary)
+        self.assertIn("Symmetric Draw", summary)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -19,6 +19,7 @@ public sealed class TimeManager
     public const int CheckInterval = 1024;
     public const int SafetyLagMs = 30;
 
+    public ulong CheckMask { get; private set; } = 1023;
     public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
     public long SoftLimitMs => _softLimitMs;
     public long HardLimitMs => _hardLimitMs;
@@ -30,6 +31,7 @@ public sealed class TimeManager
     public void Init(in SearchLimits limits, Color sideToMove)
     {
         _stopwatch.Restart();
+        CheckMask = 1023;
 
         if (limits.Infinite)
         {
@@ -48,6 +50,7 @@ public sealed class TimeManager
             _hardLimitMs = limits.MoveTime;
             _baseSoftLimitMs = _softLimitMs;
             _baseHardLimitMs = _hardLimitMs;
+            CheckMask = _hardLimitMs < 100 ? 63UL : (_hardLimitMs < 250 ? 127UL : 1023UL);
             return;
         }
 
@@ -76,15 +79,17 @@ public sealed class TimeManager
 
         _hasTimeLimit = true;
 
-        int safetyLag = remainingTime < 500 ? Math.Min(10, remainingTime / 5) : SafetyLagMs;
+        int safetyLag = remainingTime < 500 ? Math.Clamp(remainingTime / 4, 15, 30) : SafetyLagMs;
 
         // Emergency low-time handling (< 100ms)
         if (remainingTime < 100)
         {
-            _hardLimitMs = Math.Max(10, remainingTime / 2);
+            long maxLow = Math.Max(5, remainingTime - 15);
+            _hardLimitMs = Math.Clamp(remainingTime / 2, 5, maxLow);
             _softLimitMs = _hardLimitMs;
             _baseSoftLimitMs = _softLimitMs;
             _baseHardLimitMs = _hardLimitMs;
+            CheckMask = 63;
             return;
         }
 
@@ -101,14 +106,28 @@ public sealed class TimeManager
         }
 
         // Soft limit is the ideal allocation per move
-        _softLimitMs = Math.Clamp(allocated, 10, remainingTime - safetyLag);
+        long maxAllowed = Math.Max(5, remainingTime - safetyLag);
+        _softLimitMs = Math.Clamp(allocated, 5, maxAllowed);
 
-        // Hard limit: allow up to 1.8x soft limit, scaled down if low on time
-        float hardMultiplier = remainingTime < 2000 ? 1.4f : 1.8f;
-        long maxHard = Math.Min(remainingTime - safetyLag, (long)(_softLimitMs * hardMultiplier));
-        _hardLimitMs = Math.Max(_softLimitMs, maxHard);
+        // Hard limit: allow up to 1.7x soft limit, strictly capped by remaining time - safety lag
+        float hardMultiplier = remainingTime < 2000 ? 1.3f : 1.7f;
+        long targetHard = (long)(_softLimitMs * hardMultiplier);
+        _hardLimitMs = Math.Clamp(targetHard, _softLimitMs, maxAllowed);
         _baseSoftLimitMs = _softLimitMs;
         _baseHardLimitMs = _hardLimitMs;
+
+        if (_hardLimitMs < 100 || remainingTime < 500)
+        {
+            CheckMask = 63; // Check every 64 nodes in critical time
+        }
+        else if (_hardLimitMs < 250 || remainingTime < 1500)
+        {
+            CheckMask = 127; // Check every 128 nodes in low time
+        }
+        else
+        {
+            CheckMask = 1023; // Check every 1024 nodes normally
+        }
     }
 
     /// <summary>
@@ -117,18 +136,18 @@ public sealed class TimeManager
     public void ScaleSoftLimit(float factor)
     {
         if (!_hasTimeLimit) return;
-        _softLimitMs = Math.Max(20, (long)(_baseSoftLimitMs * factor));
+        _softLimitMs = Math.Max(10, (long)(_baseSoftLimitMs * factor));
         _hardLimitMs = Math.Max(_softLimitMs, (long)(_baseHardLimitMs * factor));
     }
 
     /// <summary>
-    /// Checks periodically (every 1024 nodes) whether the hard time limit has been exceeded.
+    /// Checks periodically whether the hard time limit has been exceeded.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool ShouldStop(ulong nodes)
     {
         if (!_hasTimeLimit) return false;
-        if ((nodes & (CheckInterval - 1)) != 0) return false;
+        if ((nodes & CheckMask) != 0) return false;
 
         return _stopwatch.ElapsedMilliseconds >= _hardLimitMs;
     }

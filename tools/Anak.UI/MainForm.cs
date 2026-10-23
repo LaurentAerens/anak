@@ -32,6 +32,37 @@ public sealed class EvalBarControl : Control
         }
     }
 
+    /// <summary>
+    /// Updates the evaluation bar win probability from a centipawn score from White's perspective (or mate score).
+    /// Standard logistic sigmoid: P(Win) = 1.0 / (1.0 + Math.Pow(10.0, -scoreInCp / 400.0)).
+    /// </summary>
+    /// <param name="scoreInCp">Centipawn score relative to White (positive favors White).</param>
+    /// <param name="mateIn">Mate distance relative to White (positive White mates, negative Black mates, 0 if not mate).</param>
+    public void SetScore(int scoreInCp, int mateIn = 0)
+    {
+        if (mateIn > 0)
+        {
+            WhiteWinProbability = 1.0;
+        }
+        else if (mateIn < 0)
+        {
+            WhiteWinProbability = 0.0;
+        }
+        else
+        {
+            WhiteWinProbability = CalculateWinProbability(scoreInCp);
+        }
+    }
+
+    /// <summary>
+    /// Calculates win probability using the standard logistic sigmoid:
+    /// P(Win) = 1.0 / (1.0 + Math.Pow(10.0, -scoreInCp / 400.0)).
+    /// </summary>
+    public static double CalculateWinProbability(double scoreInCp)
+    {
+        return 1.0 / (1.0 + Math.Pow(10.0, -scoreInCp / 400.0));
+    }
+
     public EvalBarControl()
     {
         SetStyle(
@@ -82,6 +113,7 @@ public sealed class MainForm : Form
     private readonly Label _evalLabel;
     private readonly Label _searchStatsLabel;
     private readonly TextBox _pvTextBox;
+    private readonly ListView _topMovesListView;
     private readonly ListBox _historyListBox;
     private readonly TextBox _fenTextBox;
     private readonly NumericUpDown _thinkTimeNumeric;
@@ -103,7 +135,10 @@ public sealed class MainForm : Form
     private double _blackTimeMs = 300_000;
     private double _incrementMs = 2_000;
 
-    private readonly MCTSEngine _engine;
+    private readonly AlphaBetaEngine _alphaBetaEngine;
+    private MCTSEngine? _mctsEngine;
+    private ISearchEngine _engine;
+    private readonly ComboBox _engineCombo;
     private readonly IEvaluator _evaluator;
     private readonly PolyGlotBook _book = new();
     private CancellationTokenSource? _searchCts;
@@ -117,7 +152,8 @@ public sealed class MainForm : Form
             ? "[NNUE Active]"
             : "[Classical Fallback]";
         Text = $"Anak Chess Engine — Local Debugging & Visualizer {evalTag}";
-        _engine = new MCTSEngine(_evaluator, defaultHashMb: 32, arenaCapacity: 1_000_000);
+        _alphaBetaEngine = new AlphaBetaEngine(_evaluator, defaultHashMb: 64);
+        _engine = _alphaBetaEngine;
         _book.LoadOrDefault("book.bin");
 
         // Layout panels
@@ -173,7 +209,7 @@ public sealed class MainForm : Form
 
         var creditsLabel = new Label
         {
-            Text = "Local visualizer using Anak (MCTS & Magic Bitboards)\nAdapted from open-source C# chess GUI designs (MIT License)",
+            Text = "Local visualizer using Anak (Alpha-Beta Minimax / MCTS)\nAdapted from open-source C# chess GUI designs (MIT License)",
             Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
             ForeColor = DrawingColor.FromArgb(100, 100, 115),
             Location = new Point(4, y),
@@ -247,7 +283,7 @@ public sealed class MainForm : Form
         // Evaluation Label
         _evalLabel = new Label
         {
-            Text = "Eval: 0 cp (50% winrate)",
+            Text = "Eval: 0.00 (White Win%: 50%)",
             Font = new Font("Segoe UI", 9.5f, FontStyle.Regular),
             ForeColor = DrawingColor.FromArgb(50, 50, 60),
             Location = new Point(4, y),
@@ -259,14 +295,14 @@ public sealed class MainForm : Form
         // Search Stats Label
         _searchStatsLabel = new Label
         {
-            Text = "Engine: Idle",
+            Text = "Engine: Alpha-Beta Minimax (Idle)",
             Font = new Font("Segoe UI", 9f, FontStyle.Regular),
             ForeColor = DrawingColor.FromArgb(70, 70, 80),
             Location = new Point(4, y),
-            Size = new Size(360, 36)
+            Size = new Size(360, 46)
         };
         rightPanel.Controls.Add(_searchStatsLabel);
-        y += 40;
+        y += 50;
 
         // PV text box
         var pvTitle = new Label
@@ -291,6 +327,36 @@ public sealed class MainForm : Form
         rightPanel.Controls.Add(_pvTextBox);
         y += 50;
 
+        // Top 5 Candidate Moves Table
+        var topMovesTitle = new Label
+        {
+            Text = "Top 5 Candidate Moves:",
+            Font = new Font("Segoe UI", 9f, FontStyle.Bold),
+            Location = new Point(4, y),
+            AutoSize = true
+        };
+        rightPanel.Controls.Add(topMovesTitle);
+        y += 20;
+
+        _topMovesListView = new ListView
+        {
+            Location = new Point(4, y),
+            Size = new Size(360, 112),
+            View = View.Details,
+            FullRowSelect = true,
+            GridLines = true,
+            HeaderStyle = ColumnHeaderStyle.Nonclickable,
+            Font = new Font("Segoe UI", 8.5f)
+        };
+        _topMovesListView.Columns.Add("#", 24);
+        _topMovesListView.Columns.Add("Move", 50);
+        _topMovesListView.Columns.Add("Score", 82);
+        _topMovesListView.Columns.Add("Win%", 46);
+        _topMovesListView.Columns.Add("PV Line", 150);
+        _topMovesListView.ItemSelectionChanged += OnTopMoveSelected;
+        rightPanel.Controls.Add(_topMovesListView);
+        y += 118;
+
         // Move History List
         var historyTitle = new Label
         {
@@ -311,14 +377,26 @@ public sealed class MainForm : Form
         rightPanel.Controls.Add(_historyListBox);
         y += 98;
 
-        // Engine Options: Time Control & checkboxes
+        // Engine Options: Engine, Time Control & checkboxes
         var optionsPanel = new FlowLayoutPanel
         {
             Location = new Point(4, y),
-            Size = new Size(360, 84),
+            Size = new Size(360, 116),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true
         };
+
+        optionsPanel.Controls.Add(new Label { Text = "Engine:", AutoSize = true, Margin = new Padding(0, 5, 2, 0) });
+        _engineCombo = new ComboBox
+        {
+            DropDownStyle = ComboBoxStyle.DropDownList,
+            Width = 145,
+            Margin = new Padding(0, 2, 8, 0)
+        };
+        _engineCombo.Items.AddRange(["Alpha-Beta Minimax", "MCTS"]);
+        _engineCombo.SelectedIndex = 0; // Default: Alpha-Beta Minimax
+        _engineCombo.SelectedIndexChanged += (_, _) => OnEngineSelectionChanged();
+        optionsPanel.Controls.Add(_engineCombo);
 
         optionsPanel.Controls.Add(new Label { Text = "Clock:", AutoSize = true, Margin = new Padding(0, 5, 2, 0) });
         _timeControlCombo = new ComboBox
@@ -376,6 +454,7 @@ public sealed class MainForm : Form
             Text = "Opening Variety",
             AutoSize = true,
             Checked = true,
+            Enabled = false,
             Margin = new Padding(0, 4, 6, 0)
         };
         optionsPanel.Controls.Add(_openingVarietyCheckBox);
@@ -387,13 +466,20 @@ public sealed class MainForm : Form
             Maximum = 100,
             Value = 10,
             Increment = 5,
-            Width = 48
+            Width = 48,
+            Enabled = false
         };
-        _moveRandomnessNumeric.ValueChanged += (_, _) => _engine.Parameters.MoveRandomness = (int)_moveRandomnessNumeric.Value;
+        _moveRandomnessNumeric.ValueChanged += (_, _) =>
+        {
+            if (_engine is MCTSEngine mcts)
+            {
+                mcts.Parameters.MoveRandomness = (int)_moveRandomnessNumeric.Value;
+            }
+        };
         optionsPanel.Controls.Add(_moveRandomnessNumeric);
 
         rightPanel.Controls.Add(optionsPanel);
-        y += 92;
+        y += 122;
 
         // Action Buttons Row 1
         var btnPanel1 = new FlowLayoutPanel
@@ -483,15 +569,39 @@ public sealed class MainForm : Form
         UpdateGameDisplay();
     }
 
+    private void OnEngineSelectionChanged()
+    {
+        if (_engineCombo.SelectedIndex == 0)
+        {
+            _engine = _alphaBetaEngine;
+            _moveRandomnessNumeric.Enabled = false;
+            _openingVarietyCheckBox.Enabled = false;
+            _searchStatsLabel.Text = "Engine: Alpha-Beta Minimax (Idle)";
+        }
+        else
+        {
+            _mctsEngine ??= new MCTSEngine(_evaluator, defaultHashMb: 32, arenaCapacity: 1_000_000);
+            _engine = _mctsEngine;
+            _moveRandomnessNumeric.Enabled = true;
+            _openingVarietyCheckBox.Enabled = true;
+            _searchStatsLabel.Text = "Engine: MCTS (Idle)";
+        }
+    }
+
     private void ResetGame()
     {
         _searchCts?.Cancel();
         _selfPlayTimer.Stop();
-        _engine.TranspositionTable.Clear();
+        _alphaBetaEngine.TranspositionTable.Clear();
+        _mctsEngine?.TranspositionTable.Clear();
+        _mctsEngine?.Arena.Reset();
+        _mctsEngine?.ClearHistory();
         ResetTimeControl();
         _board = Fen.Parse(Fen.StartPosition);
         _boardPanel.Board = _board;
         _boardPanel.LastMove = ChessMove.Null;
+        _boardPanel.BestMove = ChessMove.Null;
+        _topMovesListView.Items.Clear();
         _historyListBox.Items.Clear();
         _clockTimer.Start();
         UpdateGameDisplay();
@@ -511,6 +621,8 @@ public sealed class MainForm : Form
             _board = Fen.Parse(fen.Trim());
             _boardPanel.Board = _board;
             _boardPanel.LastMove = ChessMove.Null;
+            _boardPanel.BestMove = ChessMove.Null;
+            _topMovesListView.Items.Clear();
             _historyListBox.Items.Clear();
             _turnStopwatch.Restart();
             UpdateGameDisplay();
@@ -572,6 +684,8 @@ public sealed class MainForm : Form
         _board.MakeMove(move, out _);
         _boardPanel.Board = _board;
         _boardPanel.LastMove = move;
+        _boardPanel.BestMove = ChessMove.Null;
+        _topMovesListView.Items.Clear();
 
         _historyListBox.Items.Add($"{_historyListBox.Items.Count + 1}. {moveUci}");
         _historyListBox.TopIndex = _historyListBox.Items.Count - 1;
@@ -607,14 +721,13 @@ public sealed class MainForm : Form
         Value val = _evaluator.Evaluate(in _board, moves.AsReadOnlySpan());
 
         int cp = val.Raw;
-        int displayScore = _board.SideToMove == ChessColor.White ? cp : -cp;
-
-        // Calculate win probability from centipawns: 1 / (1 + 10^(-cp / 400))
-        double winProb = 1.0 / (1.0 + Math.Pow(10, -displayScore / 400.0));
-        _evalBar.WhiteWinProbability = winProb;
+        int whiteScoreCp = _board.SideToMove == ChessColor.White ? cp : -cp;
+        _evalBar.SetScore(whiteScoreCp, 0);
 
         string evalType = _evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive ? "NNUE" : "Classical";
-        _evalLabel.Text = $"Eval ({evalType}): {displayScore:+#;-#;0} cp (White Win% : {(int)(winProb * 100)}%)";
+        double cpVal = whiteScoreCp / 100.0;
+        string sign = whiteScoreCp > 0 ? "+" : "";
+        _evalLabel.Text = $"Eval ({evalType}): {sign}{cpVal:0.00} ({whiteScoreCp:+#;-#;0} cp) (White Win%: {(int)(_evalBar.WhiteWinProbability * 100)}%)";
     }
 
     private async void TriggerEngineMove()
@@ -635,6 +748,7 @@ public sealed class MainForm : Form
         }
 
         _isSearching = true;
+        _engineCombo.Enabled = false;
         _searchCts = new CancellationTokenSource();
 
         SearchLimits limits;
@@ -663,12 +777,17 @@ public sealed class MainForm : Form
 
         Board searchBoard = _board;
 
-        // Exploration temperature for opening moves if Opening Variety is checked
-        float originalTemp = _engine.Parameters.Temperature;
+        // Exploration temperature for opening moves if Opening Variety is checked (MCTS only)
+        MCTSEngine? activeMcts = _engine as MCTSEngine;
+        float originalTemp = 0.0f;
         bool applyVariety = _openingVarietyCheckBox.Checked && _historyListBox.Items.Count < 6;
-        if (applyVariety)
+        if (activeMcts != null)
         {
-            _engine.Parameters.Temperature = 0.35f;
+            originalTemp = activeMcts.Parameters.Temperature;
+            if (applyVariety)
+            {
+                activeMcts.Parameters.Temperature = 0.35f;
+            }
         }
 
         try
@@ -703,20 +822,97 @@ public sealed class MainForm : Form
         }
         finally
         {
-            if (applyVariety)
+            if (activeMcts != null && applyVariety)
             {
-                _engine.Parameters.Temperature = originalTemp;
+                activeMcts.Parameters.Temperature = originalTemp;
             }
+            _engineCombo.Enabled = true;
             _isSearching = false;
         }
     }
 
     private void UpdateSearchStats(SearchStatistics stats)
     {
-        _searchStatsLabel.Text = $"Depth: {stats.Depth}/{stats.SelDepth} | Nodes: {stats.Nodes:N0} | NPS: {stats.Nps:N0}";
+        // 1. Live best move arrow on board
+        ChessMove bestMove = !stats.BestMove.IsNull ? stats.BestMove : (stats.Pv is { Count: > 0 } ? stats.Pv[0] : ChessMove.Null);
+        _boardPanel.BestMove = bestMove;
+
+        // 2. Score formatting (centipawns e.g. +1.45 or mate distance M3 / -M2)
+        string scoreDisplay;
+        if (stats.MateIn != 0)
+        {
+            scoreDisplay = stats.MateIn > 0 ? $"M{stats.MateIn}" : $"-M{-stats.MateIn}";
+        }
+        else
+        {
+            double cpVal = stats.ScoreCp / 100.0;
+            string sign = stats.ScoreCp > 0 ? "+" : "";
+            scoreDisplay = $"{sign}{cpVal:0.00} ({stats.ScoreCp:+#;-#;0} cp)";
+        }
+
+        string cutoffDisplay = stats.BetaCutoffEfficiency.HasValue
+            ? $" | Cutoff: {stats.BetaCutoffEfficiency.Value:F1}%"
+            : "";
+
+        // 3. Telemetry in real time
+        _searchStatsLabel.Text =
+            $"Depth: {stats.Depth}/{stats.SelDepth} | Nodes: {stats.Nodes:N0} | NPS: {stats.Nps:N0}\n" +
+            $"Score: {scoreDisplay} | Hash: {stats.HashfullPermille}‰{cutoffDisplay}";
+
+        // 4. Principal Variation (PV) string
         if (stats.Pv != null && stats.Pv.Count > 0)
         {
             _pvTextBox.Text = string.Join(' ', stats.Pv.Select(m => m.ToUci()));
+        }
+
+        // 5. Eval bar and evaluation label
+        int whiteScoreCp = _board.SideToMove == ChessColor.White ? stats.ScoreCp : -stats.ScoreCp;
+        int whiteMateIn = _board.SideToMove == ChessColor.White ? stats.MateIn : -stats.MateIn;
+        _evalBar.SetScore(whiteScoreCp, whiteMateIn);
+        _evalLabel.Text = $"Engine Eval: {scoreDisplay} (White Win%: {(int)(_evalBar.WhiteWinProbability * 100)}%)";
+
+        // 6. Top 5 candidate moves table
+        if (stats.TopMoves != null && stats.TopMoves.Count > 0)
+        {
+            _topMovesListView.BeginUpdate();
+            _topMovesListView.Items.Clear();
+            for (int i = 0; i < stats.TopMoves.Count; i++)
+            {
+                RootMoveCandidate cand = stats.TopMoves[i];
+                string candMoveUci = cand.Move.ToUci();
+                string candScore;
+                if (cand.MateIn != 0)
+                {
+                    candScore = cand.MateIn > 0 ? $"M{cand.MateIn}" : $"-M{-cand.MateIn}";
+                }
+                else
+                {
+                    double cpVal = cand.ScoreCp / 100.0;
+                    string sign = cand.ScoreCp > 0 ? "+" : "";
+                    candScore = $"{sign}{cpVal:0.00} ({cand.ScoreCp:+#;-#;0})";
+                }
+
+                int whiteCp = _board.SideToMove == ChessColor.White ? cand.ScoreCp : -cand.ScoreCp;
+                int winPct = (int)(EvalBarControl.CalculateWinProbability(whiteCp) * 100);
+                string candPvStr = cand.Pv is { Count: > 0 } ? string.Join(' ', cand.Pv.Select(m => m.ToUci())) : candMoveUci;
+
+                var lvi = new ListViewItem((i + 1).ToString());
+                lvi.SubItems.Add(candMoveUci);
+                lvi.SubItems.Add(candScore);
+                lvi.SubItems.Add($"{winPct}%");
+                lvi.SubItems.Add(candPvStr);
+                lvi.Tag = cand;
+                _topMovesListView.Items.Add(lvi);
+            }
+            _topMovesListView.EndUpdate();
+        }
+    }
+
+    private void OnTopMoveSelected(object? sender, ListViewItemSelectionChangedEventArgs e)
+    {
+        if (e.IsSelected && e.Item?.Tag is RootMoveCandidate cand && !cand.Move.IsNull)
+        {
+            _boardPanel.BestMove = cand.Move;
         }
     }
 

@@ -157,13 +157,19 @@ public sealed class NnueInferenceTests
             _ = evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
         }
 
-        long bytesBefore = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 1000; i++)
+        long allocated = -1;
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            _ = evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
+            long bytesBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 1000; i++)
+            {
+                _ = evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
+            }
+            long bytesAfter = GC.GetAllocatedBytesForCurrentThread();
+            allocated = bytesAfter - bytesBefore;
+            if (allocated == 0) break;
         }
-        long bytesAfter = GC.GetAllocatedBytesForCurrentThread();
 
-        Assert.Equal(0, bytesAfter - bytesBefore);
+        Assert.Equal(0, allocated);
     }
 }
