@@ -3,6 +3,11 @@ using Anak.Core;
 namespace Anak.Search;
 
 /// <summary>
+/// Information about a candidate root move (move, score in centipawns or mate distance, and optional PV line).
+/// </summary>
+public readonly record struct RootMoveCandidate(Move Move, int ScoreCp, int MateIn = 0, List<Move>? Pv = null);
+
+/// <summary>
 /// Diagnostic search statistics reported periodically during search for UCI 'info' commands.
 /// </summary>
 public struct SearchStatistics
@@ -67,6 +72,16 @@ public struct SearchStatistics
     /// </summary>
     public int MateIn { get; set; }
 
+    /// <summary>
+    /// Beta-cutoff efficiency percentage if available (e.g. 0.0 to 100.0), or null if not measured.
+    /// </summary>
+    public float? BetaCutoffEfficiency { get; set; }
+
+    /// <summary>
+    /// Top candidate root moves evaluated during search, sorted best-to-worst.
+    /// </summary>
+    public List<RootMoveCandidate> TopMoves { get; set; }
+
     public SearchStatistics()
     {
         Depth = 0;
@@ -81,5 +96,7 @@ public struct SearchStatistics
         RootScore = 0.0f;
         ScoreCp = 0;
         MateIn = 0;
+        BetaCutoffEfficiency = null;
+        TopMoves = [];
     }
 }

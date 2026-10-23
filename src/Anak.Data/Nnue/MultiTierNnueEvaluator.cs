@@ -1,5 +1,7 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.Intrinsics;
+using System.Runtime.Intrinsics.X86;
 using Anak.Core;
 using Anak.Data.Evaluation;
 using Anak.Data.Syzygy;
@@ -87,7 +89,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         _imbalanceWeights != null ||
         _attackWeights != null);
 
-    public NnueWeights? ActiveWeights => _activeFullWeights;
+    public NnueWeights? ActiveWeights => _activeFullWeights ?? _openWeights ?? _closedWeights ?? _endgameWeights ?? _queenlessWeights ?? _imbalanceWeights ?? _attackWeights;
 
 
     public MultiTierNnueEvaluator(string? networkDir = null)
@@ -129,8 +131,8 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         TryLoadModel(resolvedDir, "micro.nnue", ref _microWeights);
         TryLoadModel(resolvedDir, "volatility.nnue", ref _volatilityWeights);
 
-        // Default active model
-        _activeFullWeights = _openWeights ?? _closedWeights ?? _endgameWeights ?? _queenlessWeights ?? _imbalanceWeights ?? _attackWeights;
+        // Active model will be locked at root when search begins via SetRootTopology / InitSearch
+        _activeFullWeights = null;
 
         return IsActive || _microWeights != null || _volatilityWeights != null;
     }
@@ -286,8 +288,8 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             short* nextW = wPtr + nextOffset;
             short* nextB = bPtr + nextOffset;
 
-            Buffer.MemoryCopy(curW, nextW, dim * sizeof(short), dim * sizeof(short));
-            Buffer.MemoryCopy(curB, nextB, dim * sizeof(short), dim * sizeof(short));
+            CopyAccumulator(curW, nextW, dim);
+            CopyAccumulator(curB, nextB, dim);
 
             NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, nextW, nextB);
         }
@@ -316,12 +318,43 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             short* nextW = wPtr + nextOffset;
             short* nextB = bPtr + nextOffset;
 
-            Buffer.MemoryCopy(curW, nextW, dim * sizeof(short), dim * sizeof(short));
-            Buffer.MemoryCopy(curB, nextB, dim * sizeof(short), dim * sizeof(short));
+            CopyAccumulator(curW, nextW, dim);
+            CopyAccumulator(curB, nextB, dim);
         }
 
         _stackDepth++;
         _stackKeys[_stackDepth] = boardAfter.ZobristKey;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void CopyAccumulator(short* src, short* dst, int count)
+    {
+        if (Avx2.IsSupported && count == 512)
+        {
+            for (int i = 0; i < 512; i += 64)
+            {
+                Vector256<short> v0 = Vector256.Load(src + i);
+                Vector256<short> v1 = Vector256.Load(src + i + 16);
+                Vector256<short> v2 = Vector256.Load(src + i + 32);
+                Vector256<short> v3 = Vector256.Load(src + i + 48);
+
+                v0.Store(dst + i);
+                v1.Store(dst + i + 16);
+                v2.Store(dst + i + 32);
+                v3.Store(dst + i + 48);
+            }
+        }
+        else if (Avx2.IsSupported && (count & 15) == 0)
+        {
+            for (int i = 0; i < count; i += 16)
+            {
+                Vector256.Load(src + i).Store(dst + i);
+            }
+        }
+        else
+        {
+            Buffer.MemoryCopy(src, dst, (long)count * sizeof(short), (long)count * sizeof(short));
+        }
     }
 
     /// <summary>
@@ -369,7 +402,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             return _fallbackEvaluator.Evaluate(in board, legalMoves);
         }
 
-        // Fast incremental evaluation path during active search
+        // Fast incremental evaluation path during active search (1 SIMD dot product)
         if (_stackDepth >= 0 && _activeFullWeights != null && _stackKeys[_stackDepth] == board.ZobristKey)
         {
             NnueWeights weights = _activeFullWeights;
@@ -384,6 +417,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             }
         }
 
+        // Root Expert Consistency: always evaluate with _activeFullWeights if non-null (no thrashing across experts or blending during search)
+        if (_activeFullWeights != null)
+        {
+            int cp = EvaluateWithWeights(in board, _activeFullWeights);
+            return new Value(cp);
+        }
+
         NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board);
         NnueWeights? selectedWeights = GetExpertWeights(leafExpert, in board);
 
@@ -392,7 +432,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             return _fallbackEvaluator.Evaluate(in board, legalMoves);
         }
 
-        // Smooth Boundary Interpolation when routing through Open/Closed middlegame experts
+        // Smooth Boundary Interpolation when routing through Open/Closed middlegame experts outside active search
         bool usesOpenOrClosed = leafExpert == NnueExpertType.Open
             || leafExpert == NnueExpertType.Closed
             || ReferenceEquals(selectedWeights, _openWeights)
@@ -414,8 +454,8 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             }
         }
 
-        int cp = EvaluateWithWeights(in board, selectedWeights);
-        return new Value(cp);
+        int fullCp = EvaluateWithWeights(in board, selectedWeights);
+        return new Value(fullCp);
     }
 
     /// <summary>

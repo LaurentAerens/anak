@@ -117,6 +117,19 @@ public sealed class UciEngineAdapter
             nnueTb.Tablebase = _tablebase;
         }
 
+        // Wire AlphaBeta search options for SPSA tuning
+        _alphaBetaEngine.LmrBase = _options.LmrBase.Value;
+        _alphaBetaEngine.LmrDivision = _options.LmrDivision.Value;
+        _alphaBetaEngine.RfpMargin = _options.RfpMargin.Value;
+        _alphaBetaEngine.NmpBase = _options.NmpBase.Value;
+        _alphaBetaEngine.AspirationDelta = _options.AspirationDelta.Value;
+
+        _options.LmrBase.ValueChanged += val => _alphaBetaEngine.LmrBase = val;
+        _options.LmrDivision.ValueChanged += val => _alphaBetaEngine.LmrDivision = val;
+        _options.RfpMargin.ValueChanged += val => _alphaBetaEngine.RfpMargin = val;
+        _options.NmpBase.ValueChanged += val => _alphaBetaEngine.NmpBase = val;
+        _options.AspirationDelta.ValueChanged += val => _alphaBetaEngine.AspirationDelta = val;
+
         // Initialize board to standard start position
         _board = Fen.Parse(Fen.StartPosition);
     }

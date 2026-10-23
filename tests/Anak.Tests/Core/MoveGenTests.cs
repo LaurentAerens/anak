@@ -230,4 +230,40 @@ public class MoveGenTests
         Assert.True(hasBishop, "Must generate Bishop promotion");
         Assert.True(hasKnight, "Must generate Knight promotion");
     }
+
+    [Fact]
+    public void IsLegal_AllGeneratedMovesAreLegal_AndIllegalMovesAreRejected()
+    {
+        string[] testPositions =
+        [
+            Fen.StartPosition,
+            "r1bqk2r/pppp1ppp/2n5/4p3/2B1n3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 6",
+            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+            "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+            "7k/8/8/r2Pp2K/8/8/8/8 w - e6 0 1",
+            "7k/4P3/8/8/8/8/8/4K3 w - - 0 1"
+        ];
+
+        foreach (var fen in testPositions)
+        {
+            var board = Fen.Parse(fen);
+            MoveList moves = default;
+            board.GenerateLegalMoves(ref moves);
+
+            Assert.True(moves.Count > 0);
+            for (int i = 0; i < moves.Count; i++)
+            {
+                Assert.True(board.IsLegal(moves[i]), $"Move {moves[i]} should be legal in {fen}");
+            }
+
+            // Null move must be illegal
+            Assert.False(board.IsLegal(Move.Null));
+
+            // Move from empty square must be illegal
+            Assert.False(board.IsLegal(new Move(Square.D4, Square.D5, MoveType.Quiet)));
+
+            // King moving onto enemy occupied square with friendly piece must be illegal
+            Assert.False(board.IsLegal(new Move(Square.E1, Square.E1, MoveType.Quiet)));
+        }
+    }
 }

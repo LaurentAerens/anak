@@ -1,4 +1,5 @@
 using Anak.Core;
+using Anak.Protocol.Analyze;
 using Anak.Protocol.Bench;
 using Anak.Protocol.Uci;
 
@@ -10,7 +11,7 @@ namespace Anak.Protocol;
 /// </summary>
 public static class Program
 {
-    public const string Version = "0.0.3";
+    public const string Version = "0.0.4-dev";
     public const string EngineName = $"Anak {Version}";
     public const string Author = "Anak Contributors";
 
@@ -54,6 +55,82 @@ public static class Program
                 Board board = Fen.Parse(fen);
                 Console.WriteLine($"Running Perft divide to depth {depth} on FEN: {fen}");
                 PerftRunner.Divide(ref board, depth, Console.WriteLine);
+                return;
+            }
+
+            if (command is "analyze")
+            {
+                string? fen = null;
+                string? pgn = null;
+                int depth = 10;
+                int threads = 1;
+                int hash = 64;
+
+                for (int i = 1; i < args.Length; i++)
+                {
+                    string arg = args[i];
+                    if (arg is "--fen" or "-f")
+                    {
+                        List<string> fenParts = [];
+                        while (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
+                        {
+                            i++;
+                            fenParts.Add(args[i]);
+                        }
+                        fen = string.Join(' ', fenParts);
+                    }
+                    else if (arg is "--pgn" or "-p")
+                    {
+                        if (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
+                        {
+                            i++;
+                            pgn = args[i];
+                        }
+                    }
+                    else if (arg is "--depth" or "-d")
+                    {
+                        if (i + 1 < args.Length && int.TryParse(args[i + 1], out int d))
+                        {
+                            depth = d;
+                            i++;
+                        }
+                    }
+                    else if (arg is "--threads" or "-t")
+                    {
+                        if (i + 1 < args.Length && int.TryParse(args[i + 1], out int t))
+                        {
+                            threads = t;
+                            i++;
+                        }
+                    }
+                    else if (arg is "--hash" or "-h")
+                    {
+                        if (i + 1 < args.Length && int.TryParse(args[i + 1], out int h))
+                        {
+                            hash = h;
+                            i++;
+                        }
+                    }
+                    else if (!arg.StartsWith('-') && fen == null && pgn == null)
+                    {
+                        if (arg.EndsWith(".pgn", StringComparison.OrdinalIgnoreCase))
+                        {
+                            pgn = arg;
+                        }
+                        else
+                        {
+                            List<string> fenParts = [arg];
+                            while (i + 1 < args.Length && !args[i + 1].StartsWith('-'))
+                            {
+                                i++;
+                                fenParts.Add(args[i]);
+                            }
+                            fen = string.Join(' ', fenParts);
+                        }
+                    }
+                }
+
+                AnalyzeRunner.Run(fen, pgn, depth, threads, hash, Console.WriteLine);
                 return;
             }
         }
