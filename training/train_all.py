@@ -9,10 +9,12 @@ All-in-One Master Training Pipeline for Anak NNUE:
 """
 
 import argparse
+import json
 import math
 import os
 import random
 import shutil
+import subprocess
 import sys
 import time
 from typing import List, Union, Optional
@@ -38,6 +40,25 @@ def print_banner(text: str):
     print("=" * 75, flush=True)
 
 
+def load_pipeline_state(checkpoints_dir: str) -> dict:
+    path = os.path.join(checkpoints_dir, "pipeline_state.json")
+    if os.path.isfile(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {"completed_models": [], "spsa_completed": False, "spsa_requested": False}
+
+
+def save_pipeline_state(checkpoints_dir: str, state: dict):
+    os.makedirs(checkpoints_dir, exist_ok=True)
+    path = os.path.join(checkpoints_dir, "pipeline_state.json")
+    state["last_updated"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(state, f, indent=2)
+
+
 ALL_8_MODELS = [
     "open",
     "closed",
@@ -57,8 +78,8 @@ def is_micro_model(model_name: str) -> bool:
 def ensure_stockfish_d9_binpacks(
     raw_data_dir: str,
     preprocessed_dir: str,
-    min_records_per_pack: int = 5_000_000,
-    chunks_per_file: int = 100,
+    min_records_per_pack: int = 30_000_000,
+    chunks_per_file: int = 300,
     required_models: List[str] = None,
     force_rebuild: bool = False,
     include_d11: bool = True,
@@ -151,6 +172,7 @@ def train_single_model(
     min_delta: float = 1e-4,
     mix_sources: Optional[Union[str, List[str]]] = None,
     mix_ratio: float = 0.20,
+    resume: bool = False,
 ) -> str:
     """
     Trains one NNUE model on its preprocessed Stockfish d9/d11 binpack using 100% trainable weights,
@@ -220,11 +242,46 @@ def train_single_model(
 
     best_metric = float("inf")
     epochs_without_improvement = 0
+    start_epoch = 1
     out_tag = "micro" if model_name == "small" else model_name
     best_path = os.path.join(checkpoints_dir, f"{out_tag}_best.pt")
     latest_path = os.path.join(checkpoints_dir, f"{out_tag}_latest.pt")
 
-    for epoch in range(1, epochs + 1):
+    # Resumption handling from latest checkpoint
+    if resume and os.path.isfile(latest_path):
+        try:
+            ckpt = torch.load(latest_path, map_location=device)
+            if isinstance(ckpt, dict) and "model_state_dict" in ckpt:
+                model.load_state_dict(ckpt["model_state_dict"])
+                if "optimizer_state_dict" in ckpt and ckpt["optimizer_state_dict"] is not None:
+                    optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+                if "scheduler_state_dict" in ckpt and ckpt["scheduler_state_dict"] is not None:
+                    scheduler.load_state_dict(ckpt["scheduler_state_dict"])
+                if "scaler_state_dict" in ckpt and scaler.is_enabled() and ckpt["scaler_state_dict"] is not None:
+                    scaler.load_state_dict(ckpt["scaler_state_dict"])
+                if "ema_state_dict" in ckpt and ckpt["ema_state_dict"] is not None:
+                    ema.shadow = {k: v.to(device) for k, v in ckpt["ema_state_dict"].items()}
+                best_metric = ckpt.get("best_metric", float("inf"))
+                epochs_without_improvement = ckpt.get("epochs_without_improvement", 0)
+                saved_epoch = ckpt.get("epoch", 0)
+                start_epoch = saved_epoch + 1
+                print(f"  [Resume] Resuming {model_name.upper()} from epoch {start_epoch}/{epochs} (previous best metric: {best_metric:.4f})", flush=True)
+            else:
+                model.load_state_dict(ckpt)
+                print(f"  [Resume] Loaded weights from {latest_path}", flush=True)
+        except Exception as e:
+            print(f"  [Resume Warning] Failed to resume {model_name.upper()} from {latest_path}: {e}. Training from epoch 1.", flush=True)
+
+    if start_epoch > epochs:
+        print(f"  [Resume] {model_name.upper()} has already completed all {epochs} epochs. Using existing checkpoint.", flush=True)
+        if os.path.isfile(best_path):
+            raw = torch.load(best_path, map_location=device)
+            sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+            model.load_state_dict(sd)
+        verify_model_sanity(model, model_name)
+        return best_path
+
+    for epoch in range(start_epoch, epochs + 1):
         epoch_start = time.time()
         model.train()
         total_loss = 0.0
@@ -339,8 +396,18 @@ def train_single_model(
         else:
             epochs_without_improvement += 1
 
-        # Always save latest checkpoint
-        torch.save(model.state_dict(), latest_path)
+        # Always save latest checkpoint with full state for seamless resumption
+        checkpoint_data = {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "scaler_state_dict": scaler.state_dict() if scaler.is_enabled() else None,
+            "best_metric": best_metric,
+            "epochs_without_improvement": epochs_without_improvement,
+            "ema_state_dict": {k: v.cpu() for k, v in ema.shadow.items()} if hasattr(ema, "shadow") else None,
+        }
+        torch.save(checkpoint_data, latest_path)
 
         # Early stopping check
         if patience > 0 and epochs_without_improvement >= patience:
@@ -348,7 +415,9 @@ def train_single_model(
             break
 
     if os.path.isfile(best_path):
-        model.load_state_dict(torch.load(best_path, map_location=device))
+        raw = torch.load(best_path, map_location=device)
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+        model.load_state_dict(sd)
     enforce_perspective_antisymmetry(model)
     clamp_nnue_weights(model)
     torch.save(model.state_dict(), best_path)
@@ -377,12 +446,75 @@ def parse_models_arg(models_arg: List[str]) -> List[str]:
     return selected or list(ALL_8_MODELS)
 
 
+def run_spsa_tuning(
+    repo_root: str,
+    steps: int = 50,
+    games_per_step: int = 30,
+    tc: str = "2+0.02",
+    concurrency: int = 8,
+    resume: bool = True,
+    dry_run: bool = False,
+):
+    print_banner("STEP 5: SPSA SEARCH HEURISTICS TUNING")
+    print(f"Target Steps:       {steps}")
+    print(f"Games Per Step:     {games_per_step} ({steps * games_per_step:,} total games)")
+    print(f"Time Control:       {tc}")
+    print(f"Concurrency:        {concurrency} worker thread(s)")
+    print(f"Resumption Mode:    {'Enabled (--resume)' if resume else 'Disabled'}")
+
+    # Build Anak C# Release engine so that updated networks and heuristics are used
+    print("\n[Build] Building Anak Chess Engine in Release mode...", flush=True)
+    try:
+        subprocess.run(
+            ["dotnet", "build", os.path.join(repo_root, "Anak.sln"), "-c", "Release", "-v", "m"],
+            check=True,
+        )
+        print("  [Build] dotnet build Release succeeded.", flush=True)
+    except Exception as e:
+        print(f"  [Build Warning] dotnet build returned an issue: {e}", flush=True)
+
+    # Sync compiled binaries to tools/fastchess/bin/anak
+    src_bin_dir = os.path.join(repo_root, "src", "Anak.Protocol", "bin", "Release", "net11.0")
+    dst_bin_dir = os.path.join(repo_root, "tools", "fastchess", "bin", "anak")
+    if os.path.isdir(src_bin_dir) and os.path.isdir(dst_bin_dir):
+        for f in os.listdir(src_bin_dir):
+            if f.endswith((".dll", ".exe", ".json")):
+                s_file = os.path.join(src_bin_dir, f)
+                d_file = os.path.join(dst_bin_dir, f)
+                shutil.copy2(s_file, d_file)
+
+    spsa_script = os.path.join(repo_root, "tools", "tuning", "spsa.py")
+    if not os.path.isfile(spsa_script):
+        print(f"[!] SPSA script not found at {spsa_script}", flush=True)
+        return
+
+    cmd = [
+        sys.executable,
+        spsa_script,
+        "--steps", str(steps),
+        "--games-per-step", str(games_per_step),
+        "--tc", str(tc),
+        "--concurrency", str(concurrency),
+    ]
+    if resume:
+        cmd.append("--resume")
+    if dry_run:
+        cmd.append("--dry-run")
+
+    print(f"[Exec] Running command: {' '.join(cmd)}\n", flush=True)
+    ret = subprocess.run(cmd)
+    if ret.returncode != 0:
+        print(f"[!] SPSA tuning exited with return code {ret.returncode}", flush=True)
+    else:
+        print("[+] SPSA tuning completed successfully!", flush=True)
+
+
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     repo_root = os.path.dirname(script_dir)
     default_networks = os.path.join(repo_root, "networks")
 
-    parser = argparse.ArgumentParser(description="All-in-One Anak 8-Model NNUE Pipeline: Stockfish d9/d11 Gather, Unpack, Train, Deploy")
+    parser = argparse.ArgumentParser(description="All-in-One Anak 8-Model NNUE Pipeline: Stockfish d9/d11 Gather, Unpack, Train, Deploy, SPSA")
     parser.add_argument(
         "--models",
         type=str,
@@ -406,8 +538,8 @@ def main():
     parser.add_argument("--mix-ratio", type=float, default=0.20, help="Fraction of batch sampled from other expert datasets (default: 0.20 = 80 percent target, 20 percent mix)")
     parser.add_argument("--patience", type=int, default=15, help="Early stopping patience in epochs (default: 15, 0 = disabled)")
     parser.add_argument("--min-delta", type=float, default=1e-4, help="Minimum validation loss delta to qualify as an improvement for early stopping (default: 1e-4)")
-    parser.add_argument("--positions-per-model", type=int, default=5_000_000, help="Target positions per expert binpack (default: 5,000,000; supports 30,000,000+)")
-    parser.add_argument("--d9-chunks", type=int, default=150, help="Number of 200k-position BINP chunks per file (default: 150; set 0 for full 500M files)")
+    parser.add_argument("--positions-per-model", type=int, default=30_000_000, help="Target positions per expert binpack (default: 30,000,000; supports 50,000,000+)")
+    parser.add_argument("--d9-chunks", type=int, default=300, help="Number of 200k-position BINP chunks per file (default: 300; set 0 for full 500M files)")
     parser.add_argument("--full-download", action="store_true", default=False, help="Download full 500M archives without chunk limit")
     parser.add_argument("--include-d11", action="store_true", default=True, help="Include Depth-11 Stockfish archives for deeper endgame/positional play (default: True)")
     parser.add_argument("--force-rebuild", action="store_true", default=False, help="Force re-downloading and re-unpacking binpacks even if existing ones are present")
@@ -419,6 +551,50 @@ def main():
     parser.add_argument("--deploy-dir", type=str, default=default_networks, help="Target .nnue deploy directory (default: networks/)")
     parser.add_argument("--skip-download", action="store_true", default=False, help="Skip downloading if raw files exist")
     parser.add_argument("--skip-preprocess", action="store_true", default=False, help="Skip preprocessing if binpacks exist")
+    parser.add_argument(
+        "--continue",
+        "--resume",
+        dest="resume",
+        action="store_true",
+        default=False,
+        help="Resume training, deployment, and SPSA from existing checkpoints if available",
+    )
+    parser.add_argument(
+        "--spsa",
+        action="store_true",
+        default=False,
+        help="Run automated SPSA tuning for search heuristics after NNUE training & deployment",
+    )
+    parser.add_argument(
+        "--spsa-steps",
+        type=int,
+        default=50,
+        help="Total SPSA optimization steps (default: 50)",
+    )
+    parser.add_argument(
+        "--spsa-games-per-step",
+        type=int,
+        default=30,
+        help="Games per SPSA step match (default: 30)",
+    )
+    parser.add_argument(
+        "--spsa-tc",
+        type=str,
+        default="2+0.02",
+        help="SPSA match time control in seconds base+inc (default: 2+0.02)",
+    )
+    parser.add_argument(
+        "--spsa-concurrency",
+        type=int,
+        default=min(16, max(1, os.cpu_count() or 4)),
+        help="Concurrency for fastchess during SPSA tuning",
+    )
+    parser.add_argument(
+        "--spsa-dry-run",
+        action="store_true",
+        default=False,
+        help="Run mock simulated matches without invoking fastchess",
+    )
     args = parser.parse_args()
 
     # Apply preset configurations if specified
@@ -426,6 +602,8 @@ def main():
         args.positions_per_model = 500_000
         args.epochs = 30
         args.d9_chunks = 25
+        args.spsa_steps = 15
+        args.spsa_games_per_step = 10
     elif args.preset == "standard":
         args.positions_per_model = 5_000_000
         args.epochs = 60
@@ -445,6 +623,15 @@ def main():
 
     selected_models = parse_models_arg(args.models)
 
+    # Load and synchronize pipeline state
+    os.makedirs(args.checkpoints_dir, exist_ok=True)
+    pipeline_state = load_pipeline_state(args.checkpoints_dir)
+    if args.spsa:
+        pipeline_state["spsa_requested"] = True
+        save_pipeline_state(args.checkpoints_dir, pipeline_state)
+    elif args.resume and pipeline_state.get("spsa_requested", False):
+        args.spsa = True
+
     overall_start = time.time()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print_banner(f"ANAK 8-MODEL MULTI-EXPERT NNUE TRAINING PIPELINE (PyTorch on {device})")
@@ -453,6 +640,13 @@ def main():
     print(f"Epochs & Batch:     {args.epochs} epochs | Batch Size: {args.batch_size:,}")
     print(f"Data Augmentation:  {'Horizontal Board Reflection' if args.augment_flip else 'Disabled'}")
     print(f"Dataset Archives:   Depth-9 & {'Depth-11 Included' if args.include_d11 else 'Depth-9 Only'}")
+    print(f"Resumption Mode:    {'ENABLED (--continue)' if args.resume else 'Disabled'}")
+    print(f"SPSA Post-Tuning:   {'ENABLED' if args.spsa else 'Disabled (pass --spsa to enable)'}")
+
+    if args.resume:
+        completed = pipeline_state.get("completed_models", [])
+        if completed:
+            print(f"Pipeline Checkpoint: {len(completed)} model(s) already recorded complete ({', '.join(completed)})")
 
     alt_data_dir = os.path.join(script_dir, "data")
 
@@ -475,11 +669,18 @@ def main():
             if os.path.getsize(src_bp) < 100 * 1024 * 1024:
                 shutil.copy2(src_bp, dst_bp)
 
-    os.makedirs(args.checkpoints_dir, exist_ok=True)
     os.makedirs(args.deploy_dir, exist_ok=True)
 
     trained_checkpoints = {}
     for m in selected_models:
+        out_tag = "micro" if m == "small" else m
+        best_pt = os.path.join(args.checkpoints_dir, f"{out_tag}_best.pt")
+
+        if args.resume and m in pipeline_state.get("completed_models", []) and os.path.isfile(best_pt):
+            print(f"\n--> [Continue] Model {m.upper()} was completed in previous run ({best_pt}). Skipping to next model.")
+            trained_checkpoints[m] = best_pt
+            continue
+
         bin_path = os.path.join(args.preprocessed_dir, f"{m}.binpack")
         # Combine with external data if specified
         if args.external_data:
@@ -508,23 +709,35 @@ def main():
             min_delta=args.min_delta,
             mix_sources=valid_mix,
             mix_ratio=args.mix_ratio,
+            resume=args.resume,
         )
         trained_checkpoints[m] = best_pt
+        if m not in pipeline_state.get("completed_models", []):
+            pipeline_state.setdefault("completed_models", []).append(m)
+            save_pipeline_state(args.checkpoints_dir, pipeline_state)
 
     # Quantize and Deploy to networks/
     print_banner("QUANTIZATION & DEPLOYMENT TO ANAK ENGINE")
     print(f"Target Directory: {os.path.abspath(args.deploy_dir)}\n")
 
     exported_files = []
-    for m, best_pt in trained_checkpoints.items():
+    for m in selected_models:
+        out_tag = "micro" if m == "small" else m
+        best_pt = trained_checkpoints.get(m) or os.path.join(args.checkpoints_dir, f"{out_tag}_best.pt")
+        if not os.path.isfile(best_pt):
+            continue
+
         out_path = os.path.join(args.deploy_dir, f"{m}.nnue")
+        raw = torch.load(best_pt, map_location="cpu")
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+
         if is_micro_model(m):
             net = MicroNNUE()
-            net.load_state_dict(torch.load(best_pt, map_location="cpu"))
+            net.load_state_dict(sd)
             export_micro(net, out_path)
         else:
             net = StandardNNUE()
-            net.load_state_dict(torch.load(best_pt, map_location="cpu"))
+            net.load_state_dict(sd)
             export_standard(net, out_path)
         exported_files.append((m, out_path))
 
@@ -545,13 +758,33 @@ def main():
                 if os.path.isfile(src_f) and os.path.abspath(src_f) != os.path.abspath(dst_f):
                     shutil.copy2(src_f, dst_f)
 
-    total_time = time.time() - overall_start
-    print_banner("ANAK NNUE TRAINING PIPELINE COMPLETED SUCCESSFULLY!")
-    print(f"Total Elapsed Time: {total_time / 60:.2f} minutes")
     print("Exported Quantized Production Networks:")
     for idx, (m, out_path) in enumerate(exported_files, 1):
         print(f"  {idx}. [{m.capitalize():10s} Model] -> {out_path} ({os.path.getsize(out_path):,} bytes)")
-    print(f"\nAll {len(exported_files)} trained network(s) are in place and ready for Anak's C# engine!\n")
+
+    # Execute SPSA Search Heuristics Tuning if requested
+    should_run_spsa = args.spsa or (args.resume and pipeline_state.get("spsa_requested", False))
+    if should_run_spsa:
+        if args.resume and pipeline_state.get("spsa_completed", False):
+            print_banner("SPSA TUNING ALREADY COMPLETED")
+            print("  SPSA search heuristics tuning was already marked completed in pipeline checkpoint.")
+        else:
+            run_spsa_tuning(
+                repo_root=repo_root,
+                steps=args.spsa_steps,
+                games_per_step=args.spsa_games_per_step,
+                tc=args.spsa_tc,
+                concurrency=args.spsa_concurrency,
+                resume=args.resume,
+                dry_run=args.spsa_dry_run,
+            )
+            pipeline_state["spsa_completed"] = True
+            save_pipeline_state(args.checkpoints_dir, pipeline_state)
+
+    total_time = time.time() - overall_start
+    print_banner("ANAK NNUE TRAINING & TUNING PIPELINE COMPLETED SUCCESSFULLY!")
+    print(f"Total Elapsed Time: {total_time / 60:.2f} minutes")
+    print(f"All {len(exported_files)} trained network(s) and search heuristics are ready for Anak's C# engine!\n")
 
 
 if __name__ == "__main__":

@@ -428,6 +428,7 @@ int main(int argc, char** argv) {
                 rec.reserved = 0;
 
                 bool cross_sample_20pct = (local_read % 5 == 0); // 20% cross-domain sampling for 80/20 expert mixture
+                bool cross_sample_10pct = (local_read % 10 == 0); // 10% cross-domain sampling for volatility mixture
 
                 if (!is_capture) {
                     if ((expert_id == 0 || openness >= 0.45f || cross_sample_20pct) && !open_recs.is_full()) {

@@ -209,12 +209,16 @@ def main():
 
     if args.model in ("micro", "small", "volatility"):
         net = MicroNNUE()
-        net.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
+        raw = torch.load(args.checkpoint, map_location="cpu")
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+        net.load_state_dict(sd)
         net.eval()
         export_micro(net, output_file)
     else:
         net = StandardNNUE()
-        net.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
+        raw = torch.load(args.checkpoint, map_location="cpu")
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+        net.load_state_dict(sd)
         net.eval()
         export_standard(net, output_file)
 

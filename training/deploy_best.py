@@ -57,12 +57,16 @@ def deploy_model(model_type: str, checkpoint_path: str, output_path: str):
 
     if model_type in ("micro", "small", "volatility"):
         net = MicroNNUE()
-        net.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
+        raw = torch.load(checkpoint_path, map_location="cpu")
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+        net.load_state_dict(sd)
         net.eval()
         export_micro(net, output_path)
     else:
         net = StandardNNUE()
-        net.load_state_dict(torch.load(checkpoint_path, map_location="cpu"))
+        raw = torch.load(checkpoint_path, map_location="cpu")
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+        net.load_state_dict(sd)
         net.eval()
         export_standard(net, output_path)
 
