@@ -1056,24 +1056,34 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
                 else
                 {
-                    // Late Move Reductions (LMR) for quiet moves
+                    // Late Move Reductions (LMR) for quiet moves and late non-winning captures
                     int r = 0;
-                    if (depth >= 3 && movesSearched > (isPv ? 2 : 1) &&
-                        !move.IsCapture && !move.IsPromotion && !inCheck &&
-                        move != _stack[ply].Killer0 && move != _stack[ply].Killer1)
+                    if (depth >= 3 && movesSearched > (isPv ? 2 : 1) && !inCheck)
                     {
-                        r = _engine.GetLmrReduction(depth, movesSearched);
-                        r = SearchHeuristics.AdjustLmrForTopology(r, openness, isPv, isTactical: false, inCheck: false);
-
-                        if (!improving)
+                        if (!move.IsCapture && !move.IsPromotion &&
+                            move != _stack[ply].Killer0 && move != _stack[ply].Killer1)
                         {
-                            r++;
-                        }
+                            r = _engine.GetLmrReduction(depth, movesSearched);
+                            r = SearchHeuristics.AdjustLmrForTopology(r, openness, isPv, isTactical: false, inCheck: false);
 
-                        int hist = _history.GetScore(movedPiece.Color(), move);
-                        if (hist < -2000) r++;
-                        else if (hist > 2000) r--;
-                        r = Math.Clamp(r, 0, depth - 2);
+                            if (!improving)
+                            {
+                                r++;
+                            }
+
+                            int hist = _history.GetScore(movedPiece.Color(), move);
+                            if (hist < -2000) r++;
+                            else if (hist > 2000) r--;
+                            r = Math.Clamp(r, 0, depth - 2);
+                        }
+                        else if (move.IsCapture && !move.IsPromotion && movesSearched > 4)
+                        {
+                            // Capture LMR: 1-ply reduction for non-winning captures searched late
+                            if (StaticExchangeEvaluator.Evaluate(in board, move) <= 0)
+                            {
+                                r = 1;
+                            }
+                        }
                     }
 
                     int searchDepth = Math.Max(0, nextDepth - r);
