@@ -304,18 +304,18 @@ public sealed class UciOptionRegistry
         BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: true);
         MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
         Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
-        LmrBase = new SpinOption("LmrBase", defaultValue: 79, min: 0, max: 250);
+        LmrBase = new SpinOption("LmrBase", defaultValue: 80, min: 0, max: 250);
         LmrDivision = new SpinOption("LmrDivision", defaultValue: 229, min: 50, max: 500);
         RfpMargin = new SpinOption("RfpMargin", defaultValue: 72, min: 10, max: 300);
         NmpBase = new SpinOption("NmpBase", defaultValue: 3, min: 1, max: 10);
-        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 25, min: 5, max: 100);
-        ConthistReward = new SpinOption("ConthistReward", defaultValue: 2548, min: 500, max: 6000);
-        ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3966, min: 1000, max: 8000);
-        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2047, min: 500, max: 5000);
-        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 46, min: 10, max: 150);
-        RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 130, min: 100, max: 250);
-        SingularMargin = new SpinOption("SingularMargin", defaultValue: 2, min: 1, max: 8);
-        QsDeltaMargin = new SpinOption("QsDeltaMargin", defaultValue: 200, min: 50, max: 500);
+        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 27, min: 5, max: 100);
+        ConthistReward = new SpinOption("ConthistReward", defaultValue: 2598, min: 500, max: 6000);
+        ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3839, min: 1000, max: 8000);
+        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2101, min: 500, max: 5000);
+        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 45, min: 10, max: 150);
+        RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 115, min: 100, max: 250);
+        SingularMargin = new SpinOption("SingularMargin", defaultValue: 6, min: 1, max: 8);
+        QsDeltaMargin = new SpinOption("QsDeltaMargin", defaultValue: 188, min: 50, max: 500);
 
         Register(SearchAlgorithm);
         Register(Hash);

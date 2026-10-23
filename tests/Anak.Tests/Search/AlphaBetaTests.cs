@@ -280,13 +280,13 @@ public class AlphaBetaTests
         Assert.Equal(SearchHeuristics.TunedConthistReward, adapter.Options.ConthistReward.Value);
         Assert.Equal(SearchHeuristics.TunedConthistPenalty, adapter.Options.ConthistPenalty.Value);
         Assert.Equal(SearchHeuristics.TunedHistoryThreshold, adapter.Options.HistoryThreshold.Value);
-        Assert.Equal(46, adapter.Options.ScoreDropThreshold.Value);
+        Assert.Equal(45, adapter.Options.ScoreDropThreshold.Value);
         Assert.Equal(SearchHeuristics.TunedRfpImprovingMultiplier, adapter.Options.RfpImprovingMultiplier.Value);
         Assert.Equal(SearchHeuristics.TunedSingularMargin, adapter.Options.SingularMargin.Value);
         Assert.Equal(SearchHeuristics.TunedQsDeltaMargin, adapter.Options.QsDeltaMargin.Value);
 
         // Modify options
-        Assert.True(adapter.Options.TrySetValue("LmrBase", "80"));
+        Assert.True(adapter.Options.TrySetValue("LmrBase", "85"));
         Assert.True(adapter.Options.TrySetValue("LmrDivision", "240"));
         Assert.True(adapter.Options.TrySetValue("RfpMargin", "90"));
         Assert.True(adapter.Options.TrySetValue("NmpBase", "4"));
@@ -299,7 +299,7 @@ public class AlphaBetaTests
         Assert.True(adapter.Options.TrySetValue("SingularMargin", "3"));
         Assert.True(adapter.Options.TrySetValue("QsDeltaMargin", "250"));
 
-        Assert.Equal(80, adapter.Options.LmrBase.Value);
+        Assert.Equal(85, adapter.Options.LmrBase.Value);
         Assert.Equal(240, adapter.Options.LmrDivision.Value);
         Assert.Equal(90, adapter.Options.RfpMargin.Value);
         Assert.Equal(4, adapter.Options.NmpBase.Value);
@@ -313,7 +313,7 @@ public class AlphaBetaTests
         Assert.Equal(250, adapter.Options.QsDeltaMargin.Value);
 
         var alphaBeta = (AlphaBetaEngine)adapter.ActiveEngine;
-        Assert.Equal(80, alphaBeta.LmrBase);
+        Assert.Equal(85, alphaBeta.LmrBase);
         Assert.Equal(240, alphaBeta.LmrDivision);
         Assert.Equal(90, alphaBeta.RfpMargin);
         Assert.Equal(4, alphaBeta.NmpBase);
