@@ -20,8 +20,9 @@ public sealed class SyzygyTablebase
         set
         {
             _syzygyPath = value ?? string.Empty;
-            _wdl.SetPath(_syzygyPath);
-            _dtz.SetPath(_syzygyPath);
+            string effectivePath = ResolvePath(_syzygyPath);
+            _wdl.SetPath(effectivePath);
+            _dtz.SetPath(effectivePath);
         }
     }
 
@@ -36,16 +37,56 @@ public sealed class SyzygyTablebase
     /// </summary>
     public ulong TbHits => Interlocked.Read(ref _tbHits);
 
+    /// <summary>
+    /// Maximum piece count of loaded tablebases.
+    /// </summary>
+    public int MaxPieces => Math.Max(_wdl.MaxPieces, _dtz.MaxPieces);
+
     public SyzygyTablebase()
     {
         _wdl = new SyzygyWdl();
         _dtz = new SyzygyDtz();
+        string defaultPath = ResolvePath(string.Empty);
+        if (!string.IsNullOrEmpty(defaultPath))
+        {
+            _wdl.SetPath(defaultPath);
+            _dtz.SetPath(defaultPath);
+        }
     }
 
     public SyzygyTablebase(string path, int probeDepth = 1) : this()
     {
         SyzygyProbeDepth = probeDepth;
         SyzygyPath = path;
+    }
+
+    /// <summary>
+    /// Resolves the effective Syzygy tablebase path across BaseDirectory and repository hierarchy.
+    /// </summary>
+    public static string ResolvePath(string? path)
+    {
+        if (!string.IsNullOrWhiteSpace(path) && Directory.Exists(path))
+            return Path.GetFullPath(path);
+
+        if (!string.IsNullOrWhiteSpace(path))
+            return path;
+
+        string baseDir = AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string directCandidate = Path.Combine(baseDir, "syzygy");
+        if (Directory.Exists(directCandidate))
+            return Path.GetFullPath(directCandidate);
+
+        string? parent = Directory.GetParent(baseDir)?.FullName;
+        for (int i = 0; i < 7 && parent != null; i++)
+        {
+            string check = Path.Combine(parent, "syzygy");
+            if (Directory.Exists(check))
+                return Path.GetFullPath(check);
+
+            parent = Directory.GetParent(parent)?.FullName;
+        }
+
+        return string.Empty;
     }
 
     /// <summary>

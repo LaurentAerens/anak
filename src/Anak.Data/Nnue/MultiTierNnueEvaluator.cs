@@ -390,13 +390,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     /// </summary>
     public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves)
     {
-        if (Tablebase != null && BitOperations.PopCount(board.Occupied) <= 6 && Tablebase.TryProbeWdl(in board, out int wdlScore))
-        {
-            if (wdlScore > 0) return Value.Win;
-            if (wdlScore < 0) return Value.Loss;
-            return Value.Draw;
-        }
-
         if (!UseNnue)
         {
             return _fallbackEvaluator.Evaluate(in board, legalMoves);
@@ -464,13 +457,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     /// </summary>
     public Value EvaluateMicro(in Board board)
     {
-        if (Tablebase != null && BitOperations.PopCount(board.Occupied) <= 6 && Tablebase.TryProbeWdl(in board, out int wdlScore))
-        {
-            if (wdlScore > 0) return Value.Win;
-            if (wdlScore < 0) return Value.Loss;
-            return Value.Draw;
-        }
-
         if (!UseNnue || _microWeights == null)
         {
             return Evaluate(in board, ReadOnlySpan<Move>.Empty);

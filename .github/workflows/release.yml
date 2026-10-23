@@ -89,6 +89,15 @@ jobs:
             cp "publish/book.bin" "${BUNDLE_DIR}/"
           fi
 
+          # Copy endgame tablebases if present
+          if [ -d "syzygy" ] && [ -n "$(find syzygy -maxdepth 1 -name '*.rtb*' -print -quit 2>/dev/null)" ]; then
+            mkdir -p "${BUNDLE_DIR}/syzygy"
+            cp syzygy/* "${BUNDLE_DIR}/syzygy/"
+          elif [ -d "publish/syzygy" ] && [ -n "$(find publish/syzygy -maxdepth 1 -name '*.rtb*' -print -quit 2>/dev/null)" ]; then
+            mkdir -p "${BUNDLE_DIR}/syzygy"
+            cp publish/syzygy/* "${BUNDLE_DIR}/syzygy/"
+          fi
+
           # Archive bundle based on platform format (.zip for Windows, .tar.gz for Linux/macOS)
           if [ "${{ matrix.archive }}" = "zip" ]; then
             zip -r "asset/anak-${{ matrix.rid }}.zip" "${BUNDLE_DIR}"

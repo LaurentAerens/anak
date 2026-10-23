@@ -235,13 +235,15 @@ public sealed class UciEngineAdapter
                 return;
             }
 
-            // 2. Check Syzygy tablebases at root
-            if (BitOperations.PopCount(_board.Occupied) <= 6 && _tablebase.TryProbeDtz(in _board, out Move tbMove, out int dtzScore))
+            // 2. Check Syzygy tablebases at root (only for forced wins; for draws/losses let search find the most active move)
+            if (_tablebase.MaxPieces > 0 &&
+                BitOperations.PopCount(_board.Occupied) <= _tablebase.MaxPieces &&
+                _tablebase.TryProbeDtz(in _board, out Move tbMove, out int dtzScore) &&
+                dtzScore > 0)
             {
-                string wdlDesc = dtzScore > 0 ? "win" : (dtzScore < 0 ? "loss" : "draw");
-                int scoreCp = dtzScore > 0 ? 20000 - dtzScore : (dtzScore < 0 ? -20000 - dtzScore : 0);
+                int scoreCp = 20000 - dtzScore;
                 _outputWriter($"info depth 1 score cp {scoreCp} tbhits {_tablebase.TbHits} pv {tbMove.ToUci()}");
-                _outputWriter($"info string syzygy hit DTZ={dtzScore} ({wdlDesc})");
+                _outputWriter($"info string syzygy hit DTZ={dtzScore} (win)");
                 _outputWriter($"bestmove {tbMove.ToUci()}");
                 return;
             }

@@ -95,4 +95,69 @@ public class SyzygyTests
         Assert.False(moveFound);
         Assert.Equal(Move.Null, move);
     }
+
+    [Fact]
+    public void SyzygyTablebase_AutoDiscoversShippedTables_ProbesKQvK()
+    {
+        var tb = new SyzygyTablebase();
+        var board = Fen.Parse("4k3/8/8/8/8/8/8/3QK3 w - - 0 1");
+        bool probed = tb.TryProbeWdl(in board, out int wdlScore);
+        Assert.True(probed);
+        Assert.Equal(2, wdlScore); // Win for White
+        Assert.True(tb.TbHits > 0);
+
+        bool dtzProbed = tb.TryProbeDtz(in board, out Move bestMove, out int dtzScore);
+        Assert.True(dtzProbed);
+        Assert.NotEqual(Move.Null, bestMove);
+    }
+
+    [Fact]
+    public void SyzygyTablebase_AutoDiscoversShippedTables_ProbesKRvK()
+    {
+        var tb = new SyzygyTablebase();
+        // 3-piece endgame: White King & Rook vs Black King
+        var board = Fen.Parse("4k3/8/8/8/8/8/8/3RK3 w - - 0 1");
+        bool probed = tb.TryProbeWdl(in board, out int wdlScore);
+
+        Assert.True(probed);
+        Assert.Equal(2, wdlScore); // Win for White
+
+        bool dtzProbed = tb.TryProbeDtz(in board, out Move bestMove, out int dtzScore);
+        Assert.True(dtzProbed);
+        Assert.NotEqual(Move.Null, bestMove);
+    }
+
+    [Fact]
+    public void SyzygyTablebase_AutoDiscoversShippedTables_ProbesFourPieceKBBvK()
+    {
+        var tb = new SyzygyTablebase();
+        // 4-piece endgame: White King & Two Bishops vs Black King
+        var board = Fen.Parse("4k3/8/8/8/8/8/8/2BBK3 w - - 0 1");
+        bool probed = tb.TryProbeWdl(in board, out int wdlScore);
+
+        Assert.True(probed);
+        Assert.Equal(2, wdlScore); // Win for White
+
+        bool dtzProbed = tb.TryProbeDtz(in board, out Move bestMove, out int dtzScore);
+        Assert.True(dtzProbed);
+        Assert.NotEqual(Move.Null, bestMove);
+    }
+
+    [Fact]
+    public void PolyGlotBook_ShippedBookBin_LoadsLargeMasterBook()
+    {
+        var book = new PolyGlotBook();
+        string? path = PolyGlotBook.ResolveBookPath("book.bin");
+        Assert.NotNull(path);
+
+        bool loaded = book.Load(path);
+        Assert.True(loaded);
+        Assert.True(book.IsLoaded);
+        Assert.True(book.EntryCount > 90000, $"Expected > 90000 entries, got {book.EntryCount}");
+
+        var board = Fen.Parse(Fen.StartPosition);
+        bool found = book.TryGetMove(in board, out Move move);
+        Assert.True(found);
+        Assert.NotEqual(Move.Null, move);
+    }
 }

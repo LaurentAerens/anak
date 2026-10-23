@@ -807,8 +807,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 return _evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty).Raw;
             }
 
-            // Periodic time management & cancellation check every 1024 nodes
-            if ((Nodes & 1023) == 0)
+            // Periodic time management & cancellation check (dynamically masked for low-time safety)
+            if ((Nodes & _engine._timeManager.CheckMask) == 0)
             {
                 if (_engine._stopped ||
                     cancellationToken.IsCancellationRequested ||

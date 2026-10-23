@@ -54,6 +54,7 @@ project.assets.json
 ## Chess Assets & Large Binaries
 # PolyGlot Opening Books (.bin)
 *.bin
+!book.bin
 books/
 *.pgn
 *.epd
@@ -64,7 +65,9 @@ books/
 *.rtbz
 *.ctbw
 *.ctbz
-/syzygy/
+!syzygy/
+!syzygy/*.rtbw
+!syzygy/*.rtbz
 tablebases/
 !src/Anak.Data/Syzygy/
 

@@ -12,12 +12,15 @@ namespace Anak.Data.Syzygy;
 /// </summary>
 public sealed class SyzygyDtz
 {
-    public const uint DtzMagic = 0x5D23E872;
-    public const uint DtzMagicReversed = 0x72E8235D;
+    public const uint DtzMagic = 0xA50C66D7;
+    public const uint DtzMagicReversed = 0xD7660CA5;
+    public const uint LegacyDtzMagic = 0x5D23E872;
+    public const uint LegacyDtzMagicReversed = 0x72E8235D;
 
     private readonly ConcurrentDictionary<string, string> _tableFileCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte[]> _tableHeaderCache = new(StringComparer.OrdinalIgnoreCase);
     private string _searchPath = string.Empty;
+    public int MaxPieces { get; private set; }
 
     public SyzygyDtz() { }
 
@@ -26,17 +29,23 @@ public sealed class SyzygyDtz
         _searchPath = path ?? string.Empty;
         _tableFileCache.Clear();
         _tableHeaderCache.Clear();
+        MaxPieces = 0;
 
         if (string.IsNullOrWhiteSpace(_searchPath) || !Directory.Exists(_searchPath))
             return;
 
         try
         {
+            int maxP = 0;
             foreach (var file in Directory.EnumerateFiles(_searchPath, "*.rtbz", SearchOption.TopDirectoryOnly))
             {
                 string name = Path.GetFileNameWithoutExtension(file);
                 _tableFileCache[name] = file;
+                string piecesOnly = name.Replace("v", "", StringComparison.OrdinalIgnoreCase);
+                if (piecesOnly.Length > maxP)
+                    maxP = piecesOnly.Length;
             }
+            MaxPieces = maxP;
         }
         catch
         {
@@ -54,11 +63,11 @@ public sealed class SyzygyDtz
         bestMove = Move.Null;
         dtz = 0;
 
-        if (board.Castling != CastlingRights.None)
+        int pieceCount = BitOperations.PopCount(board.Occupied);
+        if (pieceCount < 2 || pieceCount > MaxPieces || _tableFileCache.IsEmpty)
             return false;
 
-        int pieceCount = BitOperations.PopCount(board.Occupied);
-        if (pieceCount is < 2 or > 6)
+        if (board.Castling != CastlingRights.None)
             return false;
 
         if (string.IsNullOrWhiteSpace(_searchPath) || _tableFileCache.IsEmpty)
@@ -162,7 +171,8 @@ public sealed class SyzygyDtz
                 if (read < 16) return false;
 
                 uint magic = BinaryPrimitives.ReadUInt32LittleEndian(header);
-                if (magic != DtzMagic && magic != DtzMagicReversed)
+                if (magic != DtzMagic && magic != DtzMagicReversed &&
+                    magic != LegacyDtzMagic && magic != LegacyDtzMagicReversed)
                     return false;
 
                 _tableHeaderCache[filePath] = header;

@@ -23,6 +23,7 @@ public sealed class SyzygyWdl
     private readonly ConcurrentDictionary<string, string> _tableFileCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, byte[]> _tableHeaderCache = new(StringComparer.OrdinalIgnoreCase);
     private string _searchPath = string.Empty;
+    public int MaxPieces { get; private set; }
 
     public SyzygyWdl() { }
 
@@ -31,17 +32,23 @@ public sealed class SyzygyWdl
         _searchPath = path ?? string.Empty;
         _tableFileCache.Clear();
         _tableHeaderCache.Clear();
+        MaxPieces = 0;
 
         if (string.IsNullOrWhiteSpace(_searchPath) || !Directory.Exists(_searchPath))
             return;
 
         try
         {
+            int maxP = 0;
             foreach (var file in Directory.EnumerateFiles(_searchPath, "*.rtbw", SearchOption.TopDirectoryOnly))
             {
                 string name = Path.GetFileNameWithoutExtension(file);
                 _tableFileCache[name] = file;
+                string piecesOnly = name.Replace("v", "", StringComparison.OrdinalIgnoreCase);
+                if (piecesOnly.Length > maxP)
+                    maxP = piecesOnly.Length;
             }
+            MaxPieces = maxP;
         }
         catch
         {
@@ -58,12 +65,12 @@ public sealed class SyzygyWdl
     {
         wdl = 0;
 
-        // Syzygy tablebases support positions with castling lost and 3..6 pieces
-        if (board.Castling != CastlingRights.None)
+        int pieceCount = BitOperations.PopCount(board.Occupied);
+        if (pieceCount < 2 || pieceCount > MaxPieces || _tableFileCache.IsEmpty)
             return false;
 
-        int pieceCount = BitOperations.PopCount(board.Occupied);
-        if (pieceCount is < 2 or > 6)
+        // Syzygy tablebases support positions with castling lost
+        if (board.Castling != CastlingRights.None)
             return false;
 
         // King counts must be exactly 1 for each side
@@ -71,7 +78,7 @@ public sealed class SyzygyWdl
             BitOperations.PopCount(board.Kings & board.Black) != 1)
             return false;
 
-        if (string.IsNullOrWhiteSpace(_searchPath) || _tableFileCache.IsEmpty)
+        if (string.IsNullOrWhiteSpace(_searchPath))
             return false;
 
         string tableName = GetTableSignature(in board);
