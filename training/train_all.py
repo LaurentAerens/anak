@@ -30,6 +30,7 @@ from export import export_standard, export_micro
 from dataset import find_pgn_files, encode_board_features, calculate_openness
 from download_data import download_stockfish_d9_binpacks, convert_stockfish_d9_to_anak, STOCKFISH_D9_URLS
 from generate_data import BuiltinTacticalEvaluator, load_seed_openings
+from hardware import auto_tune_hardware, HardwareProfiler
 
 
 def print_banner(text: str):
@@ -152,6 +153,9 @@ def train_single_model(
     mix_sources: Optional[Union[str, List[str]]] = None,
     mix_ratio: float = 0.20,
     compile_model: bool = False,
+    workers: Optional[int] = None,
+    prefetch_batches: Optional[int] = None,
+    chunk_size: Optional[int] = None,
 ) -> str:
     """
     Trains one NNUE model on its preprocessed Stockfish d9/d11 binpack using 100% trainable weights,
@@ -236,7 +240,6 @@ def train_single_model(
     best_path = os.path.join(checkpoints_dir, f"{out_tag}_best.pt")
     latest_path = os.path.join(checkpoints_dir, f"{out_tag}_latest.pt")
 
-    prefetch_cnt = 16 if is_cuda else 4
     train_loader = FastMemoryMappedBatchLoader(
         binpack_files,
         batch_size=effective_batch_size,
@@ -247,7 +250,9 @@ def train_single_model(
         augment_flip=augment_flip,
         mix_sources=mix_sources,
         mix_ratio=mix_ratio,
-        prefetch_batches=prefetch_cnt,
+        prefetch_batches=prefetch_batches or (16 if is_cuda else 4),
+        num_workers=workers,
+        chunk_size=chunk_size or 65536,
     )
     val_loader = FastMemoryMappedBatchLoader(
         binpack_files,
@@ -257,6 +262,9 @@ def train_single_model(
         val_split=val_split,
         is_validation=True,
         augment_flip=False,
+        prefetch_batches=2,
+        num_workers=2,
+        chunk_size=chunk_size or 65536,
     ) if val_split > 0 else None
 
     try:
@@ -275,7 +283,7 @@ def train_single_model(
                 target_eval = batch["target_eval"]
 
                 optimizer.zero_grad(set_to_none=True)
-                with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
+                with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
                     preds = model(our_feat, their_feat)
                     if is_micro_model(model_name):
                         loss = criterion(preds, target_eval)
@@ -319,7 +327,7 @@ def train_single_model(
                         their_feat = v_batch["their_features"]
                         target_wdl = v_batch["target_wdl"]
                         target_eval = v_batch["target_eval"]
-                        with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
+                        with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
                             preds = model(our_feat, their_feat)
                             if is_micro_model(model_name):
                                 v_l = criterion(preds, target_eval)
@@ -413,11 +421,16 @@ def main():
         default=None,
         help="Convenience preset: 'quick' (500k pos, 30 ep), 'standard' (5M pos, 60 ep), 'large' (15M pos, 80 ep), 'massive' (30M+ pos, 100 ep, full d9/d11)",
     )
-    parser.add_argument("--compile", action="store_true", default=False, help="Enable PyTorch 2.x torch.compile for CUDA kernel fusion on modern GPUs (e.g. RTX 4090)")
+    parser.add_argument("--auto", action="store_true", default=True, help="Automatically scan hardware and pin optimal settings (default: True)")
+    parser.add_argument("--no-auto", dest="auto", action="store_false", help="Disable automatic hardware tuning")
+    parser.add_argument("--compile", action="store_true", default=None, help="Enable PyTorch 2.x torch.compile for CUDA kernel fusion on modern GPUs (e.g. RTX 4090)")
     parser.add_argument("--epochs", type=int, default=80, help="Number of epochs per model (default: 80)")
     parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear learning rate warmup epochs (default: 3)")
     parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5 percent)")
-    parser.add_argument("--batch-size", type=int, default=16384 if torch.cuda.is_available() else 8192, help="Batch size (default: 16384 on GPU, 8192 on CPU)")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto-tuned if omitted: 32768 on 24GB GPU, 8192 on CPU)")
+    parser.add_argument("--workers", type=int, default=None, help="Parallel worker threads for data loading (auto-tuned if omitted)")
+    parser.add_argument("--prefetch-batches", type=int, default=None, help="Number of prefetch batches in RAM (auto-tuned if omitted: 16-24 on GPU)")
+    parser.add_argument("--chunk-size", type=int, default=None, help="Sequential disk read chunk size (auto-tuned if omitted: 65536 - 131072)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate (default: 1e-3)")
     parser.add_argument("--lambda-wdl", type=float, default=0.35, help="WDL weight in ModernNNUELoss (default: 0.35)")
     parser.add_argument("--mix-ratio", type=float, default=0.20, help="Fraction of batch sampled from other expert datasets (default: 0.20 = 80 percent target, 20 percent mix)")
@@ -463,17 +476,36 @@ def main():
     selected_models = parse_models_arg(args.models)
 
     overall_start = time.time()
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == "cpu":
-        cpu_threads = os.cpu_count() or 4
-        torch.set_num_threads(cpu_threads)
+
+    # Automatic Hardware Detection & Profile Pinning
+    if args.auto:
+        hw_cfg = auto_tune_hardware(
+            user_batch_size=args.batch_size,
+            user_workers=args.workers,
+            user_compile=args.compile,
+            is_massive_preset=(args.preset == "massive"),
+            verbose=True,
+        )
+        effective_batch_size = hw_cfg["batch_size"]
+        effective_workers = hw_cfg["workers"]
+        effective_prefetch = args.prefetch_batches or hw_cfg["prefetch_batches"]
+        effective_chunk_size = args.chunk_size or hw_cfg["chunk_size"]
+        compile_model = hw_cfg["compile_model"]
+        device = hw_cfg["device"]
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        effective_batch_size = args.batch_size or (16384 if device.type == "cuda" else 8192)
+        effective_workers = args.workers
+        effective_prefetch = args.prefetch_batches or (16 if device.type == "cuda" else 4)
+        effective_chunk_size = args.chunk_size or 65536
+        compile_model = bool(args.compile)
+        if device.type == "cpu":
+            torch.set_num_threads(os.cpu_count() or 4)
+
     print_banner(f"ANAK 8-MODEL MULTI-EXPERT NNUE TRAINING PIPELINE (PyTorch on {device})")
-    if device.type == "cpu":
-        print(f"--> Hardware Tuning: CPU Multi-Threading set to {cpu_threads} threads (saturating all physical and logical cores)")
-        print("--> Notice: Running on CPU (no CUDA GPU detected). Ultra-fast chunked streaming pipeline active.")
     print(f"Target Models:      {', '.join(m.upper() for m in selected_models)}")
     print(f"Target Positions:   {args.positions_per_model:,} per expert model")
-    print(f"Epochs & Batch:     {args.epochs} epochs | Batch Size: {args.batch_size:,}")
+    print(f"Epochs & Batch:     {args.epochs} epochs | Pinned Batch Size: {effective_batch_size:,}")
     print(f"Data Augmentation:  {'Horizontal Board Reflection' if args.augment_flip else 'Disabled'}")
     print(f"Dataset Archives:   Depth-9 & {'Depth-11 Included' if args.include_d11 else 'Depth-9 Only'}")
 
@@ -519,7 +551,7 @@ def main():
             model_name=m,
             binpack_path=bin_path,
             epochs=args.epochs,
-            batch_size=args.batch_size,
+            batch_size=effective_batch_size,
             lr=model_lr,
             device=device,
             checkpoints_dir=args.checkpoints_dir,
@@ -531,7 +563,10 @@ def main():
             min_delta=args.min_delta,
             mix_sources=valid_mix,
             mix_ratio=args.mix_ratio,
-            compile_model=args.compile,
+            compile_model=compile_model,
+            workers=effective_workers,
+            prefetch_batches=effective_prefetch,
+            chunk_size=effective_chunk_size,
         )
         trained_checkpoints[m] = best_pt
 

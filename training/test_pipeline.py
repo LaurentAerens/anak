@@ -31,6 +31,7 @@ from binpack import (
 from fast_loader import (
     fast_scatter_features,
     FastMemoryMappedBatchLoader,
+    resolve_binpack_files,
 )
 from model import StandardNNUE, MicroNNUE
 
@@ -219,6 +220,186 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         self.assertEqual(arch_id, 1)
         self.assertEqual(hidden_dim, 512)
         self.assertEqual(l1_dim, 64)
+
+
+    def test_multi_file_sharded_binpack_loader(self):
+        shard1 = os.path.join(self.temp_dir, "shard1.binpack")
+        shard2 = os.path.join(self.temp_dir, "shard2.binpack")
+        b = chess.Board()
+
+        with BinpackWriter(shard1, model_tag="open") as w1:
+            for _ in range(120):
+                w1.add_board(b, target_eval=0.1, target_wdl=0.5, openness=0.5)
+
+        with BinpackWriter(shard2, model_tag="open") as w2:
+            for _ in range(80):
+                w2.add_board(b, target_eval=0.2, target_wdl=0.6, openness=0.6)
+
+        # Test loading via list
+        loader = FastMemoryMappedBatchLoader([shard1, shard2], batch_size=50, shuffle=False)
+        self.assertEqual(loader.total_records, 200)
+        self.assertEqual(len(loader), 4)
+
+        seen = 0
+        for batch in loader:
+            seen += batch["our_features"].shape[0]
+        self.assertEqual(seen, 200)
+        loader.close()
+
+        # Test loading via glob pattern
+        glob_pattern = os.path.join(self.temp_dir, "shard*.binpack")
+        loader_glob = FastMemoryMappedBatchLoader(glob_pattern, batch_size=64, shuffle=True)
+        self.assertEqual(loader_glob.total_records, 200)
+        loader_glob.close()
+
+    def test_validation_split_batch_loader(self):
+        bp_path = os.path.join(self.temp_dir, "split_test.binpack")
+        b = chess.Board()
+
+        with BinpackWriter(bp_path, model_tag="open") as w:
+            for _ in range(300):
+                w.add_board(b, target_eval=0.1, target_wdl=0.5, openness=0.5)
+
+        # 10% validation split: 270 train, 30 val
+        train_loader = FastMemoryMappedBatchLoader(bp_path, batch_size=100, val_split=0.10, is_validation=False)
+        val_loader = FastMemoryMappedBatchLoader(bp_path, batch_size=100, val_split=0.10, is_validation=True)
+
+        self.assertEqual(train_loader.total_records, 270)
+        self.assertEqual(val_loader.total_records, 30)
+
+        train_samples = sum(batch["our_features"].shape[0] for batch in train_loader)
+        val_samples = sum(batch["our_features"].shape[0] for batch in val_loader)
+
+        self.assertEqual(train_samples, 270)
+        self.assertEqual(val_samples, 30)
+
+        train_loader.close()
+        val_loader.close()
+
+    def test_cross_domain_mixture_batch_loader(self):
+        primary_path = os.path.join(self.temp_dir, "primary.binpack")
+        mix_path = os.path.join(self.temp_dir, "mix.binpack")
+        b = chess.Board()
+
+        # Primary has target_eval = +1.0
+        with BinpackWriter(primary_path, model_tag="open") as w:
+            for _ in range(400):
+                w.add_board(b, target_eval=1.0, target_wdl=0.7, openness=0.8)
+
+        # Mix has target_eval = -1.0
+        with BinpackWriter(mix_path, model_tag="closed") as w:
+            for _ in range(200):
+                w.add_board(b, target_eval=-1.0, target_wdl=0.3, openness=0.2)
+
+        # 80/20 mixture: batch_size=100 -> 80 primary, 20 mix
+        loader = FastMemoryMappedBatchLoader(
+            primary_path,
+            batch_size=100,
+            shuffle=False,
+            mix_sources=mix_path,
+            mix_ratio=0.20,
+        )
+        self.assertEqual(loader.primary_batch_size, 80)
+        self.assertEqual(loader.mix_batch_size, 20)
+
+        batches = list(loader)
+        self.assertGreaterEqual(len(batches), 1)
+        batch0 = batches[0]
+        # Total batch size is exactly 100
+        self.assertEqual(batch0["our_features"].shape[0], 100)
+
+        # Verify 80 primary (1.0) and 20 mix (-1.0)
+        evals = batch0["target_eval"].cpu().numpy()
+        count_primary = np.sum(np.isclose(evals, 1.0, atol=1e-3))
+        count_mix = np.sum(np.isclose(evals, -1.0, atol=1e-3))
+        self.assertEqual(count_primary, 80)
+        self.assertEqual(count_mix, 20)
+        loader.close()
+
+    def test_resolve_binpack_files(self):
+        f1 = os.path.join(self.temp_dir, "a.binpack")
+        f2 = os.path.join(self.temp_dir, "b.binpack")
+        open(f1, "w").close()
+        open(f2, "w").close()
+
+        # By directory
+        resolved_dir = resolve_binpack_files(self.temp_dir)
+        self.assertEqual(len(resolved_dir), 2)
+
+        # By glob
+        resolved_glob = resolve_binpack_files(os.path.join(self.temp_dir, "*.binpack"))
+        self.assertEqual(len(resolved_glob), 2)
+
+        # By comma-separated string
+        resolved_comma = resolve_binpack_files(f"{f1},{f2}")
+        self.assertEqual(len(resolved_comma), 2)
+
+
+    def test_horizontal_flip_augmentation(self):
+        bp_path = os.path.join(self.temp_dir, "flip_test.binpack")
+        b = chess.Board()
+
+        with BinpackWriter(bp_path, model_tag="open") as w:
+            for _ in range(50):
+                w.add_board(b, target_eval=0.5, target_wdl=0.7, openness=0.5)
+
+        loader = FastMemoryMappedBatchLoader(bp_path, batch_size=50, shuffle=False, augment_flip=True)
+        batches = list(loader)
+        self.assertEqual(len(batches), 1)
+        # Verify valid features scattered and shape
+        features = batches[0]["our_features"]
+        self.assertEqual(features.shape, (50, 768))
+        self.assertTrue(torch.all(features >= 0.0))
+        self.assertTrue(torch.all(features <= 1.0))
+        loader.close()
+
+    def test_stockfish_dataset_urls_catalog(self):
+        from download_data import STOCKFISH_D9_URLS
+        self.assertGreaterEqual(len(STOCKFISH_D9_URLS), 10)
+        has_d11 = any("_d11" in u[0] for u in STOCKFISH_D9_URLS)
+        has_d9 = any("_d9" in u[0] for u in STOCKFISH_D9_URLS)
+        self.assertTrue(has_d11)
+        self.assertTrue(has_d9)
+
+    def test_perspective_antisymmetry(self):
+        from model import enforce_perspective_antisymmetry, StandardNNUE
+        from dataset import encode_board_features
+        model = StandardNNUE()
+        enforce_perspective_antisymmetry(model)
+        model.eval()
+
+        # Symmetric board (startpos)
+        b = chess.Board()
+        our_idx, their_idx = encode_board_features(b)
+        our_t = torch.zeros((1, 768), dtype=torch.float32)
+        their_t = torch.zeros((1, 768), dtype=torch.float32)
+        our_t[0, our_idx] = 1.0
+        their_t[0, their_idx] = 1.0
+
+        with torch.no_grad():
+            eval_normal = model(our_t, their_t).item()
+            eval_reversed = model(their_t, our_t).item()
+
+        # Due to tempo bonus, normal vs reversed differs only by tempo
+        # Without tempo (bias removed), they must be exact opposites
+        tempo = model.output.bias.item()
+        self.assertAlmostEqual(eval_normal - tempo, -(eval_reversed - tempo), places=4)
+
+    def test_hardware_profiler_and_auto_tune(self):
+        from hardware import HardwareProfiler, auto_tune_hardware
+        profiler = HardwareProfiler()
+        self.assertGreaterEqual(profiler.cpu_count, 1)
+        self.assertGreater(profiler.ram_gb, 0.0)
+
+        cfg = auto_tune_hardware(verbose=False)
+        self.assertIn("batch_size", cfg)
+        self.assertGreaterEqual(cfg["batch_size"], 1024)
+        self.assertIn("workers", cfg)
+        self.assertGreaterEqual(cfg["workers"], 1)
+        self.assertIn("prefetch_batches", cfg)
+        self.assertGreaterEqual(cfg["prefetch_batches"], 1)
+        self.assertIn("chunk_size", cfg)
+        self.assertGreaterEqual(cfg["chunk_size"], 1024)
 
 
 if __name__ == "__main__":

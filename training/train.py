@@ -24,6 +24,7 @@ from loss import ModernNNUELoss, TcecBlendedLoss, BlunderLoss
 from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
 from query import PositionQuery
 from binpack import BinpackReader
+from hardware import auto_tune_hardware, HardwareProfiler
 
 
 def resolve_data_files(data_arg: Optional[str] = None, source: str = "all") -> List[str]:
@@ -159,11 +160,16 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=40, help="Number of training epochs")
     parser.add_argument("--warmup-epochs", type=int, default=3, help="Linear learning rate warmup epochs (default: 3)")
     parser.add_argument("--val-split", type=float, default=0.05, help="Validation data split fraction (default: 0.05 = 5 percent)")
-    parser.add_argument("--batch-size", type=int, default=8192, help="Batch size (e.g. 8192, 16384, 32768 for high-speed GPU training)")
+    parser.add_argument("--auto", action="store_true", default=True, help="Automatically scan hardware and pin optimal settings (default: True)")
+    parser.add_argument("--no-auto", dest="auto", action="store_false", help="Disable automatic hardware tuning")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size (auto-tuned if omitted: 32768 on 24GB GPU, 8192 on CPU)")
+    parser.add_argument("--workers", type=int, default=None, help="Parallel worker threads for data loading (auto-tuned if omitted)")
+    parser.add_argument("--prefetch-batches", type=int, default=None, help="Number of prefetch batches in RAM (auto-tuned if omitted: 16-24 on GPU)")
+    parser.add_argument("--chunk-size", type=int, default=None, help="Sequential disk read chunk size (auto-tuned if omitted: 65536 - 131072)")
     parser.add_argument("--lr", type=float, default=1e-3, help="Initial learning rate")
     parser.add_argument("--lambda-wdl", type=float, default=0.35, help="WDL loss weight factor (default: 0.35)")
     parser.add_argument("--augment-flip", action="store_true", default=True, help="Apply random horizontal board reflection during training (default: True)")
-    parser.add_argument("--compile", action="store_true", default=False, help="Enable PyTorch 2.x torch.compile for CUDA kernel fusion on modern GPUs (e.g. RTX 4090)")
+    parser.add_argument("--compile", action="store_true", default=None, help="Enable PyTorch 2.x torch.compile for CUDA kernel fusion on modern GPUs (e.g. RTX 4090)")
     parser.add_argument("--output", type=str, default="./checkpoints", help="Output directory for checkpoints")
     parser.add_argument("--max-samples", type=int, default=None, help="Limit number of samples per epoch")
     parser.add_argument("--deploy", action="store_true", default=True,
@@ -176,29 +182,53 @@ def parse_args():
 def main():
     args = parse_args()
     os.makedirs(args.output, exist_ok=True)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == "cpu":
-        cpu_threads = os.cpu_count() or 4
-        torch.set_num_threads(cpu_threads)
+
+    # Automatic Hardware Detection & Profile Pinning
+    if args.auto:
+        hw_cfg = auto_tune_hardware(
+            user_batch_size=args.batch_size,
+            user_workers=args.workers,
+            user_compile=args.compile,
+            verbose=True,
+        )
+        effective_batch_size = hw_cfg["batch_size"]
+        effective_workers = hw_cfg["workers"]
+        effective_prefetch = args.prefetch_batches or hw_cfg["prefetch_batches"]
+        effective_chunk_size = args.chunk_size or hw_cfg["chunk_size"]
+        compile_model = hw_cfg["compile_model"]
+        device = hw_cfg["device"]
+        is_cuda = hw_cfg["is_cuda"]
+        has_bf16 = hw_cfg["has_bf16"]
+    else:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        is_cuda = (device.type == "cuda")
+        has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
+        effective_batch_size = args.batch_size or (16384 if is_cuda else 8192)
+        effective_workers = args.workers
+        effective_prefetch = args.prefetch_batches or (16 if is_cuda else 4)
+        effective_chunk_size = args.chunk_size or 65536
+        compile_model = bool(args.compile)
+        if device.type == "cpu":
+            torch.set_num_threads(os.cpu_count() or 4)
 
     # Mixed Precision (AMP) Configuration
-    is_cuda = (device.type == "cuda")
-    has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
     amp_dtype = torch.bfloat16 if has_bf16 else torch.float16
     amp_enabled = is_cuda
     scaler = torch.amp.GradScaler("cuda", enabled=(is_cuda and amp_dtype == torch.float16))
 
-    if is_cuda:
-        precision_str = "bfloat16 (native Tensor Cores)" if has_bf16 else "float16 (+ GradScaler)"
-        print(f"--> Mixed Precision (AMP): ENABLED ({precision_str})")
-        if hasattr(torch, "set_float32_matmul_precision"):
-            torch.set_float32_matmul_precision("high")
-        if hasattr(torch.backends, "cudnn") and torch.backends.cudnn.is_available():
-            torch.backends.cudnn.benchmark = True
-    else:
-        print(f"--> Mixed Precision (AMP): DISABLED (CPU float32)")
-        print(f"--> CPU Multi-Threading:   {cpu_threads} threads enabled (saturating all physical and logical cores)")
-        print("--> Notice: Running on CPU (no CUDA GPU detected). Ultra-fast chunked streaming pipeline active.")
+    # 1. Check for Preprocessed Binary Pack(s)
+    binpack_files = find_preprocessed_binpacks(args.model, explicit_path=args.binpack)
+    use_fast_loader = len(binpack_files) > 0
+
+    if not args.auto:
+        print("=" * 75)
+        print(f"=== Training Anak NNUE: {args.model.upper()} Model on {device} ===")
+        print("=" * 75)
+        if is_cuda:
+            precision_str = "bfloat16 (native Tensor Cores)" if has_bf16 else "float16 (+ GradScaler)"
+            print(f"--> Mixed Precision (AMP): ENABLED ({precision_str})")
+        else:
+            print(f"--> Mixed Precision (AMP): DISABLED (CPU float32)")
 
     if use_fast_loader:
         total_bytes = sum(os.path.getsize(f) for f in binpack_files)
@@ -207,7 +237,7 @@ def main():
             print(f"  - {f} ({os.path.getsize(f):,} bytes)")
         if len(binpack_files) > 3:
             print(f"  ... and {len(binpack_files) - 3} more file(s)")
-        print(f"Loading Mode:     Direct NumPy memmap + GPU sparse scatter")
+        print(f"Loading Mode:     Direct NumPy memmap + GPU/CPU sparse scatter")
     else:
         print(f"Notice: Preprocessed binpack not found for {args.model.upper()}.")
         print("Tip: Run one-time preprocessing to boost training speed by 100x-500x:")
@@ -221,7 +251,7 @@ def main():
         for f in data_files[:5]:
             print(f"  - {f} ({os.path.getsize(f):,} bytes)")
 
-    print(f"Batch Size:       {args.batch_size:,}")
+    print(f"Pinned Batch:     {effective_batch_size:,}")
     print(f"Epochs:           {args.epochs} (Warmup: {args.warmup_epochs} epochs)")
     print(f"Validation Split: {args.val_split * 100:.1f}%")
     print(f"Learning Rate:    {args.lr}")
@@ -238,7 +268,7 @@ def main():
     ema = ModelEMA(model, decay=0.995)
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
 
-    if args.compile and is_cuda and hasattr(torch, "compile"):
+    if compile_model and is_cuda and hasattr(torch, "compile"):
         try:
             print("--> PyTorch 2.x torch.compile: ENABLED (Triton kernel fusion)")
             model = torch.compile(model, mode="reduce-overhead")
@@ -263,13 +293,11 @@ def main():
         )
 
     best_metric = float("inf")
-    effective_batch_size = args.batch_size
 
     if use_fast_loader:
         total_raw = sum(len(BinpackReader(f)) for f in binpack_files)
         train_count = int(total_raw * (1.0 - args.val_split)) if args.val_split > 0 else total_raw
-        effective_batch_size = min(args.batch_size, max(256, train_count))
-        prefetch_cnt = 16 if is_cuda else 4
+        effective_batch_size = min(effective_batch_size, max(256, train_count))
         train_loader = FastMemoryMappedBatchLoader(
             binpack_files,
             batch_size=effective_batch_size,
@@ -278,7 +306,9 @@ def main():
             val_split=args.val_split,
             is_validation=False,
             augment_flip=args.augment_flip,
-            prefetch_batches=prefetch_cnt,
+            prefetch_batches=effective_prefetch,
+            num_workers=effective_workers,
+            chunk_size=effective_chunk_size,
         )
         val_loader = FastMemoryMappedBatchLoader(
             binpack_files,
@@ -288,6 +318,9 @@ def main():
             val_split=args.val_split,
             is_validation=True,
             augment_flip=False,
+            prefetch_batches=2,
+            num_workers=2,
+            chunk_size=effective_chunk_size,
         ) if args.val_split > 0 else None
     else:
         train_loader = None
@@ -311,7 +344,7 @@ def main():
                     target_eval = batch["target_eval"]
 
                     optimizer.zero_grad(set_to_none=True)
-                    with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
+                    with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
                         preds = model(our_feat, their_feat)
                         if is_micro_architecture(args.model):
                             loss = criterion(preds, target_eval)
@@ -360,7 +393,7 @@ def main():
                             their_feat = v_batch["their_features"]
                             target_wdl = v_batch["target_wdl"]
                             target_eval = v_batch["target_eval"]
-                            with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
+                            with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
                                 preds = model(our_feat, their_feat)
                                 if is_micro_architecture(args.model):
                                     v_l = criterion(preds, target_eval)
@@ -392,7 +425,7 @@ def main():
                 target_eval = batch["target_eval"].to(device)
 
                 optimizer.zero_grad(set_to_none=True)
-                with torch.cuda.amp.autocast(enabled=amp_enabled, dtype=amp_dtype):
+                with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
                     preds = model(our_feat, their_feat)
                     if is_micro_architecture(args.model):
                         loss = criterion(preds, target_eval)
