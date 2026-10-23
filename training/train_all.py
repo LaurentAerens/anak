@@ -21,7 +21,14 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-from model import StandardNNUE, MicroNNUE, ModelEMA, clamp_nnue_weights, enforce_perspective_antisymmetry
+from model import (
+    StandardNNUE,
+    MicroNNUE,
+    ModelEMA,
+    clamp_nnue_weights,
+    enforce_perspective_antisymmetry,
+    evaluate_benchmark_positions,
+)
 from loss import ModernNNUELoss, BlunderLoss
 from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
 from binpack import BinpackReader, BinpackWriter, read_binpack_count
@@ -216,8 +223,18 @@ def train_single_model(
         except Exception as e:
             print(f"Notice: torch.compile skipped ({e})")
 
-    ema = ModelEMA(model, decay=0.999)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-5)
+    is_micro = is_micro_model(model_name)
+    ema = ModelEMA(model, decay=0.990 if is_micro else 0.999)
+
+    # Fused AdamW optimizer on CUDA (single kernel launch for all parameters and momentum buffers)
+    adamw_kwargs = {"lr": lr, "weight_decay": 0.0 if is_micro else 1e-5}
+    if is_cuda:
+        try:
+            optimizer = torch.optim.AdamW(model.parameters(), fused=True, **adamw_kwargs)
+        except Exception:
+            optimizer = torch.optim.AdamW(model.parameters(), **adamw_kwargs)
+    else:
+        optimizer = torch.optim.AdamW(model.parameters(), **adamw_kwargs)
 
     # Linear Warmup followed by Cosine Annealing
     actual_warmup = min(warmup_epochs, max(0, epochs // 4))
@@ -254,9 +271,10 @@ def train_single_model(
         num_workers=workers,
         chunk_size=chunk_size or 65536,
     )
+    val_batch_size = (effective_batch_size * 2) if is_cuda else effective_batch_size
     val_loader = FastMemoryMappedBatchLoader(
         binpack_files,
-        batch_size=effective_batch_size,
+        batch_size=val_batch_size,
         shuffle=False,
         device=device,
         val_split=val_split,
@@ -277,14 +295,14 @@ def train_single_model(
 
             pbar = tqdm(train_loader, desc=f"{model_name.capitalize()} Epoch {epoch}/{epochs}", leave=False)
             for batch in pbar:
-                our_feat = batch["our_features"]
-                their_feat = batch["their_features"]
-                target_wdl = batch["target_wdl"]
-                target_eval = batch["target_eval"]
+                our_in = batch.get("our_indices", batch["our_features"]).to(device, non_blocking=is_cuda)
+                their_in = batch.get("their_indices", batch["their_features"]).to(device, non_blocking=is_cuda)
+                target_wdl = batch["target_wdl"].to(device, non_blocking=is_cuda)
+                target_eval = batch["target_eval"].to(device, non_blocking=is_cuda)
 
                 optimizer.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
-                    preds = model(our_feat, their_feat)
+                    preds = model(our_in, their_in)
                     if is_micro_model(model_name):
                         loss = criterion(preds, target_eval)
                     else:
@@ -306,7 +324,7 @@ def train_single_model(
 
                 total_loss += loss.item()
                 batch_count += 1
-                total_positions += our_feat.shape[0]
+                total_positions += our_in.shape[0]
 
                 elapsed = max(0.001, time.time() - epoch_start)
                 pos_rate = total_positions / elapsed
@@ -315,61 +333,83 @@ def train_single_model(
             # Enforce perspective antisymmetry after each epoch
             enforce_perspective_antisymmetry(model)
 
-            # Validation evaluation
+            # Accelerated validation with torch.inference_mode
             avg_val_loss = None
             if val_loader and len(val_loader) > 0:
                 model.eval()
                 val_loss = 0.0
                 val_batches = 0
-                with torch.no_grad():
+                with torch.inference_mode():
                     for v_batch in val_loader:
-                        our_feat = v_batch["our_features"]
-                        their_feat = v_batch["their_features"]
-                        target_wdl = v_batch["target_wdl"]
-                        target_eval = v_batch["target_eval"]
+                        v_our_in = v_batch.get("our_indices", v_batch["our_features"]).to(device, non_blocking=is_cuda)
+                        v_their_in = v_batch.get("their_indices", v_batch["their_features"]).to(device, non_blocking=is_cuda)
+                        v_target_wdl = v_batch["target_wdl"].to(device, non_blocking=is_cuda)
+                        v_target_eval = v_batch["target_eval"].to(device, non_blocking=is_cuda)
                         with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
-                            preds = model(our_feat, their_feat)
+                            preds = model(v_our_in, v_their_in)
                             if is_micro_model(model_name):
-                                v_l = criterion(preds, target_eval)
+                                v_l = criterion(preds, v_target_eval)
                             else:
-                                v_l = criterion(preds, target_wdl, target_eval)
+                                v_l = criterion(preds, v_target_wdl, v_target_eval)
                         val_loss += v_l.item()
                         val_batches += 1
                 if val_batches > 0:
                     avg_val_loss = val_loss / val_batches
+
+            scheduler.step()
+
+            epoch_time = time.time() - epoch_start
+            throughput = total_positions / max(0.001, epoch_time)
+            avg_loss = total_loss / max(1, batch_count)
+            val_str = f"{avg_val_loss:.4f}" if avg_val_loss is not None else "N/A"
+
+            print(f"  Epoch {epoch:2d}/{epochs} | Train Loss: {avg_loss:.4f} | Val Loss: {val_str} | Throughput: {throughput:,.0f} pos/sec ({epoch_time:.2f}s) | LR: {scheduler.get_last_lr()[0]:.6f}")
+
+            # Canonical benchmark FEN sanity check
+            try:
+                fen_summary = evaluate_benchmark_positions(model, device)
+                print(f"    [FEN Sanity Check] {fen_summary}")
+            except Exception:
+                pass
+
+            eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
+            if eval_metric < (best_metric - min_delta):
+                best_metric = eval_metric
+                epochs_without_improvement = 0
+                backup = ema.store_and_apply(model)
+                enforce_perspective_antisymmetry(model)
+                clamp_nnue_weights(model)
+                torch.save(model.state_dict(), best_path)
+
+                # Auto-export quantized .nnue binary to networks/
+                try:
+                    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                    net_dir = os.path.join(repo_root, "networks")
+                    os.makedirs(net_dir, exist_ok=True)
+                    out_nnue_name = f"{out_tag}.nnue"
+                    nnue_dest = os.path.join(net_dir, out_nnue_name)
+                    if is_micro_model(model_name):
+                        export_micro(model, nnue_dest)
+                    else:
+                        export_standard(model, nnue_dest)
+                except Exception:
+                    pass
+
+                ema.restore(model, backup)
+            else:
+                epochs_without_improvement += 1
+
+            # Always save latest checkpoint
+            torch.save(model.state_dict(), latest_path)
+
+            # Early stopping check
+            if patience > 0 and epochs_without_improvement >= patience:
+                print(f"  [Early Stopping] No improvement in validation loss for {patience} epochs. Halting early at epoch {epoch}/{epochs}.")
+                break
     finally:
         train_loader.close()
         if val_loader:
             val_loader.close()
-
-        scheduler.step()
-
-        epoch_time = time.time() - epoch_start
-        throughput = total_positions / max(0.001, epoch_time)
-        avg_loss = total_loss / max(1, batch_count)
-        val_str = f"{avg_val_loss:.4f}" if avg_val_loss is not None else "N/A"
-
-        print(f"  Epoch {epoch:2d}/{epochs} | Train Loss: {avg_loss:.4f} | Val Loss: {val_str} | Throughput: {throughput:,.0f} pos/sec ({epoch_time:.2f}s) | LR: {scheduler.get_last_lr()[0]:.6f}")
-
-        eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
-        if eval_metric < (best_metric - min_delta):
-            best_metric = eval_metric
-            epochs_without_improvement = 0
-            backup = ema.store_and_apply(model)
-            enforce_perspective_antisymmetry(model)
-            clamp_nnue_weights(model)
-            torch.save(model.state_dict(), best_path)
-            ema.restore(model, backup)
-        else:
-            epochs_without_improvement += 1
-
-        # Always save latest checkpoint
-        torch.save(model.state_dict(), latest_path)
-
-        # Early stopping check
-        if patience > 0 and epochs_without_improvement >= patience:
-            print(f"  [Early Stopping] No improvement in validation loss for {patience} epochs. Halting early at epoch {epoch}/{epochs}.")
-            break
 
     if os.path.isfile(best_path):
         model.load_state_dict(torch.load(best_path, map_location=device))
@@ -542,7 +582,12 @@ def main():
             if resolved_ext:
                 bin_path = [bin_path] + resolved_ext
 
-        model_lr = args.lr * 1.5 if is_micro_model(m) else args.lr
+        is_micro = is_micro_model(m)
+        model_batch_size = (effective_batch_size * 2) if (is_micro and device.type == "cuda") else effective_batch_size
+        model_lr = (args.lr * 2.0) if is_micro else args.lr
+        model_epochs = max(10, args.epochs // 2) if is_micro else args.epochs
+        model_patience = max(3, args.patience // 2) if (is_micro and args.patience > 0) else args.patience
+
         # Collect mix sources from all other expert binpacks that exist on disk
         other_binpacks = [os.path.join(args.preprocessed_dir, f"{other}.binpack") for other in ALL_8_MODELS if other != m]
         valid_mix = [p for p in other_binpacks if os.path.isfile(p)]
@@ -550,8 +595,8 @@ def main():
         best_pt = train_single_model(
             model_name=m,
             binpack_path=bin_path,
-            epochs=args.epochs,
-            batch_size=effective_batch_size,
+            epochs=model_epochs,
+            batch_size=model_batch_size,
             lr=model_lr,
             device=device,
             checkpoints_dir=args.checkpoints_dir,
@@ -559,7 +604,7 @@ def main():
             val_split=args.val_split,
             augment_flip=args.augment_flip,
             lambda_wdl=args.lambda_wdl,
-            patience=args.patience,
+            patience=model_patience,
             min_delta=args.min_delta,
             mix_sources=valid_mix,
             mix_ratio=args.mix_ratio,

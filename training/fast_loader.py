@@ -389,21 +389,26 @@ class FastMemoryMappedBatchLoader:
                 target_eval_t = torch.from_numpy(batch_records["target_eval"].copy())
                 target_wdl_t = torch.from_numpy(batch_records["target_wdl"].copy())
 
+                # Generate dense scatter features on CPU (backward compatible)
+                our_features = fast_scatter_features(our_idx_t, device=torch.device("cpu"))
+                their_features = fast_scatter_features(their_idx_t, device=torch.device("cpu"))
+
                 # Zero-copy pinned memory for high-speed asynchronous PCIe DMA to GPU VRAM
                 if self.is_cuda:
                     our_idx_t = our_idx_t.pin_memory()
                     their_idx_t = their_idx_t.pin_memory()
                     target_eval_t = target_eval_t.pin_memory()
                     target_wdl_t = target_wdl_t.pin_memory()
-
-                our_features = fast_scatter_features(our_idx_t, device=self.device)
-                their_features = fast_scatter_features(their_idx_t, device=self.device)
+                    our_features = our_features.pin_memory()
+                    their_features = their_features.pin_memory()
 
                 batch_dict = {
+                    "our_indices": our_idx_t,
+                    "their_indices": their_idx_t,
                     "our_features": our_features,
                     "their_features": their_features,
-                    "target_eval": target_eval_t.to(self.device, non_blocking=self.is_cuda),
-                    "target_wdl": target_wdl_t.to(self.device, non_blocking=self.is_cuda),
+                    "target_eval": target_eval_t,
+                    "target_wdl": target_wdl_t,
                 }
 
                 while not self._stop_event.is_set():
@@ -447,6 +452,11 @@ class FastMemoryMappedBatchLoader:
         try:
             for _ in range(self.num_batches):
                 item = self._batch_queue.get()
+                if self.is_cuda:
+                    item = {
+                        k: (v.to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
+                        for k, v in item.items()
+                    }
                 yield item
         finally:
             self._stop_event.set()
