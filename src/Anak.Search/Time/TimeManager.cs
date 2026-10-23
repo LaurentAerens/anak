@@ -175,6 +175,18 @@ public sealed class TimeManager
     }
 
     /// <summary>
+    /// Extends soft time limit up to 1.5x (capped by hard limit) when evaluation drops sharply (> 50 cp).
+    /// </summary>
+    public void HandleScoreDrop(int currentScore, int prevScore, int depth)
+    {
+        if (!_hasTimeLimit || depth < 6) return;
+        if (Math.Abs(prevScore) < Value.MateValue - 100 && currentScore < prevScore - 50)
+        {
+            _softLimitMs = Math.Min(_hardLimitMs, (long)(_softLimitMs * 1.5f));
+        }
+    }
+
+    /// <summary>
     /// Checks periodically whether the hard time limit has been exceeded.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
