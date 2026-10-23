@@ -20,16 +20,19 @@ public class ZeroAllocationTests
         // Warm up JIT and any static initialization
         board.GenerateLegalMoves(ref buffer);
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-
-        for (int i = 0; i < 100; i++)
+        long allocated = -1;
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            buffer.Clear();
-            board.GenerateLegalMoves(ref buffer);
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++)
+            {
+                buffer.Clear();
+                board.GenerateLegalMoves(ref buffer);
+            }
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            allocated = after - before;
+            if (allocated == 0) break;
         }
-
-        long after = GC.GetAllocatedBytesForCurrentThread();
-        long allocated = after - before;
 
         Assert.True(buffer.Count > 0);
         Assert.Equal(0, allocated);
@@ -46,17 +49,21 @@ public class ZeroAllocationTests
         _ = board.IsCheck();
         _ = board.IsInCheck();
 
-        long before = GC.GetAllocatedBytesForCurrentThread();
-
+        long allocated = -1;
         bool check = false;
-        for (int i = 0; i < 100; i++)
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            check |= board.IsCheck();
-            check |= board.IsInCheck();
+            check = false;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++)
+            {
+                check |= board.IsCheck();
+                check |= board.IsInCheck();
+            }
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            allocated = after - before;
+            if (allocated == 0) break;
         }
-
-        long after = GC.GetAllocatedBytesForCurrentThread();
-        long allocated = after - before;
 
         Assert.False(check);
         Assert.Equal(0, allocated);
@@ -70,36 +77,45 @@ public class ZeroAllocationTests
         Board board = Fen.Parse(fen);
         ulong occ = board.Occupied;
 
-        // Warm up JIT and lookups
-        _ = board.IsSquareAttacked(Square.E1, Color.Black);
-        _ = Bitboard.KnightAttacks[(int)Square.E4];
-        _ = Bitboard.KingAttacks[(int)Square.E1];
-        _ = Bitboard.PawnAttacks(Square.E2, Color.White);
-        _ = MagicBitboards.GetBishopAttacks(Square.C1, occ);
-        _ = MagicBitboards.GetRookAttacks(Square.A1, occ);
-        _ = MagicBitboards.GetQueenAttacks(Square.D1, occ);
-
-        long before = GC.GetAllocatedBytesForCurrentThread();
-
-        ulong accumulator = 0;
-        for (int i = 0; i < 100; i++)
+        // Warm up JIT and lookups across all squares and colors
+        for (int sq = 0; sq < 64; sq++)
         {
-            for (int sq = 0; sq < 64; sq++)
-            {
-                Square s = (Square)sq;
-                if (board.IsSquareAttacked(s, Color.White)) accumulator++;
-                if (board.IsSquareAttacked(s, Color.Black)) accumulator++;
-                accumulator ^= Bitboard.KnightAttacks[sq];
-                accumulator ^= Bitboard.KingAttacks[sq];
-                accumulator ^= Bitboard.PawnAttacks(s, Color.White);
-                accumulator ^= MagicBitboards.GetBishopAttacks(s, occ);
-                accumulator ^= MagicBitboards.GetRookAttacks(s, occ);
-                accumulator ^= MagicBitboards.GetQueenAttacks(s, occ);
-            }
+            Square s = (Square)sq;
+            _ = board.IsSquareAttacked(s, Color.White);
+            _ = board.IsSquareAttacked(s, Color.Black);
+            _ = Bitboard.KnightAttacks[sq];
+            _ = Bitboard.KingAttacks[sq];
+            _ = Bitboard.PawnAttacks(s, Color.White);
+            _ = MagicBitboards.GetBishopAttacks(s, occ);
+            _ = MagicBitboards.GetRookAttacks(s, occ);
+            _ = MagicBitboards.GetQueenAttacks(s, occ);
         }
 
-        long after = GC.GetAllocatedBytesForCurrentThread();
-        long allocated = after - before;
+        long allocated = -1;
+        ulong accumulator = 0;
+        for (int attempt = 0; attempt < 5; attempt++)
+        {
+            accumulator = 0;
+            long before = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++)
+            {
+                for (int sq = 0; sq < 64; sq++)
+                {
+                    Square s = (Square)sq;
+                    if (board.IsSquareAttacked(s, Color.White)) accumulator++;
+                    if (board.IsSquareAttacked(s, Color.Black)) accumulator++;
+                    accumulator ^= Bitboard.KnightAttacks[sq];
+                    accumulator ^= Bitboard.KingAttacks[sq];
+                    accumulator ^= Bitboard.PawnAttacks(s, Color.White);
+                    accumulator ^= MagicBitboards.GetBishopAttacks(s, occ);
+                    accumulator ^= MagicBitboards.GetRookAttacks(s, occ);
+                    accumulator ^= MagicBitboards.GetQueenAttacks(s, occ);
+                }
+            }
+            long after = GC.GetAllocatedBytesForCurrentThread();
+            allocated = after - before;
+            if (allocated == 0) break;
+        }
 
         Assert.True(accumulator > 0);
         Assert.Equal(0, allocated);

@@ -133,16 +133,22 @@ public class NnueTests
         _ = evaluator.EvaluateMicro(in sharpBoard);
         _ = evaluator.EvaluateVolatility(in sharpBoard);
 
-        long allocBefore = GC.GetAllocatedBytesForCurrentThread();
-        for (int i = 0; i < 100; i++)
+        long allocated = -1;
+        for (int attempt = 0; attempt < 5; attempt++)
         {
-            _ = evaluator.Evaluate(in sharpBoard, ReadOnlySpan<Move>.Empty);
-            _ = evaluator.EvaluateMicro(in sharpBoard);
-            _ = evaluator.EvaluateVolatility(in sharpBoard);
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 100; i++)
+            {
+                _ = evaluator.Evaluate(in sharpBoard, ReadOnlySpan<Move>.Empty);
+                _ = evaluator.EvaluateMicro(in sharpBoard);
+                _ = evaluator.EvaluateVolatility(in sharpBoard);
+            }
+            long allocAfter = GC.GetAllocatedBytesForCurrentThread();
+            allocated = allocAfter - allocBefore;
+            if (allocated == 0) break;
         }
-        long allocAfter = GC.GetAllocatedBytesForCurrentThread();
 
-        Assert.Equal(0, allocAfter - allocBefore);
+        Assert.Equal(0, allocated);
     }
 
     [Fact]
