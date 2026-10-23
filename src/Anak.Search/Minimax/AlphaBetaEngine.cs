@@ -484,6 +484,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
                 bestScore = score;
                 prevScore = score;
+                _engine._timeManager.UpdateMoveStability(bestMove, currentDepth);
 
                 // Extract PV from Transposition Table
                 List<Move> pv = ExtractPv(in board, bestMove);

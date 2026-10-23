@@ -15,6 +15,8 @@ public sealed class TimeManager
     private long _baseSoftLimitMs;
     private long _baseHardLimitMs;
     private bool _hasTimeLimit;
+    private Move _lastBestMove = Move.Null;
+    private int _stableMoveDepths;
 
     public const int CheckInterval = 1024;
     public const int SafetyLagMs = 30;
@@ -24,6 +26,7 @@ public sealed class TimeManager
     public long SoftLimitMs => _softLimitMs;
     public long HardLimitMs => _hardLimitMs;
     public bool HasTimeLimit => _hasTimeLimit;
+    public int StableMoveDepths => _stableMoveDepths;
 
     /// <summary>
     /// Initializes time allocation based on remaining clock, increment, and move limits.
@@ -32,6 +35,8 @@ public sealed class TimeManager
     {
         _stopwatch.Restart();
         CheckMask = 1023;
+        _lastBestMove = Move.Null;
+        _stableMoveDepths = 0;
 
         if (limits.Infinite)
         {
@@ -138,6 +143,35 @@ public sealed class TimeManager
         if (!_hasTimeLimit) return;
         _softLimitMs = Math.Max(10, (long)(_baseSoftLimitMs * factor));
         _hardLimitMs = Math.Max(_softLimitMs, (long)(_baseHardLimitMs * factor));
+    }
+
+    /// <summary>
+    /// Adjusts soft time limits based on root best move stability and late move flips.
+    /// </summary>
+    public void UpdateMoveStability(Move currentBest, int depth)
+    {
+        if (!_hasTimeLimit || currentBest.IsNull) return;
+
+        if (currentBest == _lastBestMove)
+        {
+            _stableMoveDepths++;
+        }
+        else
+        {
+            // Move flipped late in search (depth >= 8) with prior confidence: extend time up to hard limit
+            if (depth >= 8 && _stableMoveDepths >= 2)
+            {
+                _softLimitMs = Math.Min(_hardLimitMs, (long)(_softLimitMs * 1.8f));
+            }
+            _lastBestMove = currentBest;
+            _stableMoveDepths = 1;
+        }
+
+        // Highly stable move (stable for >= 4 depths): scale back allocation to 0.8x to conserve clock
+        if (_stableMoveDepths >= 4)
+        {
+            _softLimitMs = Math.Max(10, (long)(_baseSoftLimitMs * 0.8f));
+        }
     }
 
     /// <summary>
