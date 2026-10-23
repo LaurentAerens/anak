@@ -12,45 +12,107 @@
 
 ## Architecture Overview
 
+```mermaid
+flowchart TD
+    subgraph Protocol["Anak.Protocol"]
+        UCI["UCI Protocol Loop (Async Stdin/Stdout)"]
+        Diagnostics["Bench & Perft Diagnostic CLI"]
+        Analyze["Position & PGN Game Analysis CLI"]
+    end
+
+    subgraph Search["Anak.Search (ISearchEngine)"]
+        direction TB
+        subgraph Minimax["AlphaBetaEngine (Primary Minimax)"]
+            PVS["Principal Variation Search (Fail-Soft Negamax)"]
+            ID["Iterative Deepening & Aspiration Windows"]
+            MovePicker["MovePicker (TT Move, SEE, Killers, History)"]
+            Pruning["Selectivity (RFP, NMP, Singular/Check Ext, LMR)"]
+            QS["Quiescence Search (Leaf Stand-Pat Verification)"]
+            LazySMP["Lock-Free Lazy SMP Worker Threads"]
+        end
+
+        subgraph MCTS["MCTSEngine (Alternative Search)"]
+            NodeArena["Zero-GC Pre-allocated Node Arena"]
+            PUCT["PUCT Selection & Expansion"]
+            DAG["Transposition Table Subtree DAG Reuse"]
+        end
+
+        TT["64-Byte Cacheline Transposition Table"]
+        TimeMgr["Dynamic Time Management"]
+    end
+
+    subgraph Data["Anak.Data (Evaluation & Books)"]
+        direction TB
+        Book["PolyGlot Opening Book (.bin Reader)"]
+        Syzygy["Pure Managed Syzygy EGTB (100% C# WDL & DTZ)"]
+
+        subgraph NNUE["MultiTierNnueEvaluator Pipeline"]
+            direction TB
+            Classifier["PawnTopology & Board Classifier"]
+
+            subgraph FourModels["The 4 Core NNUE Networks"]
+                M_Open["1. Open-NNUE (open.nnue): 768 to 512x2 to 64 to 1 - Open Topologies"]
+                M_Closed["2. Closed-NNUE (closed.nnue): 768 to 512x2 to 64 to 1 - Locked Chains & Maneuvering"]
+                M_Micro["3. Micro-NNUE (micro.nnue): 768 to 16x2 to 1 - Tactical Blunder Watchdog"]
+                M_Vol["4. Volatility-NNUE (volatility.nnue): 768 to 16x2 to 1 - Sharpness & Tension Estimator"]
+            end
+
+            Accumulator["Vector256 / AVX2 Incremental Accumulator Stack"]
+            Inference["Vectorized INT8/INT16 SIMD Inference Engine"]
+        end
+    end
+
+    subgraph Core["Anak.Core"]
+        Bitboards["64-bit Bitboards & LERF Coordinates"]
+        Magics["Plain/Fancy Magic Bitboards + PEXT Intrinsics"]
+        MoveGen["Fast Pseudo-Legal & Legal MoveGen (Zero Heap Alloc)"]
+        SEE["Static Exchange Evaluation (SEE)"]
+        Zobrist["64-bit Zobrist Hash Keys & Rolling History"]
+        Topology["Pawn Topology & Dynamic Openness Metric"]
+    end
+
+    Protocol --> Search
+    Search --> Data
+    Search --> Core
+    Data --> Core
+    Minimax --> TT
+    MCTS --> TT
+    Minimax --> TimeMgr
+    MCTS --> TimeMgr
+    Classifier --> FourModels
+    FourModels --> Accumulator --> Inference
 ```
-+---------------------------------------------------------------------------------------+
-|                                     Anak.Protocol                                     |
-|  - UCI Protocol Loop (async stdin/stdout)   - Bench & Perft Diagnostic CLI            |
-|  - Time Management & Tournament Control     - Position & PGN Game Analysis (CLI)      |
-+------------------------------------+--------------------------------------------------+
-                                     |
-                                     v
-+---------------------------------------------------------------------------------------+
-|                                      Anak.Search                                      |
-|  - Unified ISearchEngine Interface (Dynamic switching via UCI SearchAlgorithm)        |
-|  - AlphaBetaEngine (Default Minimax Search):                                          |
-|    * Principal Variation Search (PVS) with Fail-Soft Negamax & Iterative Deepening    |
-|    * Aspiration Windows with Adaptive Widening & Quiescence Search                     |
-|    * Pruning & Selectivity: RFP (Static Null Move), NMP, Singular & Check Extensions, |
-|      Topology-Adaptive Late Move Reductions (LMR)                                     |
-|    * Staged MovePicker: TT Move, Good Captures (SEE), Killer Moves, Countermoves,     |
-|      Continuation History, Butterfly Quiets, Bad Captures                             |
-|    * Lock-Free Lazy SMP Parallel Search across worker threads                         |
-|  - MCTSEngine (Alternative Search):                                                   |
-|    * Zero-GC MCTS Node Arena, PUCT Selection, Expansion, DAG Subtree Reuse            |
-|  - Shared 64-Byte Cacheline Transposition Table (TT) & TimeManager                    |
-+------------------------------------+--------------------------------------------------+
-                                     |
-                    +----------------+----------------+
-                    |                                 |
-                    v                                 v
-+---------------------------------------+   +-------------------------------------------+
-|               Anak.Data               |   |                 Anak.Core                 |
-|  - Multi-Tier NNUE Evaluation Engine: |   |  - 64-bit Bitboards & LERF Coordinates    |
-|    * Open-NNUE & Closed-NNUE Experts  |   |  - Plain/Fancy Magic Bitboards + PEXT     |
-|    * Micro-NNUE Watchdog & Pre-screen |   |  - Zero-Allocation Legal Move Generation  |
-|    * AVX2/SIMD Vectorized Evaluator   |   |  - Static Exchange Evaluation (SEE)       |
-|  - PolyGlot (.bin) Opening Book Reader|   |  - Compact 16-bit Move & MoveBuffer       |
-|  - Pure Managed Syzygy EGTB Probing:  |   |  - 64-bit Zobrist Hash Keys & History     |
-|    * 100% C# WDL & DTZ Tablebases     |   |  - Fast FEN Parser & Serializer           |
-|    * No native DLL dependencies       |   |  - Pawn Topology Classifier               |
-+---------------------------------------+   +-------------------------------------------+
-```
+
+### The 4 Core NNUE Neural Networks
+
+Anak deploys a multi-tier neural network architecture composed of **4 specialized quantized networks**, routing evaluations dynamically based on pawn structure, phase, and tactical tension:
+
+1. **Open-NNUE (`open.nnue`)**
+   - **Architecture**: Standard NNUE ($768 \to 512\times 2 \to 64 \to 1$).
+   - **Quantization**: INT8 feature transformer weights, INT16 biases, ClippedReLU ($[0, 64]$) activation.
+   - **Domain / Topology**: Positions with open pawn topologies ($\ge 0.50$ continuous openness score), characterized by open/semi-open files, active bishop diagonals, center pawn liquidations, and fluid tactical dynamics.
+   - **Role in Search**: Evaluates candidate leaf nodes when root or leaf topology is open. Includes smooth boundary interpolation ($[0.42, 0.58]$ openness score) between Open and Closed experts to prevent evaluation jitter across transpositions.
+
+2. **Closed-NNUE (`closed.nnue`)**
+   - **Architecture**: Standard NNUE ($768 \to 512\times 2 \to 64 \to 1$).
+   - **Quantization**: INT8 feature transformer weights, INT16 biases, ClippedReLU ($[0, 64]$) activation.
+   - **Domain / Topology**: Positions with locked pawn structures ($< 0.50$ continuous openness score), head-to-head locked pawn chains (rams), blocked centers, and strategic piece maneuvering.
+   - **Role in Search**: Primary positional expert for closed games, closed defenses (e.g. French Defense, King's Indian, locked Caro-Kann lines), and maneuvering endgames.
+
+3. **Micro-NNUE (`micro.nnue`)**
+   - **Architecture**: Ultra-compact 1-SIMD register network ($768 \to 16\times 2 \to 1$).
+   - **Speed & Footprint**: Evaluates at ~20–30M NPS with an ultra-lightweight memory footprint (~12 KB binary file). Exactly fits into a single 256-bit AVX2 register per perspective.
+   - **Domain / Training**: Trained on tactical swing positions, blunders ($\ge 1.5$ pawn swing), and critical counter-tactics.
+   - **Role in Search**: Operates as a zero-overhead tactical watchdog. In `AlphaBetaEngine`, it provides fast stand-pat pre-screening in Quiescence Search and early leaf candidate pruning; in `MCTSEngine`, it runs tactical watchdog burst evaluations on deep candidate leaves.
+
+4. **Volatility-NNUE (`volatility.nnue`)**
+   - **Architecture**: Compact micro network ($768 \to 16\times 2 \to 1$).
+   - **Output**: Tactical sharpness / position instability metric normalized in $[0, 1000]$.
+   - **Domain / Features**: Trained to predict position volatility, mutual pawn tension, queen presence, king flank exposure, and opposite-side castling sharpness.
+   - **Role in Search**: Guides dynamic search selectivity, adjusts aspiration window margins, controls MCTS visit allocation and softmax temperature, and triggers singular extensions during high-volatility tactical phases (with zero-allocation bitboard tension fallback if absent).
+
+> [!NOTE]
+> **Extended Expert Pool**: In addition to the 4 core models above, Anak's topology routing engine can optionally load 4 supplementary full experts: `endgame.nnue` ($\le 14$ pieces), `queenless.nnue` (both queens off board), `imbalance.nnue` (material imbalance $\ge 2$ pawns or piece mismatch), and `attack.nnue` (opposite-side castling king hunts), classified via `PawnTopology.ClassifyExpert`.
 
 ### Key Highlights
 - **.NET 11 & C# 14/15 Modern Runtime**: Built on cutting-edge .NET features, utilizing `System.Runtime.Intrinsics.X86.Bmi2`, `Popcnt`, AVX2, and `BitOperations` for accelerated bitboard processing and SIMD tensor evaluation.
@@ -160,7 +222,7 @@ Anak communicates using the standard Universal Chess Interface (UCI) protocol an
 | `Hash` | spin | `64` | Transposition Table size in megabytes (1 to 65,536 MB). |
 | `Threads` | spin | `1` | Number of concurrent worker threads (1 to 256). |
 | `UseNnue` | check | `true` | Enables Multi-Tier NNUE neural network evaluation. |
-| `NnuePath` | string | `"./networks"` | Directory containing `open.nnue`, `closed.nnue`, and `micro.nnue`. |
+| `NnuePath` | string | `"./networks"` | Directory containing `open.nnue`, `closed.nnue`, `micro.nnue`, and `volatility.nnue`. |
 | `BlunderWatchdog` | check | `true` | Enables Small/Micro-NNUE tactical watchdog bursts on candidate leaves. |
 | `OwnBook` | check | `true` | Enables PolyGlot opening book probing. |
 | `BookFile` | string | `"book.bin"` | Path to PolyGlot `.bin` opening book file. |
@@ -179,11 +241,12 @@ Anak communicates using the standard Universal Chess Interface (UCI) protocol an
 
 ## Multi-Tier NNUE Evaluation & Training Pipeline
 
-Anak features a multi-expert neural architecture paired with a tactical watchdog to eliminate evaluation jitter:
+Anak features a multi-expert neural architecture paired with a tactical watchdog and volatility estimator to eliminate evaluation jitter and guide search selectivity:
 
-1. **Open-NNUE** (`open.nnue`): Standard expert ($768 \to 256\times 2 \to 32 \to 1$) trained on open positions ($\ge 0.50$ pawn openness score).
-2. **Closed-NNUE** (`closed.nnue`): Standard expert ($768 \to 256\times 2 \to 32 \to 1$) trained on locked pawn chains and closed maneuvering.
+1. **Open-NNUE** (`open.nnue`): Standard expert ($768 \to 512\times 2 \to 64 \to 1$) trained on open positions ($\ge 0.50$ pawn openness score).
+2. **Closed-NNUE** (`closed.nnue`): Standard expert ($768 \to 512\times 2 \to 64 \to 1$) trained on locked pawn chains and closed maneuvering ($< 0.50$ openness score).
 3. **Small / Micro-NNUE** (`micro.nnue`): Ultra-fast 1-SIMD register model ($768 \to 16\times 2 \to 1$, ~20–30M NPS) deployed as a deep tree tactical watchdog and fast pre-screen.
+4. **Volatility-NNUE** (`volatility.nnue`): Ultra-fast micro model ($768 \to 16\times 2 \to 1$) predicting dynamic position tension and tactical instability in $[0, 1000]$.
 
 ### High-Speed Pure-Python Pipeline (>1,000,000 pos/sec)
 The training pipeline located in `training/` features:
