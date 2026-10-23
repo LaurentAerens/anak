@@ -1065,6 +1065,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         r = _engine.GetLmrReduction(depth, movesSearched);
                         r = SearchHeuristics.AdjustLmrForTopology(r, openness, isPv, isTactical: false, inCheck: false);
 
+                        if (!improving)
+                        {
+                            r++;
+                        }
+
                         int hist = _history.GetScore(movedPiece.Color(), move);
                         if (hist < -2000) r++;
                         else if (hist > 2000) r--;
