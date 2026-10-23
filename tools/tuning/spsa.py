@@ -54,7 +54,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         min_val=20.0,
         max_val=150.0,
         c=4.0,
-        a=20.0,
+        a=60.0,
     ),
     SpsaParam(
         name="LmrDivision",
@@ -62,7 +62,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         min_val=100.0,
         max_val=400.0,
         c=8.0,
-        a=40.0,
+        a=120.0,
     ),
     SpsaParam(
         name="RfpMargin",
@@ -70,7 +70,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         min_val=30.0,
         max_val=150.0,
         c=4.0,
-        a=20.0,
+        a=60.0,
     ),
     SpsaParam(
         name="NmpBase",
@@ -78,7 +78,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         min_val=1.0,
         max_val=6.0,
         c=0.5,
-        a=0.8,
+        a=3.0,
     ),
     SpsaParam(
         name="AspirationDelta",
@@ -86,31 +86,31 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         min_val=10.0,
         max_val=60.0,
         c=2.0,
-        a=8.0,
+        a=25.0,
     ),
     SpsaParam(
         name="ConthistReward",
         default=2500.0,
         min_val=1000.0,
         max_val=5000.0,
-        c=150.0,
-        a=400.0,
+        c=200.0,
+        a=25000.0,
     ),
     SpsaParam(
         name="ConthistPenalty",
         default=4000.0,
         min_val=1500.0,
         max_val=7000.0,
-        c=200.0,
-        a=500.0,
+        c=250.0,
+        a=30000.0,
     ),
     SpsaParam(
         name="HistoryThreshold",
         default=2000.0,
         min_val=800.0,
         max_val=4000.0,
-        c=100.0,
-        a=300.0,
+        c=150.0,
+        a=20000.0,
     ),
     SpsaParam(
         name="ScoreDropThreshold",
@@ -118,7 +118,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         min_val=20.0,
         max_val=100.0,
         c=5.0,
-        a=10.0,
+        a=100.0,
     ),
 ]
 

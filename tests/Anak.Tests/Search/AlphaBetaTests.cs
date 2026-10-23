@@ -280,7 +280,7 @@ public class AlphaBetaTests
         Assert.Equal(SearchHeuristics.TunedConthistReward, adapter.Options.ConthistReward.Value);
         Assert.Equal(SearchHeuristics.TunedConthistPenalty, adapter.Options.ConthistPenalty.Value);
         Assert.Equal(SearchHeuristics.TunedHistoryThreshold, adapter.Options.HistoryThreshold.Value);
-        Assert.Equal(50, adapter.Options.ScoreDropThreshold.Value);
+        Assert.Equal(46, adapter.Options.ScoreDropThreshold.Value);
 
         // Modify options
         Assert.True(adapter.Options.TrySetValue("LmrBase", "80"));

@@ -27,7 +27,7 @@ public sealed class TimeManager
     public long HardLimitMs => _hardLimitMs;
     public bool HasTimeLimit => _hasTimeLimit;
     public int StableMoveDepths => _stableMoveDepths;
-    public int ScoreDropThreshold { get; set; } = 50;
+    public int ScoreDropThreshold { get; set; } = 46;
 
     /// <summary>
     /// Initializes time allocation based on remaining clock, increment, and move limits.

@@ -18,14 +18,14 @@ public static class SearchHeuristics
     public const int MaxLmrMoves = 128;
 
     // SPSA Tuned Search Parameters
-    public const int TunedLmrBase = 76;             // default: 75  (0.76)
-    public const int TunedLmrDivision = 227;        // default: 225 (2.27)
-    public const int TunedRfpMargin = 73;          // default: 75
+    public const int TunedLmrBase = 79;             // default: 76  (0.79)
+    public const int TunedLmrDivision = 229;        // default: 227 (2.29)
+    public const int TunedRfpMargin = 72;          // default: 73
     public const int TunedNmpBase = 3;              // default: 3
-    public const int TunedAspirationDelta = 26;      // default: 25
-    public const int TunedConthistReward = 2500;    // default: 2500
-    public const int TunedConthistPenalty = 4000;   // default: 4000
-    public const int TunedHistoryThreshold = 2000;  // default: 2000
+    public const int TunedAspirationDelta = 25;      // default: 26
+    public const int TunedConthistReward = 2548;    // default: 2500
+    public const int TunedConthistPenalty = 3966;   // default: 4000
+    public const int TunedHistoryThreshold = 2047;  // default: 2000
 
     /// <summary>
     /// Pre-computed LMR reduction table: [depth, moveIndex].

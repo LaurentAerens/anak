@@ -301,15 +301,15 @@ public sealed class UciOptionRegistry
         BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: true);
         MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
         Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
-        LmrBase = new SpinOption("LmrBase", defaultValue: 76, min: 0, max: 250);
-        LmrDivision = new SpinOption("LmrDivision", defaultValue: 227, min: 50, max: 500);
-        RfpMargin = new SpinOption("RfpMargin", defaultValue: 73, min: 10, max: 300);
+        LmrBase = new SpinOption("LmrBase", defaultValue: 79, min: 0, max: 250);
+        LmrDivision = new SpinOption("LmrDivision", defaultValue: 229, min: 50, max: 500);
+        RfpMargin = new SpinOption("RfpMargin", defaultValue: 72, min: 10, max: 300);
         NmpBase = new SpinOption("NmpBase", defaultValue: 3, min: 1, max: 10);
-        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 26, min: 5, max: 100);
-        ConthistReward = new SpinOption("ConthistReward", defaultValue: 2500, min: 500, max: 6000);
-        ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 4000, min: 1000, max: 8000);
-        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2000, min: 500, max: 5000);
-        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 50, min: 10, max: 150);
+        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 25, min: 5, max: 100);
+        ConthistReward = new SpinOption("ConthistReward", defaultValue: 2548, min: 500, max: 6000);
+        ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3966, min: 1000, max: 8000);
+        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2047, min: 500, max: 5000);
+        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 46, min: 10, max: 150);
 
         Register(SearchAlgorithm);
         Register(Hash);
