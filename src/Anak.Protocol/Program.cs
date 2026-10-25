@@ -12,7 +12,7 @@ namespace Anak.Protocol;
 /// </summary>
 public static class Program
 {
-    public const string Version = "0.0.4";
+    public const string Version = "1.0.0";
     public const string EngineName = $"Anak {Version}";
     public const string Author = "Anak Contributors";
 
