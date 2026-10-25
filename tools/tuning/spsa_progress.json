@@ -1,45 +1,45 @@
 {
-  "step": 2,
-  "max_steps": 2,
-  "last_updated": "2026-10-25T17:01:52.305949",
-  "dry_run": true,
+  "step": 1,
+  "max_steps": 1,
+  "last_updated": "2026-10-25T17:03:25.028772",
+  "dry_run": false,
   "parameters": {
     "MicroMaxShare": {
-      "current": 7.68,
+      "current": 8.13,
       "current_int": 8,
-      "best": 6.71,
+      "best": 8.13,
       "default": 6.0,
       "min": 1.0,
       "max": 15.0
     },
     "MicroMinTime": {
-      "current": 24.74,
-      "current_int": 25,
-      "best": 25.71,
+      "current": 27.13,
+      "current_int": 27,
+      "best": 27.13,
       "default": 25.0,
       "min": 10.0,
       "max": 50.0
     },
     "MicroDepthGate": {
-      "current": 83.32,
-      "current_int": 83,
-      "best": 84.29,
+      "current": 87.13,
+      "current_int": 87,
+      "best": 87.13,
       "default": 85.0,
       "min": 60.0,
       "max": 98.0
     },
     "MicroAheadWeight": {
-      "current": 99.74,
-      "current_int": 100,
-      "best": 100.71,
+      "current": 97.87,
+      "current_int": 98,
+      "best": 97.87,
       "default": 100.0,
       "min": 40.0,
       "max": 180.0
     },
     "MicroEqualWeight": {
-      "current": 74.74,
-      "current_int": 75,
-      "best": 75.71,
+      "current": 72.87,
+      "current_int": 73,
+      "best": 72.87,
       "default": 75.0,
       "min": 30.0,
       "max": 140.0
@@ -49,80 +49,41 @@
   "history": [
     {
       "step": 1,
-      "timestamp": "2026-10-25T17:01:52.305949",
-      "wins": 13,
-      "losses": 8,
-      "draws": 9,
-      "games": 30,
-      "score_plus": 0.5833,
-      "delta_y": 0.1667,
-      "elo_diff": 58.5,
+      "timestamp": "2026-10-25T17:03:25.028772",
+      "wins": 3,
+      "losses": 1,
+      "draws": 0,
+      "games": 4,
+      "score_plus": 0.75,
+      "delta_y": 0.5,
+      "elo_diff": 190.8,
       "uci_plus": {
         "MicroMaxShare": 7,
         "MicroMinTime": 28,
-        "MicroDepthGate": 81,
-        "MicroAheadWeight": 108,
-        "MicroEqualWeight": 81
-      },
-      "uci_minus": {
-        "MicroMaxShare": 5,
-        "MicroMinTime": 22,
         "MicroDepthGate": 89,
         "MicroAheadWeight": 92,
         "MicroEqualWeight": 69
       },
-      "gradients": {
-        "MicroMaxShare": 0.083333,
-        "MicroMinTime": 0.027778,
-        "MicroDepthGate": -0.020833,
-        "MicroAheadWeight": 0.010417,
-        "MicroEqualWeight": 0.013889
-      },
-      "updated_params": {
-        "MicroMaxShare": 6.71,
-        "MicroMinTime": 25.71,
-        "MicroDepthGate": 84.29,
-        "MicroAheadWeight": 100.71,
-        "MicroEqualWeight": 75.71
-      }
-    },
-    {
-      "step": 2,
-      "timestamp": "2026-10-25T17:01:52.305949",
-      "wins": 6,
-      "losses": 13,
-      "draws": 11,
-      "games": 30,
-      "score_plus": 0.3833,
-      "delta_y": -0.2333,
-      "elo_diff": -82.6,
-      "uci_plus": {
-        "MicroMaxShare": 6,
-        "MicroMinTime": 29,
-        "MicroDepthGate": 88,
+      "uci_minus": {
+        "MicroMaxShare": 5,
+        "MicroMinTime": 22,
+        "MicroDepthGate": 81,
         "MicroAheadWeight": 108,
         "MicroEqualWeight": 81
       },
-      "uci_minus": {
-        "MicroMaxShare": 8,
-        "MicroMinTime": 23,
-        "MicroDepthGate": 81,
-        "MicroAheadWeight": 93,
-        "MicroEqualWeight": 70
-      },
       "gradients": {
-        "MicroMaxShare": 0.125127,
-        "MicroMinTime": -0.041709,
-        "MicroDepthGate": -0.031282,
-        "MicroAheadWeight": -0.015641,
-        "MicroEqualWeight": -0.020854
+        "MicroMaxShare": 0.25,
+        "MicroMinTime": 0.083333,
+        "MicroDepthGate": 0.0625,
+        "MicroAheadWeight": -0.03125,
+        "MicroEqualWeight": -0.041667
       },
       "updated_params": {
-        "MicroMaxShare": 7.68,
-        "MicroMinTime": 24.74,
-        "MicroDepthGate": 83.32,
-        "MicroAheadWeight": 99.74,
-        "MicroEqualWeight": 74.74
+        "MicroMaxShare": 8.13,
+        "MicroMinTime": 27.13,
+        "MicroDepthGate": 87.13,
+        "MicroAheadWeight": 97.87,
+        "MicroEqualWeight": 72.87
       }
     }
   ]

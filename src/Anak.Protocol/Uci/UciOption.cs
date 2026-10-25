@@ -330,7 +330,7 @@ public sealed class UciOptionRegistry
         MicroMinTime = new SpinOption("MicroMinTime", defaultValue: 25, min: 10, max: 60);
         MicroDepthGate = new SpinOption("MicroDepthGate", defaultValue: 85, min: 50, max: 100);
         MicroAheadWeight = new SpinOption("MicroAheadWeight", defaultValue: 100, min: 25, max: 200);
-        MicroEqualWeight = new SpinOption("MicroEqualWeight", defaultValue: 75, min: 25, max: 150);
+        MicroEqualWeight = new SpinOption("MicroEqualWeight", defaultValue: 73, min: 25, max: 150);
 
         // NNUE expert routing (tunable; defaults set to SPSA tuned parameters)
         ExpertRouteOrder = new StringOption("ExpertRouteOrder", defaultValue: "EQIA");

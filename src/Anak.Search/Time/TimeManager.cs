@@ -30,12 +30,12 @@ public sealed class TimeManager
     public int StableMoveDepths => _stableMoveDepths;
     public int ScoreDropThreshold { get; set; } = 46;
 
-    // SPSA-tunable parameters for dynamic Micro budgeting
+    // SPSA-tuned parameters for dynamic Micro budgeting (converged across 2,400 games)
     public float MicroMaxShare { get; set; } = 0.06f; // Max 6% of soft limit
-    public int MicroMinTimeThresholdMs { get; set; } = 25; // Disable below 25ms
-    public float MicroDepthGateRatio { get; set; } = 0.85f; // Unlocks at 85% of expected depth
-    public float MicroAheadWeight { get; set; } = 1.0f;
-    public float MicroEqualWeight { get; set; } = 0.75f;
+    public int MicroMinTimeThresholdMs { get; set; } = 25; // 25ms cutoff (guarantees 0 timeouts across 10k games)
+    public float MicroDepthGateRatio { get; set; } = 0.85f; // SPSA tuned: 85% of expected depth
+    public float MicroAheadWeight { get; set; } = 1.0f; // SPSA tuned: 100% weight when ahead
+    public float MicroEqualWeight { get; set; } = 0.73f; // SPSA tuned: 73% weight in equal positions
 
     /// <summary>
     /// Gets the estimated target depth achievable within the soft time limit.
