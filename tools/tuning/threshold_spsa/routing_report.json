@@ -1,0 +1,21 @@
+{
+  "generated": "2026-10-25T00:59:31.997371",
+  "dry_run": false,
+  "baseline_order": "EQIA",
+  "best_order": "EQIA",
+  "order_results": [],
+  "thresholds": {
+    "ExpertEndgameMaxPieces": 16,
+    "ExpertImbalanceMargin": 4,
+    "ExpertOpenThreshold": 49,
+    "ExpertAttackMinOpenness": 3
+  },
+  "uci_options": {
+    "ExpertRouteOrder": "EQIA",
+    "ExpertEndgameMaxPieces": 16,
+    "ExpertImbalanceMargin": 4,
+    "ExpertOpenThreshold": 49,
+    "ExpertAttackMinOpenness": 3
+  },
+  "csharp": "new ExpertRouting(order: \"EQIA\", endgameMaxPieces: 16, imbalanceMargin: 4, openThreshold: 0.49f, attackMinOpenness: 0.03f)"
+}

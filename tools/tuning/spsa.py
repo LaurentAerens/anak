@@ -146,6 +146,50 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
+# Micro NNUE & Dynamic Time Management Parameters
+MICRO_PARAMETERS: List[SpsaParam] = [
+    SpsaParam(
+        name="MicroMaxShare",
+        default=6.0,
+        min_val=1.0,
+        max_val=15.0,
+        c=1.0,
+        a=25.0,
+    ),
+    SpsaParam(
+        name="MicroMinTime",
+        default=25.0,
+        min_val=10.0,
+        max_val=50.0,
+        c=3.0,
+        a=75.0,
+    ),
+    SpsaParam(
+        name="MicroDepthGate",
+        default=85.0,
+        min_val=60.0,
+        max_val=98.0,
+        c=4.0,
+        a=100.0,
+    ),
+    SpsaParam(
+        name="MicroAheadWeight",
+        default=100.0,
+        min_val=40.0,
+        max_val=180.0,
+        c=8.0,
+        a=200.0,
+    ),
+    SpsaParam(
+        name="MicroEqualWeight",
+        default=75.0,
+        min_val=30.0,
+        max_val=140.0,
+        c=6.0,
+        a=150.0,
+    ),
+]
+
 # Batch B, C, D Hidden Parameters Suite
 BATCH_BCD_PARAMETERS: List[SpsaParam] = [
     # Batch B: History Dynamics & Pawn Correction
@@ -388,6 +432,7 @@ class SpsaTuner:
         dry_run: bool = False,
         alpha: float = 0.602,
         gamma: float = 0.101,
+        extra_options: Optional[Dict[str, object]] = None,
     ):
         self.params: Dict[str, SpsaParam] = {p.name: p for p in params}
         self.max_steps = max_steps
@@ -401,6 +446,8 @@ class SpsaTuner:
         self.openings_path = openings_path
         self.progress_file = progress_file or Path("tools/tuning/spsa_progress.json")
         self.dry_run = dry_run
+        # Fixed UCI options applied identically to both engines (e.g. a pinned ExpertRouteOrder)
+        self.extra_options: Dict[str, object] = dict(extra_options or {})
 
         self.alpha = alpha
         self.gamma = gamma
@@ -486,25 +533,33 @@ class SpsaTuner:
 
         rounds = max(1, self.games_per_step // 2)
 
+        # fastchess spawns engines from the raw cmd= string and fails on paths containing spaces
+        # (e.g. C:\Users\some name\...). Use a path relative to the repo root, and run from there.
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        try:
+            engine_cmd = os.path.relpath(str(self.anak_path), str(repo_root))
+        except ValueError:
+            engine_cmd = str(self.anak_path)
+
         # Construct fastchess engine options
         plus_opt_args = [
             f"option.Hash={self.hash_mb}",
             f"option.Threads={self.threads}",
-        ] + [f"option.{k}={v}" for k, v in plus_options.items()]
+        ] + [f"option.{k}={v}" for k, v in self.extra_options.items()] + [f"option.{k}={v}" for k, v in plus_options.items()]
 
         minus_opt_args = [
             f"option.Hash={self.hash_mb}",
             f"option.Threads={self.threads}",
-        ] + [f"option.{k}={v}" for k, v in minus_options.items()]
+        ] + [f"option.{k}={v}" for k, v in self.extra_options.items()] + [f"option.{k}={v}" for k, v in minus_options.items()]
 
         cmd = [
             str(self.fastchess_path),
             "-engine",
-            f"cmd={str(self.anak_path)}",
+            f"cmd={engine_cmd}",
             "name=Anak-Plus",
         ] + plus_opt_args + [
             "-engine",
-            f"cmd={str(self.anak_path)}",
+            f"cmd={engine_cmd}",
             "name=Anak-Minus",
         ] + minus_opt_args + [
             "-each",
@@ -535,12 +590,16 @@ class SpsaTuner:
                 text=True,
                 bufsize=1,
                 universal_newlines=True,
+                cwd=str(repo_root),
             )
 
             wins, losses, draws = 0, 0, 0
+            tail: List[str] = []
             games_pattern = re.compile(r"Games:\s*(\d+),\s*Wins:\s*(\d+),\s*Losses:\s*(\d+),\s*Draws:\s*(\d+)")
 
             for line in proc.stdout:
+                tail.append(line.rstrip())
+                del tail[:-15]
                 m = games_pattern.search(line)
                 if m:
                     wins = int(m.group(2))
@@ -550,7 +609,9 @@ class SpsaTuner:
             proc.wait()
             if wins + losses + draws > 0:
                 return wins, losses, draws
-        except Exception as e:
+            # Never silently substitute simulated results for a live run: they would corrupt the tuning.
+            raise RuntimeError("fastchess produced no games. Last output:\n" + "\n".join(tail))
+        except OSError as e:
             print(f"[!] Warning: fastchess match execution failed ({e}). Using mock match.")
 
         return self._simulate_mock_match(plus_options, minus_options)
@@ -577,6 +638,8 @@ class SpsaTuner:
             "ScoreDropThreshold": 45,
         }
         for k, v_plus in plus_options.items():
+            if not isinstance(v_plus, (int, float)):
+                continue  # non-numeric options (e.g. ExpertRouteOrder) carry no synthetic bias
             t = targets.get(k, 75)
             v_minus = minus_options.get(k, v_plus)
             dist_plus = abs(v_plus - t)
@@ -746,8 +809,8 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["bcd", "all", "search"], default="bcd",
-                        help="Parameter batch to tune ('bcd' for 13 new hidden constants, 'all' for all 25 parameters, 'search' for 12 search heuristics)")
+    parser.add_argument("--batch", type=str, choices=["bcd", "all", "search", "micro"], default="bcd",
+                        help="Parameter batch to tune ('bcd' for 13 new hidden constants, 'all' for all 25 parameters, 'search' for 12 search heuristics, 'micro' for 5 dynamic Micro budget parameters)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--output", type=str, default=None, help="Path to spsa_progress.json output")
     return parser.parse_args()
@@ -766,8 +829,10 @@ def main():
         param_set = BATCH_BCD_PARAMETERS
     elif args.batch == "search":
         param_set = DEFAULT_PARAMETERS
+    elif args.batch == "micro":
+        param_set = MICRO_PARAMETERS
     else:
-        param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS
+        param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS
 
     tuner = SpsaTuner(
         params=param_set,

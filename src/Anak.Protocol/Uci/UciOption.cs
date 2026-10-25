@@ -288,6 +288,11 @@ public sealed class UciOptionRegistry
     public SpinOption RfpImprovingMultiplier { get; }
     public SpinOption SingularMargin { get; }
     public SpinOption QsDeltaMargin { get; }
+    public SpinOption MicroMaxShare { get; }
+    public SpinOption MicroMinTime { get; }
+    public SpinOption MicroDepthGate { get; }
+    public SpinOption MicroAheadWeight { get; }
+    public SpinOption MicroEqualWeight { get; }
     public StringOption ExpertRouteOrder { get; }
     public SpinOption ExpertEndgameMaxPieces { get; }
     public SpinOption ExpertImbalanceMargin { get; }
@@ -321,6 +326,11 @@ public sealed class UciOptionRegistry
         RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 111, min: 100, max: 250);
         SingularMargin = new SpinOption("SingularMargin", defaultValue: 6, min: 1, max: 8);
         QsDeltaMargin = new SpinOption("QsDeltaMargin", defaultValue: 188, min: 50, max: 500);
+        MicroMaxShare = new SpinOption("MicroMaxShare", defaultValue: 6, min: 1, max: 20);
+        MicroMinTime = new SpinOption("MicroMinTime", defaultValue: 25, min: 10, max: 60);
+        MicroDepthGate = new SpinOption("MicroDepthGate", defaultValue: 85, min: 50, max: 100);
+        MicroAheadWeight = new SpinOption("MicroAheadWeight", defaultValue: 100, min: 25, max: 200);
+        MicroEqualWeight = new SpinOption("MicroEqualWeight", defaultValue: 75, min: 25, max: 150);
 
         // NNUE expert routing (tunable; defaults set to SPSA tuned parameters)
         ExpertRouteOrder = new StringOption("ExpertRouteOrder", defaultValue: "EQIA");
@@ -354,6 +364,11 @@ public sealed class UciOptionRegistry
         Register(RfpImprovingMultiplier);
         Register(SingularMargin);
         Register(QsDeltaMargin);
+        Register(MicroMaxShare);
+        Register(MicroMinTime);
+        Register(MicroDepthGate);
+        Register(MicroAheadWeight);
+        Register(MicroEqualWeight);
         Register(ExpertRouteOrder);
         Register(ExpertEndgameMaxPieces);
         Register(ExpertImbalanceMargin);

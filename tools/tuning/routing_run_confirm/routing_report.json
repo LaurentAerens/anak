@@ -1,0 +1,49 @@
+{
+  "generated": "2026-10-25T00:04:27.603204",
+  "dry_run": false,
+  "baseline_order": "EQIA",
+  "best_order": "EQIA",
+  "order_results": [
+    {
+      "order": "EQAI",
+      "wins": 567,
+      "losses": 538,
+      "draws": 395,
+      "games": 1500,
+      "elo": 6.7,
+      "elo_err": 15.1
+    },
+    {
+      "order": "EQA",
+      "wins": 600,
+      "losses": 627,
+      "draws": 273,
+      "games": 1500,
+      "elo": -6.3,
+      "elo_err": 15.9
+    },
+    {
+      "order": "IEQA",
+      "wins": 595,
+      "losses": 640,
+      "draws": 265,
+      "games": 1500,
+      "elo": -10.4,
+      "elo_err": 16.0
+    },
+    {
+      "order": "QAEI",
+      "wins": 605,
+      "losses": 677,
+      "draws": 218,
+      "games": 1500,
+      "elo": -16.7,
+      "elo_err": 16.3
+    }
+  ],
+  "thresholds": {},
+  "uci_options": {
+    "ExpertRouteOrder": "EQIA"
+  },
+  "csharp": "new ExpertRouting(order: \"EQIA\")"
+}

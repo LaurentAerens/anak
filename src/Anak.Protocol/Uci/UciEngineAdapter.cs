@@ -155,6 +155,11 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.RfpImprovingMultiplier = _options.RfpImprovingMultiplier.Value;
         _alphaBetaEngine.SingularMargin = _options.SingularMargin.Value;
         _alphaBetaEngine.QsDeltaMargin = _options.QsDeltaMargin.Value;
+        _alphaBetaEngine.MicroMaxShare = _options.MicroMaxShare.Value;
+        _alphaBetaEngine.MicroMinTime = _options.MicroMinTime.Value;
+        _alphaBetaEngine.MicroDepthGate = _options.MicroDepthGate.Value;
+        _alphaBetaEngine.MicroAheadWeight = _options.MicroAheadWeight.Value;
+        _alphaBetaEngine.MicroEqualWeight = _options.MicroEqualWeight.Value;
 
         _options.LmrBase.ValueChanged += val => _alphaBetaEngine.LmrBase = val;
         _options.LmrDivision.ValueChanged += val => _alphaBetaEngine.LmrDivision = val;
@@ -168,6 +173,11 @@ public sealed class UciEngineAdapter
         _options.RfpImprovingMultiplier.ValueChanged += val => _alphaBetaEngine.RfpImprovingMultiplier = val;
         _options.SingularMargin.ValueChanged += val => _alphaBetaEngine.SingularMargin = val;
         _options.QsDeltaMargin.ValueChanged += val => _alphaBetaEngine.QsDeltaMargin = val;
+        _options.MicroMaxShare.ValueChanged += val => _alphaBetaEngine.MicroMaxShare = val;
+        _options.MicroMinTime.ValueChanged += val => _alphaBetaEngine.MicroMinTime = val;
+        _options.MicroDepthGate.ValueChanged += val => _alphaBetaEngine.MicroDepthGate = val;
+        _options.MicroAheadWeight.ValueChanged += val => _alphaBetaEngine.MicroAheadWeight = val;
+        _options.MicroEqualWeight.ValueChanged += val => _alphaBetaEngine.MicroEqualWeight = val;
 
         // Initialize board to standard start position
         _board = Fen.Parse(Fen.StartPosition);

@@ -1,0 +1,256 @@
+{
+  "generated": "2026-10-24T23:42:32.920469",
+  "dry_run": false,
+  "baseline_order": "EQIA",
+  "best_order": "EQAI",
+  "order_results": [
+    {
+      "order": "EQAI",
+      "wins": 106,
+      "losses": 90,
+      "draws": 54,
+      "games": 250,
+      "elo": 22.3,
+      "elo_err": 38.3
+    },
+    {
+      "order": "QAEI",
+      "wins": 105,
+      "losses": 91,
+      "draws": 54,
+      "games": 250,
+      "elo": 19.5,
+      "elo_err": 38.3
+    },
+    {
+      "order": "IEQA",
+      "wins": 99,
+      "losses": 86,
+      "draws": 65,
+      "games": 250,
+      "elo": 18.1,
+      "elo_err": 37.2
+    },
+    {
+      "order": "EQA",
+      "wins": 103,
+      "losses": 92,
+      "draws": 55,
+      "games": 250,
+      "elo": 15.3,
+      "elo_err": 38.2
+    },
+    {
+      "order": "QEIA",
+      "wins": 94,
+      "losses": 89,
+      "draws": 67,
+      "games": 250,
+      "elo": 6.9,
+      "elo_err": 37.0
+    },
+    {
+      "order": "IQAE",
+      "wins": 101,
+      "losses": 98,
+      "draws": 51,
+      "games": 250,
+      "elo": 4.2,
+      "elo_err": 38.6
+    },
+    {
+      "order": "EQI",
+      "wins": 93,
+      "losses": 91,
+      "draws": 66,
+      "games": 250,
+      "elo": 2.8,
+      "elo_err": 37.1
+    },
+    {
+      "order": "EAIQ",
+      "wins": 86,
+      "losses": 89,
+      "draws": 75,
+      "games": 250,
+      "elo": -4.2,
+      "elo_err": 36.2
+    },
+    {
+      "order": "QIEA",
+      "wins": 95,
+      "losses": 98,
+      "draws": 57,
+      "games": 250,
+      "elo": -4.2,
+      "elo_err": 38.0
+    },
+    {
+      "order": "QEAI",
+      "wins": 94,
+      "losses": 98,
+      "draws": 58,
+      "games": 250,
+      "elo": -5.6,
+      "elo_err": 37.9
+    },
+    {
+      "order": "AEQI",
+      "wins": 96,
+      "losses": 101,
+      "draws": 53,
+      "games": 250,
+      "elo": -6.9,
+      "elo_err": 38.4
+    },
+    {
+      "order": "IEAQ",
+      "wins": 91,
+      "losses": 97,
+      "draws": 62,
+      "games": 250,
+      "elo": -8.3,
+      "elo_err": 37.5
+    },
+    {
+      "order": "IAQE",
+      "wins": 93,
+      "losses": 99,
+      "draws": 58,
+      "games": 250,
+      "elo": -8.3,
+      "elo_err": 37.9
+    },
+    {
+      "order": "EAQI",
+      "wins": 85,
+      "losses": 92,
+      "draws": 73,
+      "games": 250,
+      "elo": -9.7,
+      "elo_err": 36.4
+    },
+    {
+      "order": "EIAQ",
+      "wins": 90,
+      "losses": 98,
+      "draws": 62,
+      "games": 250,
+      "elo": -11.1,
+      "elo_err": 37.5
+    },
+    {
+      "order": "QIAE",
+      "wins": 92,
+      "losses": 101,
+      "draws": 57,
+      "games": 250,
+      "elo": -12.5,
+      "elo_err": 38.0
+    },
+    {
+      "order": "AQEI",
+      "wins": 87,
+      "losses": 97,
+      "draws": 66,
+      "games": 250,
+      "elo": -13.9,
+      "elo_err": 37.1
+    },
+    {
+      "order": "AIEQ",
+      "wins": 86,
+      "losses": 96,
+      "draws": 68,
+      "games": 250,
+      "elo": -13.9,
+      "elo_err": 36.9
+    },
+    {
+      "order": "EIA",
+      "wins": 93,
+      "losses": 103,
+      "draws": 54,
+      "games": 250,
+      "elo": -13.9,
+      "elo_err": 38.3
+    },
+    {
+      "order": "IAEQ",
+      "wins": 87,
+      "losses": 104,
+      "draws": 59,
+      "games": 250,
+      "elo": -23.7,
+      "elo_err": 37.9
+    },
+    {
+      "order": "AEIQ",
+      "wins": 89,
+      "losses": 106,
+      "draws": 55,
+      "games": 250,
+      "elo": -23.7,
+      "elo_err": 38.3
+    },
+    {
+      "order": "AIQE",
+      "wins": 85,
+      "losses": 102,
+      "draws": 63,
+      "games": 250,
+      "elo": -23.7,
+      "elo_err": 37.5
+    },
+    {
+      "order": "EIQA",
+      "wins": 85,
+      "losses": 104,
+      "draws": 61,
+      "games": 250,
+      "elo": -26.5,
+      "elo_err": 37.7
+    },
+    {
+      "order": "AQIE",
+      "wins": 85,
+      "losses": 109,
+      "draws": 56,
+      "games": 250,
+      "elo": -33.5,
+      "elo_err": 38.2
+    },
+    {
+      "order": "QIA",
+      "wins": 83,
+      "losses": 109,
+      "draws": 58,
+      "games": 250,
+      "elo": -36.3,
+      "elo_err": 38.0
+    },
+    {
+      "order": "IQEA",
+      "wins": 78,
+      "losses": 113,
+      "draws": 59,
+      "games": 250,
+      "elo": -49.0,
+      "elo_err": 38.1
+    },
+    {
+      "order": "QAIE",
+      "wins": 74,
+      "losses": 115,
+      "draws": 61,
+      "games": 250,
+      "elo": -57.5,
+      "elo_err": 38.0
+    }
+  ],
+  "thresholds": {},
+  "uci_options": {
+    "ExpertRouteOrder": "EQAI"
+  },
+  "csharp": "new ExpertRouting(order: \"EQAI\")"
+}

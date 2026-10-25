@@ -150,6 +150,36 @@ public sealed class AlphaBetaEngine : ISearchEngine
         }
     }
 
+    public int MicroMaxShare
+    {
+        get => (int)Math.Round(_timeManager.MicroMaxShare * 100.0f);
+        set => _timeManager.MicroMaxShare = value / 100.0f;
+    }
+
+    public int MicroMinTime
+    {
+        get => _timeManager.MicroMinTimeThresholdMs;
+        set => _timeManager.MicroMinTimeThresholdMs = value;
+    }
+
+    public int MicroDepthGate
+    {
+        get => (int)Math.Round(_timeManager.MicroDepthGateRatio * 100.0f);
+        set => _timeManager.MicroDepthGateRatio = value / 100.0f;
+    }
+
+    public int MicroAheadWeight
+    {
+        get => (int)Math.Round(_timeManager.MicroAheadWeight * 100.0f);
+        set => _timeManager.MicroAheadWeight = value / 100.0f;
+    }
+
+    public int MicroEqualWeight
+    {
+        get => (int)Math.Round(_timeManager.MicroEqualWeight * 100.0f);
+        set => _timeManager.MicroEqualWeight = value / 100.0f;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetLmrReduction(int depth, int moveIndex)
     {
@@ -464,6 +494,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             long lastIterElapsed = 0;
             _incEval?.InitSearch(in board);
+            IMultiTierEvaluator? multiTier = _evaluator as IMultiTierEvaluator;
             int expectedDepth = _engine._timeManager.EstimateTargetDepth();
             int completedDepth = 0;
 
@@ -562,6 +593,26 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 // Extract PV from Transposition Table
                 List<Move> pv = ExtractPv(in board, bestMove);
 
+                // Forward PV Leaf Exploration using Micro & Volatility (Horizon Blunder Guard)
+                if (multiTier is { HasMicroModel: true } && pv.Count > 0 && !cancellationToken.IsCancellationRequested)
+                {
+                    bool isStable = _engine._timeManager.StableMoveDepths >= 2;
+                    long microBudgetMs = _engine._timeManager.ComputeMicroBudget(currentDepth, expectedDepth, score, isStable);
+                    if (microBudgetMs > 0)
+                    {
+                        long deadline = _engine._timeManager.ElapsedMilliseconds + microBudgetMs;
+                        int penalty = ProbePvLeafHorizon(in board, pv, score, multiTier, deadline);
+                        if (penalty > 0)
+                        {
+                            score -= penalty;
+                            bestScore = score;
+                            prevScore = score;
+                            _engine.LastScoreCp = score;
+                            _tt.Store(board.ZobristKey, bestMove, (byte)Math.Clamp(currentDepth, 0, 255), TTEntry.ScoreToTt(score, 0), _tt.CurrentAge, TTFlags.Exact);
+                        }
+                    }
+                }
+
                 // Send UCI info callback
                 long elapsedMs = _engine._timeManager.ElapsedMilliseconds;
                 ulong totalNodes = _engine.GetTotalNodes();
@@ -647,7 +698,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             // --- Micro Forward Blunder Watchdog ---
             // When holding a candidate move, verify with ultra-fast Micro tactical watchdog
-            if (_evaluator is IMultiTierEvaluator multiTier && multiTier.HasMicroModel && !bestMove.IsNull && !cancellationToken.IsCancellationRequested)
+            if (multiTier is { HasMicroModel: true } && !bestMove.IsNull && !cancellationToken.IsCancellationRequested)
             {
                 bestMove = RunMicroBlunderWatchdog(in rootBoard, bestMove, bestScore, completedDepth, expectedDepth, multiTier, cancellationToken);
             }
@@ -820,6 +871,108 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
 
             return candidateMove;
+        }
+
+        private int ProbePvLeafHorizon(
+            in Board rootBoard,
+            List<Move> pv,
+            int baseScore,
+            IMultiTierEvaluator multiTier,
+            long deadline)
+        {
+            if (pv.Count == 0 || Math.Abs(baseScore) >= TTEntry.MateBound)
+            {
+                return 0;
+            }
+
+            Board leafBoard = rootBoard;
+            for (int i = 0; i < pv.Count; i++)
+            {
+                leafBoard.MakeMove(pv[i], out _);
+            }
+
+            // Only probe when the defending opponent is on move at the leaf of our variation
+            if (leafBoard.SideToMove != rootBoard.SideToMove.Opponent())
+            {
+                return 0;
+            }
+
+            if (leafBoard.IsFiftyMoveRule() || leafBoard.HasInsufficientMaterial())
+            {
+                return 0;
+            }
+
+            // Volatility Gate: only probe if the leaf position is tactically sharp
+            int volatility = multiTier.EvaluateVolatility(in leafBoard).Raw;
+            if (volatility < 150)
+            {
+                return 0;
+            }
+
+            // Defending opponent's Micro score at the leaf
+            int leafOppMicro = multiTier.EvaluateMicro(in leafBoard).Raw;
+            int ourScoreBefore = -leafOppMicro;
+
+            MoveList oppMoves = default;
+            MoveGenerator.GenerateLegalMoves(in leafBoard, ref oppMoves);
+            if (oppMoves.Count == 0)
+            {
+                return 0;
+            }
+
+            bool isRefuted = false;
+            int maxDamage = 0;
+
+            for (int i = 0; i < oppMoves.Count; i++)
+            {
+                if (_engine._timeManager.ElapsedMilliseconds >= deadline)
+                {
+                    break;
+                }
+
+                Move m = oppMoves[i];
+
+                // Direct winning capture via SEE
+                if (m.IsCapture || m.IsPromotion)
+                {
+                    int see = StaticExchangeEvaluator.Evaluate(in leafBoard, m);
+                    if (see >= 200)
+                    {
+                        isRefuted = true;
+                        maxDamage = Math.Max(maxDamage, see);
+                        break;
+                    }
+                }
+
+                // Checks and tactical threats probed with Micro
+                leafBoard.MakeMove(m, out BoardState replyState);
+                bool inCheck = leafBoard.IsInCheck();
+                bool checkOrTactical = inCheck || m.IsCapture || m.IsPromotion;
+
+                if (checkOrTactical)
+                {
+                    // Score from our perspective after opponent's reply
+                    int ourScoreAfter = multiTier.EvaluateMicro(in leafBoard).Raw;
+                    int drop = ourScoreBefore - ourScoreAfter;
+
+                    if (drop > 250)
+                    {
+                        isRefuted = true;
+                        maxDamage = Math.Max(maxDamage, drop);
+                        leafBoard.UnmakeMove(m, in replyState);
+                        break;
+                    }
+                }
+                leafBoard.UnmakeMove(m, in replyState);
+            }
+
+            if (isRefuted)
+            {
+                // Bounded evaluation penalty (40 to 100 cp)
+                return Math.Clamp((maxDamage / 3) + (volatility / 10), 40, 100);
+            }
+
+            return 0;
         }
 
         /// <summary>
