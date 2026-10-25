@@ -83,15 +83,15 @@ def calculate_pawn_openness(board: chess.Board) -> float:
 def classify_expert(board: chess.Board, openness: Optional[float] = None) -> str:
     """
     Classifies a board position into one of the 6 primary StandardNNUE experts
-    matching Anak's C# multi-expert routing priority order:
-      1. total_pieces <= 14 -> "endgame"
+    matching Anak's C# multi-expert routing priority order and tuned thresholds:
+      1. total_pieces <= 16 -> "endgame"
       2. total_queens == 0  -> "queenless"
-      3. is_imbalance       -> "imbalance"
-      4. opposite_castling  -> "attack"
-      5. openness >= 0.50   -> "open" else "closed"
+      3. is_imbalance (diff >= 4 pawns) -> "imbalance"
+      4. opposite_castling and openness >= 0.03 -> "attack"
+      5. openness >= 0.49   -> "open" else "closed"
     """
     total_pieces = bin(board.occupied).count("1")
-    if total_pieces <= 14:
+    if total_pieces <= 16:
         return "endgame"
 
     white_queens = bin(board.pieces_mask(chess.QUEEN, chess.WHITE)).count("1")
@@ -119,10 +119,13 @@ def classify_expert(board: chess.Board, openness: Optional[float] = None) -> str
     is_imbalance = (
         (white_queens != black_queens)
         or (white_rooks != black_rooks and white_minors != black_minors)
-        or (material_imbalance >= 2)
+        or (material_imbalance >= 4)
     )
     if is_imbalance:
         return "imbalance"
+
+    if openness is None:
+        openness = calculate_pawn_openness(board)
 
     w_king_sq = board.king(chess.WHITE)
     b_king_sq = board.king(chess.BLACK)
@@ -131,12 +134,10 @@ def classify_expert(board: chess.Board, openness: Optional[float] = None) -> str
     opposite_castling = (total_queens > 0) and (
         (w_file <= 2 and b_file >= 5) or (w_file >= 5 and b_file <= 2)
     )
-    if opposite_castling:
+    if opposite_castling and openness >= 0.03:
         return "attack"
 
-    if openness is None:
-        openness = calculate_pawn_openness(board)
-    return "open" if openness >= 0.50 else "closed"
+    return "open" if openness >= 0.49 else "closed"
 
 
 def extract_metrics_from_board(
@@ -184,7 +185,7 @@ def extract_metrics_from_board(
     is_imbalance = (
         (white_queens != black_queens)
         or (white_rooks != black_rooks and white_minors != black_minors)
-        or (material_imbalance >= 2)
+        or (material_imbalance >= 4)
     )
 
     w_king_sq = board.king(chess.WHITE)
@@ -194,8 +195,9 @@ def extract_metrics_from_board(
     opposite_castling = (total_queens > 0) and (
         (w_file <= 2 and b_file >= 5) or (w_file >= 5 and b_file <= 2)
     )
-
     openness = calculate_pawn_openness(board)
+    is_attack = opposite_castling and (openness >= 0.03)
+
     expert_type = classify_expert(board, openness=openness)
 
     eval_float = float(eval_val) if eval_val is not None else 0.0
@@ -237,13 +239,14 @@ def extract_metrics_from_board(
         "material_imbalance": material_imbalance,
         "is_imbalance": is_imbalance,
         "opposite_castling": opposite_castling,
-        "is_endgame": total_pieces <= 14,
+        "is_attack": is_attack,
+        "is_endgame": total_pieces <= 16,
         "is_deep_endgame": total_pieces <= 10,
         "expert": expert_type,
         # Topology
         "openness": openness,
-        "is_open": openness >= 0.50,
-        "is_closed": openness < 0.50,
+        "is_open": openness >= 0.49,
+        "is_closed": openness < 0.49,
         # Evals & Blunders
         "eval": eval_float,
         "abs_eval": abs(eval_float),

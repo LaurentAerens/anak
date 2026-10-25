@@ -18,6 +18,9 @@ import subprocess
 import sys
 import time
 from typing import List, Union, Optional
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 import chess
 import numpy as np
 import torch
@@ -31,6 +34,7 @@ from model import (
     enforce_perspective_antisymmetry,
     evaluate_benchmark_positions,
 )
+
 from loss import ModernNNUELoss, BlunderLoss
 from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
 from binpack import BinpackReader, BinpackWriter, read_binpack_count
@@ -56,7 +60,7 @@ def load_pipeline_state(checkpoints_dir: str) -> dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"completed_models": [], "spsa_completed": False, "spsa_requested": False}
+    return {"completed_models": []}
 
 
 def save_pipeline_state(checkpoints_dir: str, state: dict):
@@ -76,6 +80,15 @@ ALL_8_MODELS = [
     "attack",
     "micro",
     "volatility",
+]
+
+IMPACTED_MODELS = [
+    "open",
+    "closed",
+    "endgame",
+    "queenless",
+    "imbalance",
+    "attack",
 ]
 
 
@@ -219,7 +232,11 @@ def train_single_model(
     has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
     amp_dtype = torch.bfloat16 if has_bf16 else torch.float16
     amp_enabled = is_cuda
-    scaler = torch.amp.GradScaler("cuda", enabled=(is_cuda and amp_dtype == torch.float16))
+    _scaler_enabled = is_cuda and amp_dtype == torch.float16
+    if hasattr(torch.amp, "GradScaler"):
+        scaler = torch.amp.GradScaler("cuda", enabled=_scaler_enabled)
+    else:  # torch < 2.3
+        scaler = torch.cuda.amp.GradScaler(enabled=_scaler_enabled)
 
     if is_cuda:
         precision_str = "bfloat16 (native Tensor Cores)" if has_bf16 else "float16 (+ GradScaler)"
@@ -492,85 +509,28 @@ def train_single_model(
     return best_path
 
 
-def parse_models_arg(models_arg: List[str]) -> List[str]:
+def parse_models_arg(models_arg: List[str], impacted_only: bool = False) -> List[str]:
+    default_set = list(IMPACTED_MODELS) if impacted_only else list(ALL_8_MODELS)
     if not models_arg or "all" in [m.lower() for m in models_arg]:
-        return list(ALL_8_MODELS)
+        return default_set
     selected = []
     for item in models_arg:
         for part in item.split(","):
             m = part.strip().lower()
             if not m:
                 continue
+            if m in ("impacted", "expert", "experts"):
+                for exp in IMPACTED_MODELS:
+                    if exp not in selected:
+                        selected.append(exp)
+                continue
             if m == "small":
                 m = "micro"
             if m in ALL_8_MODELS and m not in selected:
                 selected.append(m)
             elif m not in ALL_8_MODELS:
-                raise ValueError(f"Unknown model '{m}'. Valid choices: {ALL_8_MODELS + ['small', 'all']}")
-    return selected or list(ALL_8_MODELS)
-
-
-def run_spsa_tuning(
-    repo_root: str,
-    steps: int = 50,
-    games_per_step: int = 30,
-    tc: str = "2+0.02",
-    concurrency: int = 8,
-    resume: bool = True,
-    dry_run: bool = False,
-):
-    print_banner("STEP 5: SPSA SEARCH HEURISTICS TUNING")
-    print(f"Target Steps:       {steps}")
-    print(f"Games Per Step:     {games_per_step} ({steps * games_per_step:,} total games)")
-    print(f"Time Control:       {tc}")
-    print(f"Concurrency:        {concurrency} worker thread(s)")
-    print(f"Resumption Mode:    {'Enabled (--resume)' if resume else 'Disabled'}")
-
-    # Build Anak C# Release engine so that updated networks and heuristics are used
-    print("\n[Build] Building Anak Chess Engine in Release mode...", flush=True)
-    try:
-        subprocess.run(
-            ["dotnet", "build", os.path.join(repo_root, "Anak.sln"), "-c", "Release", "-v", "m"],
-            check=True,
-        )
-        print("  [Build] dotnet build Release succeeded.", flush=True)
-    except Exception as e:
-        print(f"  [Build Warning] dotnet build returned an issue: {e}", flush=True)
-
-    # Sync compiled binaries to tools/fastchess/bin/anak
-    src_bin_dir = os.path.join(repo_root, "src", "Anak.Protocol", "bin", "Release", "net11.0")
-    dst_bin_dir = os.path.join(repo_root, "tools", "fastchess", "bin", "anak")
-    if os.path.isdir(src_bin_dir) and os.path.isdir(dst_bin_dir):
-        for f in os.listdir(src_bin_dir):
-            if f.endswith((".dll", ".exe", ".json")):
-                s_file = os.path.join(src_bin_dir, f)
-                d_file = os.path.join(dst_bin_dir, f)
-                shutil.copy2(s_file, d_file)
-
-    spsa_script = os.path.join(repo_root, "tools", "tuning", "spsa.py")
-    if not os.path.isfile(spsa_script):
-        print(f"[!] SPSA script not found at {spsa_script}", flush=True)
-        return
-
-    cmd = [
-        sys.executable,
-        spsa_script,
-        "--steps", str(steps),
-        "--games-per-step", str(games_per_step),
-        "--tc", str(tc),
-        "--concurrency", str(concurrency),
-    ]
-    if resume:
-        cmd.append("--resume")
-    if dry_run:
-        cmd.append("--dry-run")
-
-    print(f"[Exec] Running command: {' '.join(cmd)}\n", flush=True)
-    ret = subprocess.run(cmd)
-    if ret.returncode != 0:
-        print(f"[!] SPSA tuning exited with return code {ret.returncode}", flush=True)
-    else:
-        print("[+] SPSA tuning completed successfully!", flush=True)
+                raise ValueError(f"Unknown model '{m}'. Valid choices: {ALL_8_MODELS + ['small', 'all', 'impacted', 'expert']}")
+    return selected or default_set
 
 
 def main():
@@ -578,7 +538,7 @@ def main():
     repo_root = os.path.dirname(script_dir)
     default_networks = os.path.join(repo_root, "networks")
 
-    parser = argparse.ArgumentParser(description="All-in-One Anak 8-Model NNUE Pipeline: Stockfish d9/d11 Gather, Unpack, Train, Deploy, SPSA")
+    parser = argparse.ArgumentParser(description="All-in-One Anak 8-Model NNUE Pipeline: Stockfish d9/d11 Gather, Unpack, Train, Deploy")
     parser.add_argument(
         "--models",
         type=str,
@@ -627,43 +587,15 @@ def main():
         dest="resume",
         action="store_true",
         default=False,
-        help="Resume training, deployment, and SPSA from existing checkpoints if available",
+        help="Resume training and deployment from existing checkpoints if available",
     )
     parser.add_argument(
-        "--spsa",
+        "--impacted-only",
+        "--only-impacted",
+        dest="impacted_only",
         action="store_true",
         default=False,
-        help="Run automated SPSA tuning for search heuristics after NNUE training & deployment",
-    )
-    parser.add_argument(
-        "--spsa-steps",
-        type=int,
-        default=50,
-        help="Total SPSA optimization steps (default: 50)",
-    )
-    parser.add_argument(
-        "--spsa-games-per-step",
-        type=int,
-        default=30,
-        help="Games per SPSA step match (default: 30)",
-    )
-    parser.add_argument(
-        "--spsa-tc",
-        type=str,
-        default="2+0.02",
-        help="SPSA match time control in seconds base+inc (default: 2+0.02)",
-    )
-    parser.add_argument(
-        "--spsa-concurrency",
-        type=int,
-        default=min(16, max(1, os.cpu_count() or 4)),
-        help="Concurrency for fastchess during SPSA tuning",
-    )
-    parser.add_argument(
-        "--spsa-dry-run",
-        action="store_true",
-        default=False,
-        help="Run mock simulated matches without invoking fastchess",
+        help="Only train and deploy models impacted by the King-Bucketed NNUE + SCReLU upgrade (open, closed, endgame, queenless, imbalance, attack)",
     )
     args = parser.parse_args()
 
@@ -672,8 +604,6 @@ def main():
         args.positions_per_model = 500_000
         args.epochs = 30
         args.d9_chunks = 25
-        args.spsa_steps = 15
-        args.spsa_games_per_step = 10
     elif args.preset == "standard":
         args.positions_per_model = 5_000_000
         args.epochs = 60
@@ -691,16 +621,11 @@ def main():
     if args.full_download:
         args.d9_chunks = 0
 
-    selected_models = parse_models_arg(args.models)
+    selected_models = parse_models_arg(args.models, impacted_only=args.impacted_only)
 
     # Load and synchronize pipeline state
     os.makedirs(args.checkpoints_dir, exist_ok=True)
     pipeline_state = load_pipeline_state(args.checkpoints_dir)
-    if args.spsa:
-        pipeline_state["spsa_requested"] = True
-        save_pipeline_state(args.checkpoints_dir, pipeline_state)
-    elif args.resume and pipeline_state.get("spsa_requested", False):
-        args.spsa = True
 
     overall_start = time.time()
 
@@ -736,7 +661,6 @@ def main():
     print(f"Data Augmentation:  {'Horizontal Board Reflection' if args.augment_flip else 'Disabled'}")
     print(f"Dataset Archives:   Depth-9 & {'Depth-11 Included' if args.include_d11 else 'Depth-9 Only'}")
     print(f"Resumption Mode:    {'ENABLED (--continue)' if args.resume else 'Disabled'}")
-    print(f"SPSA Post-Tuning:   {'ENABLED' if args.spsa else 'Disabled (pass --spsa to enable)'}")
 
     if args.resume:
         completed = pipeline_state.get("completed_models", [])
@@ -866,29 +790,10 @@ def main():
     for idx, (m, out_path) in enumerate(exported_files, 1):
         print(f"  {idx}. [{m.capitalize():10s} Model] -> {out_path} ({os.path.getsize(out_path):,} bytes)")
 
-    # Execute SPSA Search Heuristics Tuning if requested
-    should_run_spsa = args.spsa or (args.resume and pipeline_state.get("spsa_requested", False))
-    if should_run_spsa:
-        if args.resume and pipeline_state.get("spsa_completed", False):
-            print_banner("SPSA TUNING ALREADY COMPLETED")
-            print("  SPSA search heuristics tuning was already marked completed in pipeline checkpoint.")
-        else:
-            run_spsa_tuning(
-                repo_root=repo_root,
-                steps=args.spsa_steps,
-                games_per_step=args.spsa_games_per_step,
-                tc=args.spsa_tc,
-                concurrency=args.spsa_concurrency,
-                resume=args.resume,
-                dry_run=args.spsa_dry_run,
-            )
-            pipeline_state["spsa_completed"] = True
-            save_pipeline_state(args.checkpoints_dir, pipeline_state)
-
     total_time = time.time() - overall_start
-    print_banner("ANAK NNUE TRAINING & TUNING PIPELINE COMPLETED SUCCESSFULLY!")
+    print_banner("ANAK NNUE TRAINING PIPELINE COMPLETED SUCCESSFULLY!")
     print(f"Total Elapsed Time: {total_time / 60:.2f} minutes")
-    print(f"All {len(exported_files)} trained network(s) and search heuristics are ready for Anak's C# engine!\n")
+    print(f"All {len(exported_files)} trained network(s) are ready for Anak's C# engine!\n")
 
 
 if __name__ == "__main__":

@@ -327,13 +327,13 @@ class TcecDataset(IterableDataset):
 
                         accept = False
                         if self.target_model == "open":
-                            if expert == "open" or openness >= 0.50 or is_secondary_10pct:
+                            if expert == "open" or openness >= 0.49 or is_secondary_10pct:
                                 accept = True
                         elif self.target_model == "closed":
-                            if expert == "closed" or openness < 0.50 or is_secondary_10pct:
+                            if expert == "closed" or openness < 0.49 or is_secondary_10pct:
                                 accept = True
                         elif self.target_model == "endgame":
-                            if expert == "endgame" or metrics["pieces"] <= 14 or is_secondary_10pct:
+                            if expert == "endgame" or metrics["pieces"] <= 16 or is_secondary_10pct:
                                 accept = True
                         elif self.target_model == "queenless":
                             if expert == "queenless" or not metrics["has_queens"] or is_secondary_10pct:
@@ -342,7 +342,7 @@ class TcecDataset(IterableDataset):
                             if expert == "imbalance" or metrics["is_imbalance"] or is_secondary_10pct:
                                 accept = True
                         elif self.target_model == "attack":
-                            if expert == "attack" or metrics["opposite_castling"] or is_secondary_10pct:
+                            if expert == "attack" or metrics["is_attack"] or is_secondary_10pct:
                                 accept = True
                         elif self.target_model == "volatility":
                             if metrics["is_blunder"] or is_move_capture or eval_delta >= 0.50 or metrics["opposite_castling"] or is_secondary_10pct:

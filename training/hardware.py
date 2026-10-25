@@ -149,7 +149,13 @@ class HardwareProfiler:
             compile_model = user_compile
         else:
             # Auto-enable on modern CUDA GPUs if PyTorch >= 2.0
-            compile_model = bool(self.is_cuda and hasattr(torch, "compile") and self.compute_capability[0] >= 7)
+            # (requires Triton, which is not shipped with PyTorch on Windows)
+            try:
+                import triton  # noqa: F401
+                has_triton = True
+            except ImportError:
+                has_triton = False
+            compile_model = bool(self.is_cuda and has_triton and hasattr(torch, "compile") and self.compute_capability[0] >= 7)
 
         # 7. Configure global PyTorch hardware execution backends
         if not self.is_cuda:

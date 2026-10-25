@@ -134,24 +134,25 @@ def process_pgn_stream(
                         if stats:
                             stats["recipe_counts"][routed_slice] = stats["recipe_counts"].get(routed_slice, 0) + 1
 
-                # 2. Multi-Expert 8-Model Architecture Pre-Splitting
+                # 2. Multi-Expert 8-Model Architecture Pre-Splitting (using tuned thresholds)
                 is_secondary_10pct = random.random() < 0.10
+                is_attack = opposite_castling and (openness >= 0.03)
 
                 # Route to Primary Expert + 10% cross-sample / characteristic overlap
                 if "open" in writers:
-                    if expert == "open" or openness >= 0.50 or is_secondary_10pct:
+                    if expert == "open" or openness >= 0.49 or is_secondary_10pct:
                         writers["open"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
                         if stats:
                             stats["open_count"] += 1
 
                 if "closed" in writers:
-                    if expert == "closed" or openness < 0.50 or is_secondary_10pct:
+                    if expert == "closed" or openness < 0.49 or is_secondary_10pct:
                         writers["closed"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
                         if stats:
                             stats["closed_count"] += 1
 
                 if "endgame" in writers:
-                    if expert == "endgame" or pieces <= 14 or is_secondary_10pct:
+                    if expert == "endgame" or pieces <= 16 or is_secondary_10pct:
                         writers["endgame"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
                         if stats:
                             stats["endgame_pack_count"] = stats.get("endgame_pack_count", 0) + 1
@@ -169,7 +170,7 @@ def process_pgn_stream(
                             stats["imbalance_count"] = stats.get("imbalance_count", 0) + 1
 
                 if "attack" in writers:
-                    if expert == "attack" or opposite_castling or is_secondary_10pct:
+                    if expert == "attack" or is_attack or is_secondary_10pct:
                         writers["attack"].add_board(board, eval_relative, wdl_relative, openness, is_blunder)
                         if stats:
                             stats["attack_count"] = stats.get("attack_count", 0) + 1

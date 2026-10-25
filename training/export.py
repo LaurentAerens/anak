@@ -12,16 +12,34 @@ import torch
 import numpy as np
 import chess
 
-from model import (
-    StandardNNUE,
-    MicroNNUE,
-    FEATURE_COUNT,
-    STANDARD_HIDDEN_DIM,
-    STANDARD_L1_DIM,
-    MICRO_HIDDEN_DIM,
-    clamp_nnue_weights,
-)
-from dataset import encode_board_features
+try:
+    from model import (
+        StandardNNUE,
+        MicroNNUE,
+        RAW_FEATURE_COUNT,
+        KING_BUCKETS,
+        FEATURE_COUNT,
+        STANDARD_HIDDEN_DIM,
+        STANDARD_L1_DIM,
+        MICRO_HIDDEN_DIM,
+        get_king_bucket,
+        clamp_nnue_weights,
+    )
+    from dataset import encode_board_features
+except ImportError:
+    from training.model import (
+        StandardNNUE,
+        MicroNNUE,
+        RAW_FEATURE_COUNT,
+        KING_BUCKETS,
+        FEATURE_COUNT,
+        STANDARD_HIDDEN_DIM,
+        STANDARD_L1_DIM,
+        MICRO_HIDDEN_DIM,
+        get_king_bucket,
+        clamp_nnue_weights,
+    )
+    from training.dataset import encode_board_features
 
 MAGIC_HEADER = 0x4B414E41  # "ANAK"
 FORMAT_VERSION = 1
@@ -56,24 +74,40 @@ def simulate_csharp_standard(
     our_idx: list,
     their_idx: list,
 ) -> int:
-    """Simulates exact C# NnueInference.EvaluateStandard integer arithmetic."""
+    """Simulates exact C# NnueInference.EvaluateStandard integer arithmetic with king bucketing and SCReLU."""
+    # Find active king buckets from king squares [320..383]
+    w_king_sq = next((x - 320 for x in our_idx if 320 <= x < 384), 4)
+    w_bucket = get_king_bucket(w_king_sq)
+    b_king_sq = next((x - 320 for x in their_idx if 320 <= x < 384), 4)
+    b_bucket = get_king_bucket(b_king_sq)
+
     our_acc = ft_biases.astype(np.int32).copy()
+    w_offset = w_bucket * RAW_FEATURE_COUNT
     for idx in our_idx:
-        our_acc += ft_weights[idx].astype(np.int32)
+        if idx < RAW_FEATURE_COUNT:
+            our_acc += ft_weights[w_offset + idx].astype(np.int32)
 
     their_acc = ft_biases.astype(np.int32).copy()
+    b_offset = b_bucket * RAW_FEATURE_COUNT
     for idx in their_idx:
-        their_acc += ft_weights[idx].astype(np.int32)
+        if idx < RAW_FEATURE_COUNT:
+            their_acc += ft_weights[b_offset + idx].astype(np.int32)
 
+    # SCReLU activation: (clamp(x, 0, 64)^2) >> 6
     our_clipped = np.clip(our_acc, 0, CLIPPED_RELU_MAX)
+    our_act = (our_clipped * our_clipped) >> 6
+
     their_clipped = np.clip(their_acc, 0, CLIPPED_RELU_MAX)
-    activated = np.concatenate([our_clipped, their_clipped])  # (1024,)
+    their_act = (their_clipped * their_clipped) >> 6
+
+    activated = np.concatenate([our_act, their_act])  # (1024,)
 
     l1_dim = hidden_weights.shape[0]
     hidden_out = np.zeros(l1_dim, dtype=np.int32)
     for k in range(l1_dim):
         dot = int(hidden_biases[k]) * WEIGHT_SCALE + int(np.dot(activated, hidden_weights[k].astype(np.int32)))
-        hidden_out[k] = np.clip(int(dot / WEIGHT_SCALE), 0, CLIPPED_RELU_MAX)
+        clamped = np.clip(int(dot / WEIGHT_SCALE), 0, CLIPPED_RELU_MAX)
+        hidden_out[k] = (clamped * clamped) >> 6
 
     final_sum = int(output_bias_val) + int(np.dot(hidden_out, output_weights.astype(np.int32)))
     return int((final_sum * OUTPUT_SCALE) // (WEIGHT_SCALE * WEIGHT_SCALE))
@@ -122,15 +156,15 @@ def export_standard(model: StandardNNUE, output_path: str):
     output_bias_val = int(round(model.output.bias.item() * (WEIGHT_SCALE * BIAS_SCALE)))
 
     with open(output_path, "wb") as f:
-        # Header: Magic (4B), Version (4B), ArchId (2B), HiddenDim (2B), L1Dim (2B), Reserved (2B)
+        # Header: Magic (4B), Version (4B), ArchId (2B), HiddenDim (2B), L1Dim (2B), NumBuckets (2B)
         header = struct.pack(
-            "<IIHHH2s",
+            "<IIHHHH",
             MAGIC_HEADER,
             FORMAT_VERSION,
             ARCH_STANDARD,
             model.hidden_dim,
             model.l1_dim,
-            b"\x00\x00",
+            KING_BUCKETS,
         )
         f.write(header)
 

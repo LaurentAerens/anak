@@ -11,7 +11,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-FEATURE_COUNT = 768  # 6 piece types * 2 colors * 64 squares
+RAW_FEATURE_COUNT = 768  # 6 piece types * 2 colors * 64 squares
+KING_BUCKETS = 16        # 16 king safety zones with horizontal symmetry (ranks 0-1, 2-3, 4-5, 6-7 x files A-D)
+FEATURE_COUNT = KING_BUCKETS * RAW_FEATURE_COUNT  # 12,288 bucketed HalfKP features
 STANDARD_HIDDEN_DIM = 512
 STANDARD_L1_DIM = 64
 MICRO_HIDDEN_DIM = 16
@@ -21,6 +23,41 @@ class ClippedReLU(nn.Module):
     """Clipped ReLU activation: clamp(x, 0, 1.0) for normalized training."""
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return torch.clamp(x, 0.0, 1.0)
+
+
+class SCReLU(nn.Module):
+    """Squared Clipped ReLU activation: (clamp(x, 0, 1.0))^2 for second-order feature interactions."""
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        c = torch.clamp(x, 0.0, 1.0)
+        return c * c
+
+
+def get_king_bucket(king_square: int) -> int:
+    """Computes the 16-bucket king safety zone index with horizontal reflection (files E-H -> D-A)."""
+    f = king_square & 7
+    r = king_square >> 3
+    folded_file = 7 - f if f >= 4 else f  # 0..3
+    rank_group = r >> 1                   # 0..3 (ranks 0-1 -> 0, 2-3 -> 1, 4-5 -> 2, 6-7 -> 3)
+    return (rank_group << 2) | folded_file
+
+
+def map_raw_indices_to_buckets(indices: torch.Tensor) -> torch.Tensor:
+    """
+    Vectorized mapping of raw HalfKP piece indices [0..767] (with sentinel 0xFFFF / 65535)
+    to 16-bucket indices [0..12287] based on friendly king square [320..383].
+    """
+    mask = (indices >= 320) & (indices < 384)
+    king_sq = (torch.where(mask, indices, torch.zeros_like(indices))).sum(dim=-1) - 320
+    king_sq = torch.clamp(king_sq, 0, 63)
+
+    f = king_sq & 7
+    r = king_sq >> 3
+    folded_file = torch.where(f >= 4, 7 - f, f)
+    rank_group = r >> 1
+    bucket = (rank_group << 2) | folded_file
+
+    offset = (bucket * RAW_FEATURE_COUNT).unsqueeze(-1)
+    return torch.where(indices < RAW_FEATURE_COUNT, indices + offset, FEATURE_COUNT)
 
 
 def enforce_perspective_antisymmetry(model: nn.Module):
@@ -64,8 +101,8 @@ def init_nnue_weights(model: nn.Module):
     """
     Clean, 100% trainable NNUE weight initialization.
     Warm-starts square-uniform material counting on the first 6 channels at step 0
-    (without any hardcoded piece-square tables) so the optimizer learns all positional
-    and tactical features directly from the dataset.
+    across all king buckets (without hardcoded piece-square tables) so the optimizer
+    learns all positional and tactical features directly from data.
     """
     with torch.no_grad():
         for name, param in model.named_parameters():
@@ -82,17 +119,27 @@ def init_nnue_weights(model: nn.Module):
             elif "output.bias" in name:
                 nn.init.constant_(param, 0.20)
 
-        # Square-uniform material warm-start at step 0 (completely trainable)
+        # Warm-start square-uniform material across all buckets
         model.ft.weight[:6, :].zero_()
         model.ft.bias[:6].zero_()
-        for sq in range(64):
-            # Split pawns across channels 0 (files A-D) and 1 (files E-H) so 4 pawns * 0.20 = 0.80 <= 1.0
-            ch_pawn = 0 if (sq % 8) < 4 else 1
-            model.ft.weight[ch_pawn, 0 * 64 + sq] = 0.20   # Pawn: 0.20 * 5.0 = 1.00
-            model.ft.weight[2, 1 * 64 + sq] = 0.32         # Knight: 0.32 * 10.0 = 3.20
-            model.ft.weight[3, 2 * 64 + sq] = 0.33         # Bishop: 0.33 * 10.0 = 3.30
-            model.ft.weight[4, 3 * 64 + sq] = 0.48         # Rook: 0.48 * 10.4167 = 5.00
-            model.ft.weight[5, 4 * 64 + sq] = 0.90         # Queen: 0.90 * 10.0 = 9.00
+        num_buckets = max(1, model.ft.weight.shape[1] // RAW_FEATURE_COUNT)
+        is_screlu = isinstance(getattr(model, "act", None), SCReLU)
+
+        pawn_val = 0.45 if is_screlu else 0.20
+        knight_val = 0.57 if is_screlu else 0.32
+        bishop_val = 0.57 if is_screlu else 0.33
+        rook_val = 0.69 if is_screlu else 0.48
+        queen_val = 0.95 if is_screlu else 0.90
+
+        for b in range(num_buckets):
+            b_offset = b * RAW_FEATURE_COUNT
+            for sq in range(64):
+                ch_pawn = 0 if (sq % 8) < 4 else 1
+                model.ft.weight[ch_pawn, b_offset + 0 * 64 + sq] = pawn_val
+                model.ft.weight[2, b_offset + 1 * 64 + sq] = knight_val
+                model.ft.weight[3, b_offset + 2 * 64 + sq] = bishop_val
+                model.ft.weight[4, b_offset + 3 * 64 + sq] = rook_val
+                model.ft.weight[5, b_offset + 4 * 64 + sq] = queen_val
 
         scales = torch.tensor(
             [5.0, 5.0, 10.0, 10.0, 10.4167, 10.0],
@@ -185,8 +232,9 @@ class ModelEMA:
 
 class StandardNNUE(nn.Module):
     """
-    Standard NNUE Architecture for the 6 expert models:
-    768 sparse features -> 512 (per perspective) -> 1024 combined -> 64 -> 1.
+    Standard King-Bucketed NNUE Architecture for the expert models:
+    12,288 sparse features (16 king buckets x 768) -> 512 (per perspective) -> 1024 combined -> 64 -> 1.
+    SCReLU activation: (clamp(x, 0, 1.0))^2.
     """
     def __init__(self, hidden_dim: int = STANDARD_HIDDEN_DIM, l1_dim: int = STANDARD_L1_DIM):
         super().__init__()
@@ -194,7 +242,7 @@ class StandardNNUE(nn.Module):
         self.l1_dim = l1_dim
         self.arch_id = 0x0001
 
-        # Feature Transformer (shared between White and Black perspectives)
+        # Feature Transformer (16 king buckets x 768 HalfKP features)
         self.ft = nn.Linear(FEATURE_COUNT, hidden_dim)
 
         # Hidden layer: 2 * hidden_dim -> l1_dim
@@ -203,28 +251,37 @@ class StandardNNUE(nn.Module):
         # Output layer: l1_dim -> 1
         self.output = nn.Linear(l1_dim, 1)
 
-        self.act = ClippedReLU()
+        self.act = SCReLU()
         init_nnue_weights(self)
 
     def forward(self, our_features: torch.Tensor, their_features: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass. Supports both:
-        1. Sparse indices of shape (batch_size, <= 64) with dtype int16/int32/int64
-           -> 48x faster feature accumulation via F.embedding_bag, zero dense allocations.
-        2. Dense float tensor of shape (batch_size, 768)
-           -> Standard matrix multiplication via self.ft.
+        Forward pass with king-bucketed SCReLU evaluation.
+        Supports both:
+        1. Sparse indices of shape (batch_size, <= 64) with raw indices in [0..767].
+           Maps to active king bucket [0..15] dynamically via map_raw_indices_to_buckets.
+        2. Dense float tensor of shape (batch_size, 12288) or (batch_size, 768).
         :return: Scalar evaluation value in pawns (1.0 = 100 centipawns).
         """
         if our_features.dtype in (torch.int16, torch.int32, torch.int64):
-            our_idx = torch.clamp(our_features.to(torch.int64), 0, FEATURE_COUNT)
-            their_idx = torch.clamp(their_features.to(torch.int64), 0, FEATURE_COUNT)
+            our_idx = map_raw_indices_to_buckets(our_features.to(torch.int64))
+            their_idx = map_raw_indices_to_buckets(their_features.to(torch.int64))
             pad = torch.zeros(1, self.hidden_dim, device=self.ft.weight.device, dtype=self.ft.weight.dtype)
             w_padded = torch.cat([self.ft.weight.t(), pad], dim=0)
             our_acc = self.act(F.embedding_bag(our_idx, w_padded, mode="sum") + self.ft.bias)
             their_acc = self.act(F.embedding_bag(their_idx, w_padded, mode="sum") + self.ft.bias)
         else:
-            our_acc = self.act(self.ft(our_features))
-            their_acc = self.act(self.ft(their_features))
+            if our_features.shape[-1] == RAW_FEATURE_COUNT:
+                offset = 3 * RAW_FEATURE_COUNT
+                our_dense = torch.zeros(our_features.shape[0], FEATURE_COUNT, device=our_features.device, dtype=our_features.dtype)
+                their_dense = torch.zeros(their_features.shape[0], FEATURE_COUNT, device=their_features.device, dtype=their_features.dtype)
+                our_dense[:, offset:offset + RAW_FEATURE_COUNT] = our_features
+                their_dense[:, offset:offset + RAW_FEATURE_COUNT] = their_features
+                our_acc = self.act(self.ft(our_dense))
+                their_acc = self.act(self.ft(their_dense))
+            else:
+                our_acc = self.act(self.ft(our_features))
+                their_acc = self.act(self.ft(their_features))
 
         combined = torch.cat([our_acc, their_acc], dim=-1)
         hidden = self.act(self.l1(combined))
@@ -287,7 +344,10 @@ def evaluate_benchmark_positions(model: nn.Module, device: torch.device) -> str:
     Returns a formatted one-line string with centipawn predictions for terminal logging.
     """
     import chess
-    from binpack import encode_features_to_indices
+    try:
+        from binpack import encode_features_to_indices
+    except ImportError:
+        from training.binpack import encode_features_to_indices
 
     model.eval()
     results = []

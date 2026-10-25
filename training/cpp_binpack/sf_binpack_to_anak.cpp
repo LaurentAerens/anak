@@ -396,14 +396,21 @@ int main(int argc, char** argv) {
                 int b_mat = b_queens * 9 + b_rooks * 5 + b_bishops * 3 + b_knights * 3 + b_pawns;
                 int material_imbalance = std::abs(w_mat - b_mat);
 
-                bool is_endgame = total_pieces <= 14;
+                // Tuned expert routing rules (matching Anak C# ExpertRouting.Default):
+                // 1. Endgame <= 16 total pieces
+                // 2. Queenless
+                // 3. Imbalance >= 4 pawns or piece mismatch
+                // 4. Attack with opposite castling AND openness >= 0.03f (locked pawn chains fall back to Closed)
+                // 5. Open >= 0.49f, else Closed
+                bool is_endgame = total_pieces <= 16;
                 bool is_queenless = (total_queens == 0);
                 bool is_imbalance = (w_queens != b_queens) ||
                                     (w_rooks != b_rooks && w_minors != b_minors) ||
-                                    (material_imbalance >= 2);
+                                    (material_imbalance >= 4);
                 bool opposite_castling = has_queens &&
                                          ((w_king_file <= 2 && b_king_file >= 5) ||
                                           (w_king_file >= 5 && b_king_file <= 2));
+                bool is_attack = opposite_castling && (openness >= 0.03f);
 
                 int expert_id = 0;
                 if (is_endgame) {
@@ -412,9 +419,9 @@ int main(int argc, char** argv) {
                     expert_id = 3;
                 } else if (is_imbalance) {
                     expert_id = 4;
-                } else if (opposite_castling) {
+                } else if (is_attack) {
                     expert_id = 5;
-                } else if (openness >= 0.50f) {
+                } else if (openness >= 0.49f) {
                     expert_id = 0;
                 } else {
                     expert_id = 1;
@@ -451,7 +458,7 @@ int main(int argc, char** argv) {
                         b_imbalance.push_back(rec);
                         if (b_imbalance.size() >= LOCAL_BATCH_SIZE) imbalance_recs.append_batch(b_imbalance);
                     }
-                    if ((expert_id == 5 || opposite_castling || cross_sample_20pct) && !attack_recs.is_full()) {
+                    if ((expert_id == 5 || is_attack || cross_sample_20pct) && !attack_recs.is_full()) {
                         b_attack.push_back(rec);
                         if (b_attack.size() >= LOCAL_BATCH_SIZE) attack_recs.append_batch(b_attack);
                     }
