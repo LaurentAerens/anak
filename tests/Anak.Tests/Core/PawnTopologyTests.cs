@@ -91,4 +91,84 @@ public sealed class PawnTopologyTests
         Assert.True(PawnTopology.IsOppositeSideCastling(in attackBoard));
         Assert.Equal(NnueExpertType.Attack, PawnTopology.ClassifyExpert(in attackBoard));
     }
+
+    [Fact]
+    public void ExpertRouting_Default_MatchesLegacyClassification()
+    {
+        string[] fens =
+        [
+            Fen.StartPosition,
+            "r1bqkbnr/pp1ppppp/2n5/8/3NP3/8/PPP2PPP/RNBQKB1R b KQkq - 0 4",
+            "4k3/pp3ppp/8/8/8/8/PP3PPP/4K3 w - - 0 30",
+            "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1",
+            "rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "r1bq1rk1/ppp1ppbp/2np1np1/8/3PP3/2N1BP2/PPPQ2PP/2KR1BNR w - - 3 8",
+        ];
+
+        foreach (string fen in fens)
+        {
+            Board board = Fen.Parse(fen);
+            Assert.Equal(
+                PawnTopology.ClassifyExpert(in board),
+                PawnTopology.ClassifyExpert(in board, new ExpertRouting()));
+        }
+    }
+
+    [Fact]
+    public void ExpertRouting_OrderChangesPriority()
+    {
+        // Opposite-side castling with White up a full piece (+3 or +4 points, exceeding default imbalance margin 4):
+        // Imbalance wins by default order EQIA, Attack when A is ranked first.
+        Board board = Fen.Parse("r1bq1rk1/2p1ppbp/2np1np1/8/3PP3/2N1BP2/PPPQ2PP/2KR1BNR w - - 3 8");
+        Assert.True(PawnTopology.IsOppositeSideCastling(in board));
+        Assert.True(PawnTopology.HasMaterialImbalance(in board, 2));
+
+        // When imbalance margin is 2, Imbalance precedes Attack in EQIA
+        var imbalanceFirst = new ExpertRouting(order: "EQIA", imbalanceMargin: 2);
+        Assert.Equal(NnueExpertType.Imbalance, PawnTopology.ClassifyExpert(in board, imbalanceFirst));
+
+        // When Attack is prioritized first
+        var attackFirst = new ExpertRouting(order: "AEQI", imbalanceMargin: 2);
+        Assert.Equal(NnueExpertType.Attack, PawnTopology.ClassifyExpert(in board, attackFirst));
+    }
+
+    [Fact]
+    public void ExpertRouting_AttackOpennessGateAndDisabledRules()
+    {
+        Board attackBoard = Fen.Parse("r1bq1rk1/ppp1ppbp/2np1np1/8/3PP3/2N1BP2/PPPQ2PP/2KR1BNR w - - 3 8");
+        Assert.Equal(NnueExpertType.Attack, PawnTopology.ClassifyExpert(in attackBoard));
+
+        // Impossible openness gate: opposite-side castling falls through to Open/Closed
+        var gated = new ExpertRouting(attackMinOpenness: 1.01f);
+        NnueExpertType gatedResult = PawnTopology.ClassifyExpert(in attackBoard, gated);
+        Assert.True(gatedResult is NnueExpertType.Open or NnueExpertType.Closed);
+
+        // Disabling all override rules leaves only the Open/Closed split
+        var noRules = new ExpertRouting(order: string.Empty);
+        NnueExpertType noRulesResult = PawnTopology.ClassifyExpert(in attackBoard, noRules);
+        Assert.True(noRulesResult is NnueExpertType.Open or NnueExpertType.Closed);
+
+        // Open threshold of 0 forces Open, above 1 forces Closed
+        Board startBoard = Fen.Parse(Fen.StartPosition);
+        Assert.Equal(NnueExpertType.Open, PawnTopology.ClassifyExpert(in startBoard, new ExpertRouting(order: string.Empty, openThreshold: 0.0f)));
+        Assert.Equal(NnueExpertType.Closed, PawnTopology.ClassifyExpert(in startBoard, new ExpertRouting(order: string.Empty, openThreshold: 1.01f)));
+    }
+
+    [Fact]
+    public void ExpertRouting_OrderParsing()
+    {
+        Assert.True(ExpertRouting.TryParseOrder("eqia", out char[]? rules));
+        Assert.Equal("EQIA", new string(rules!));
+        Assert.True(ExpertRouting.TryParseOrder("AE", out _));
+        Assert.True(ExpertRouting.TryParseOrder(string.Empty, out _));
+        Assert.False(ExpertRouting.TryParseOrder("EE", out _));
+        Assert.False(ExpertRouting.TryParseOrder("EQX", out _));
+
+        // Invalid order falls back to the default order
+        Assert.Equal(ExpertRouting.DefaultOrder, new ExpertRouting(order: "bogus").Order);
+
+        IReadOnlyList<string> all = ExpertRouting.AllFullOrders();
+        Assert.Equal(24, all.Count);
+        Assert.Equal(24, all.Distinct().Count());
+    }
 }

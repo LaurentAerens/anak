@@ -103,6 +103,31 @@ public sealed class UciEngineAdapter
                 nnue.LoadFromDirectory(path);
             };
             _options.BlunderWatchdog.ValueChanged += val => nnue.BlunderWatchdog = val;
+
+            // Tunable expert routing: rebuild the immutable routing config whenever any routing option changes
+            void RebuildRouting()
+            {
+                string order = _options.ExpertRouteOrder.Value;
+                if (!ExpertRouting.TryParseOrder(order, out _))
+                {
+                    // Invalid order string: keep the previous routing untouched
+                    return;
+                }
+
+                nnue.Routing = new ExpertRouting(
+                    order,
+                    _options.ExpertEndgameMaxPieces.Value,
+                    _options.ExpertImbalanceMargin.Value,
+                    _options.ExpertOpenThreshold.Value / 100.0f,
+                    _options.ExpertAttackMinOpenness.Value / 100.0f);
+            }
+
+            RebuildRouting();
+            _options.ExpertRouteOrder.ValueChanged += _ => RebuildRouting();
+            _options.ExpertEndgameMaxPieces.ValueChanged += _ => RebuildRouting();
+            _options.ExpertImbalanceMargin.ValueChanged += _ => RebuildRouting();
+            _options.ExpertOpenThreshold.ValueChanged += _ => RebuildRouting();
+            _options.ExpertAttackMinOpenness.ValueChanged += _ => RebuildRouting();
         }
 
         // Wire Syzygy tablebases
@@ -249,11 +274,12 @@ public sealed class UciEngineAdapter
                 return;
             }
 
-            // 2. Check Syzygy tablebases at root (only for forced wins; for draws/losses let search find the most active move)
+            // 2. Check Syzygy tablebases at root (only for wins that survive the 50-move rule; for draws/losses and
+            //    cursed wins let search find the most active move). The piece limit follows the loaded table files.
             if (_tablebase.MaxPieces > 0 &&
                 BitOperations.PopCount(_board.Occupied) <= _tablebase.MaxPieces &&
                 _tablebase.TryProbeDtz(in _board, out Move tbMove, out int dtzScore) &&
-                dtzScore > 0)
+                dtzScore > 0 && dtzScore + _board.HalfmoveClock <= 100)
             {
                 int scoreCp = 20000 - dtzScore;
                 _outputWriter($"info depth 1 score cp {scoreCp} tbhits {_tablebase.TbHits} pv {tbMove.ToUci()}");

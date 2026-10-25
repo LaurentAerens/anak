@@ -23,6 +23,11 @@ public interface IMultiTierEvaluator : IEvaluator
     void SetRootTopology(in Board rootBoard);
 
     /// <summary>
+    /// Gets whether the ultra-compact Micro-NNUE watchdog model is loaded.
+    /// </summary>
+    bool HasMicroModel { get; }
+
+    /// <summary>
     /// Evaluates the position using the ultra-compact Micro-NNUE model for fast blunder and trap checking.
     /// </summary>
     Value EvaluateMicro(in Board board);

@@ -250,8 +250,10 @@ def parse_args():
                         help="Number of opening pairs (each played twice with swapped colors, default: 500 = 1000 games)")
     parser.add_argument("--tc", type=str, default="3+0.05",
                         help="Time control base+inc in seconds (default: 3+0.05 for high-volume 1000-game matches)")
-    parser.add_argument("--concurrency", type=int, default=min(8, max(1, os.cpu_count() or 2)),
-                        help="Number of concurrent games (default: CPU cores)")
+    total_cpus = os.cpu_count() or 2
+    default_concurrency = max(1, total_cpus - 4) if total_cpus > 8 else max(1, total_cpus - 1)
+    parser.add_argument("--concurrency", type=int, default=default_concurrency,
+                        help=f"Number of concurrent games (default: {default_concurrency} leaving headroom for OS)")
     parser.add_argument("--hash", type=int, default=64,
                         help="Transposition Table Hash in MB per engine (default: 64)")
     parser.add_argument("--threads", type=int, default=1,
@@ -371,20 +373,31 @@ def main():
         ]
 
     fastchess_cmd = str(os.path.relpath(FASTCHESS_EXE, REPO_ROOT))
-    anak_cmd = str(os.path.relpath(ANAK_EXE, REPO_ROOT))
+    anak_cmd = ANAK_EXE.name
+    anak_dir = str(os.path.relpath(ANAK_EXE.parent, REPO_ROOT))
     openings_path = str(os.path.relpath(OPENINGS_FILE, REPO_ROOT))
     pgn_path = str(os.path.relpath(pgn_output, REPO_ROOT))
+
+    # Determine opponent command and working directory
+    if args.opponent == "baseline":
+        opp_cmd = baseline_exe.name
+        opp_dir = str(os.path.relpath(baseline_exe.parent, REPO_ROOT))
+    else:
+        opp_cmd = STOCKFISH_EXE.name
+        opp_dir = str(os.path.relpath(STOCKFISH_EXE.parent, REPO_ROOT))
 
     # Build fast-chess command
     cmd = [
         fastchess_cmd,
         "-engine",
         f"cmd={anak_cmd}",
+        f"dir={anak_dir}",
         "name=Anak-Dev",
         f"option.Threads={args.threads}",
         f"option.Hash={args.hash}",
         "-engine",
-        f"cmd={opp_cmd_rel}",
+        f"cmd={opp_cmd}",
+        f"dir={opp_dir}",
         f"name={opp_name}",
     ] + opp_options + [
         "-each",

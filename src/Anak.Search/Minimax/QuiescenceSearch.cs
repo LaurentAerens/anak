@@ -19,17 +19,25 @@ public sealed class QuiescenceSearch
     private readonly TranspositionTable? _tt;
     private readonly CorrectionHistory? _correctionHistory;
     private readonly IIncrementalEvaluator? _incEval;
+    private readonly Func<bool>? _isTimeUp;
+    private int _qsNodes;
 
     public const int MaxQsDepth = 128;
     public const int DeltaMargin = 900;
     public int DeltaSafetyMargin { get; set; } = SearchHeuristics.TunedQsDeltaMargin;
 
-    public QuiescenceSearch(IEvaluator evaluator, TranspositionTable? tt = null, CorrectionHistory? correctionHistory = null, IIncrementalEvaluator? incEval = null)
+    public QuiescenceSearch(
+        IEvaluator evaluator,
+        TranspositionTable? tt = null,
+        CorrectionHistory? correctionHistory = null,
+        IIncrementalEvaluator? incEval = null,
+        Func<bool>? isTimeUp = null)
     {
         _evaluator = evaluator;
         _tt = tt;
         _correctionHistory = correctionHistory;
         _incEval = incEval ?? (evaluator as IIncrementalEvaluator);
+        _isTimeUp = isTimeUp;
     }
 
     /// <summary>
@@ -37,6 +45,11 @@ public sealed class QuiescenceSearch
     /// </summary>
     public int Search(ref Board board, int alpha, int beta, int ply = 0)
     {
+        if (_isTimeUp != null && _isTimeUp())
+        {
+            return 0;
+        }
+
         ulong key = board.ZobristKey;
         int originalAlpha = alpha;
         Move bestMove = Move.Null;
@@ -180,6 +193,11 @@ public sealed class QuiescenceSearch
             }
 
             if (bestIdx < 0 || bestScore == int.MinValue) break;
+
+            if ((++_qsNodes & 63) == 0 && _isTimeUp != null && _isTimeUp())
+            {
+                break;
+            }
 
             Move move = moves[bestIdx];
             scores[bestIdx] = int.MinValue; // Mark as picked

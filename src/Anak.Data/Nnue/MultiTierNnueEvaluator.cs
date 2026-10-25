@@ -30,6 +30,8 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     private readonly DefaultEvaluator _fallbackEvaluator;
     private readonly short[] _stackWhite = new short[256 * 512];
     private readonly short[] _stackBlack = new short[256 * 512];
+    private readonly short[] _stackMicroWhite = new short[256 * 16];
+    private readonly short[] _stackMicroBlack = new short[256 * 16];
     private readonly ulong[] _stackKeys = new ulong[256];
     private int _stackDepth = -1;
     private bool _disposed;
@@ -62,6 +64,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         BlunderWatchdog = parent.BlunderWatchdog;
         Tablebase = parent.Tablebase;
         ActiveRootExpert = parent.ActiveRootExpert;
+        Routing = parent.Routing;
     }
 
 
@@ -69,6 +72,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     public string NnueDirectory { get; set; } = "./networks";
     public bool BlunderWatchdog { get; set; } = true;
     public SyzygyTablebase? Tablebase { get; set; }
+
+    /// <summary>
+    /// Tunable expert routing (rule order and thresholds). Immutable; replace the whole instance to change it.
+    /// </summary>
+    public ExpertRouting Routing { get => _routing; set => _routing = value ?? ExpertRouting.Default; }
+    private volatile ExpertRouting _routing = ExpertRouting.Default;
+
 
     public NnueExpertType ActiveRootExpert { get; private set; } = NnueExpertType.Closed;
 
@@ -198,7 +208,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public NnueExpertType ClassifyBoard(in Board board)
     {
-        return PawnTopology.ClassifyExpert(in board);
+        return PawnTopology.ClassifyExpert(in board, _routing);
     }
 
     /// <summary>
@@ -225,7 +235,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         }
 
         // Graceful fallback to Open/Closed based on pawn structure openness
-        bool isOpen = PawnTopology.IsOpen(in board);
+        bool isOpen = PawnTopology.IsOpen(in board, _routing.OpenThreshold);
         NnueWeights? topologyFallback = isOpen ? _openWeights : _closedWeights;
         return topologyFallback
             ?? _openWeights
@@ -241,7 +251,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     /// </summary>
     public void SetRootTopology(in Board rootBoard)
     {
-        ActiveRootExpert = PawnTopology.ClassifyExpert(in rootBoard);
+        ActiveRootExpert = PawnTopology.ClassifyExpert(in rootBoard, _routing);
         _activeFullWeights = GetExpertWeights(ActiveRootExpert, in rootBoard);
     }
 
@@ -258,6 +268,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             fixed (short* wPtr = _stackWhite, bPtr = _stackBlack)
             {
                 NnueAccumulator.ComputeFull(in rootBoard, weights, wPtr, bPtr);
+            }
+            if (_microWeights != null)
+            {
+                fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
+                {
+                    NnueAccumulator.ComputeFull(in rootBoard, _microWeights, mwPtr, mbPtr);
+                }
             }
             _stackKeys[0] = rootBoard.ZobristKey;
             _stackDepth = 0;
@@ -291,7 +308,33 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             CopyAccumulator(curW, nextW, dim);
             CopyAccumulator(curB, nextB, dim);
 
-            NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, nextW, nextB);
+            NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, nextW, nextB, in boardAfter);
+        }
+
+        if (_microWeights != null)
+        {
+            int curM = _stackDepth * 16;
+            int nextM = (_stackDepth + 1) * 16;
+            fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
+            {
+                short* curMW = mwPtr + curM;
+                short* curMB = mbPtr + curM;
+                short* nextMW = mwPtr + nextM;
+                short* nextMB = mbPtr + nextM;
+
+                if (Avx2.IsSupported)
+                {
+                    Vector256.Load(curMW).Store(nextMW);
+                    Vector256.Load(curMB).Store(nextMB);
+                }
+                else
+                {
+                    Buffer.MemoryCopy(curMW, nextMW, 16 * sizeof(short), 16 * sizeof(short));
+                    Buffer.MemoryCopy(curMB, nextMB, 16 * sizeof(short), 16 * sizeof(short));
+                }
+
+                NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, _microWeights, nextMW, nextMB, in boardAfter);
+            }
         }
 
         _stackDepth++;
@@ -320,6 +363,25 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
             CopyAccumulator(curW, nextW, dim);
             CopyAccumulator(curB, nextB, dim);
+        }
+
+        if (_microWeights != null)
+        {
+            int curM = _stackDepth * 16;
+            int nextM = (_stackDepth + 1) * 16;
+            fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
+            {
+                if (Avx2.IsSupported)
+                {
+                    Vector256.Load(mwPtr + curM).Store(mwPtr + nextM);
+                    Vector256.Load(mbPtr + curM).Store(mbPtr + nextM);
+                }
+                else
+                {
+                    Buffer.MemoryCopy(mwPtr + curM, mwPtr + nextM, 16 * sizeof(short), 16 * sizeof(short));
+                    Buffer.MemoryCopy(mbPtr + curM, mbPtr + nextM, 16 * sizeof(short), 16 * sizeof(short));
+                }
+            }
         }
 
         _stackDepth++;
@@ -417,7 +479,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             return new Value(cp);
         }
 
-        NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board);
+        NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board, _routing);
         NnueWeights? selectedWeights = GetExpertWeights(leafExpert, in board);
 
         if (selectedWeights == null)
@@ -437,11 +499,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             && !ReferenceEquals(_openWeights, _closedWeights))
         {
             float openness = PawnTopology.CalculateOpenness(in board);
-            if (openness > 0.42f && openness < 0.58f)
+            float blendLow = _routing.OpenThreshold - 0.08f;
+            float blendHigh = _routing.OpenThreshold + 0.08f;
+            if (openness > blendLow && openness < blendHigh)
             {
                 int closedCp = EvaluateWithWeights(in board, _closedWeights);
                 int openCp = EvaluateWithWeights(in board, _openWeights);
-                float alpha = (openness - 0.42f) / 0.16f;
+                float alpha = (openness - blendLow) / 0.16f;
                 int blendedCp = (int)MathF.Round(((1.0f - alpha) * closedCp) + (alpha * openCp));
                 return new Value(blendedCp);
             }
@@ -462,15 +526,30 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             return Evaluate(in board, ReadOnlySpan<Move>.Empty);
         }
 
+        // Fast incremental path during active search (1 single SIMD dot product)
+        if (_stackDepth >= 0 && _stackKeys[_stackDepth] == board.ZobristKey)
+        {
+            int offset = _stackDepth * 16;
+            fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
+            {
+                short* wAcc = mwPtr + offset;
+                short* bAcc = mbPtr + offset;
+                short* ourAcc = board.SideToMove == Color.White ? wAcc : bAcc;
+                short* theirAcc = board.SideToMove == Color.White ? bAcc : wAcc;
+                int score = NnueInference.EvaluateMicro(ourAcc, theirAcc, _microWeights);
+                return new Value(score);
+            }
+        }
+
         const int dim = NnueConstants.MicroHiddenDim;
         short* whiteAcc = stackalloc short[dim];
         short* blackAcc = stackalloc short[dim];
 
         NnueAccumulator.ComputeFull(in board, _microWeights, whiteAcc, blackAcc);
-        short* ourAcc = board.SideToMove == Color.White ? whiteAcc : blackAcc;
-        short* theirAcc = board.SideToMove == Color.White ? blackAcc : whiteAcc;
+        short* oAcc = board.SideToMove == Color.White ? whiteAcc : blackAcc;
+        short* tAcc = board.SideToMove == Color.White ? blackAcc : whiteAcc;
 
-        int cp = NnueInference.EvaluateMicro(ourAcc, theirAcc, _microWeights);
+        int cp = NnueInference.EvaluateMicro(oAcc, tAcc, _microWeights);
         return new Value(cp);
     }
 

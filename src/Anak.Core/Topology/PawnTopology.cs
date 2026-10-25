@@ -102,7 +102,16 @@ public static class PawnTopology
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsEndgame(in Board board)
     {
-        return BitOperations.PopCount(board.Occupied) <= 14;
+        return IsEndgame(in board, 14);
+    }
+
+    /// <summary>
+    /// Returns true if the total piece count is at most <paramref name="maxPieces"/>.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsEndgame(in Board board, int maxPieces)
+    {
+        return BitOperations.PopCount(board.Occupied) <= maxPieces;
     }
 
     /// <summary>
@@ -120,6 +129,15 @@ public static class PawnTopology
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool HasMaterialImbalance(in Board board)
+    {
+        return HasMaterialImbalance(in board, 2);
+    }
+
+    /// <summary>
+    /// Material imbalance check with a configurable total-material difference <paramref name="margin"/> (in points).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool HasMaterialImbalance(in Board board, int margin)
     {
         ulong white = board.White;
         ulong black = board.Black;
@@ -141,7 +159,7 @@ public static class PawnTopology
         int wMat = (wQ * 9) + (wR * 5) + (wM * 3) + wP;
         int bMat = (bQ * 9) + (bR * 5) + (bM * 3) + bP;
 
-        return Math.Abs(wMat - bMat) >= 2;
+        return Math.Abs(wMat - bMat) >= margin;
     }
 
     /// <summary>
@@ -173,10 +191,47 @@ public static class PawnTopology
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static NnueExpertType ClassifyExpert(in Board board)
     {
-        if (IsEndgame(in board)) return NnueExpertType.Endgame;
-        if (IsQueenless(in board)) return NnueExpertType.Queenless;
-        if (HasMaterialImbalance(in board)) return NnueExpertType.Imbalance;
-        if (IsOppositeSideCastling(in board)) return NnueExpertType.Attack;
-        return IsOpen(in board) ? NnueExpertType.Open : NnueExpertType.Closed;
+        return ClassifyExpert(in board, ExpertRouting.Default);
+    }
+
+    /// <summary>
+    /// Classifies the board using a tunable <see cref="ExpertRouting"/>: override rules are evaluated in
+    /// <see cref="ExpertRouting.Order"/> (first match wins), then Open/Closed by the routing's open threshold.
+    /// </summary>
+    public static NnueExpertType ClassifyExpert(in Board board, ExpertRouting routing)
+    {
+        // Openness is only computed when a rule or the fallback needs it.
+        float openness = -1.0f;
+
+        foreach (char rule in routing.Rules)
+        {
+            switch (rule)
+            {
+                case ExpertRouting.EndgameRule:
+                    if (IsEndgame(in board, routing.EndgameMaxPieces)) return NnueExpertType.Endgame;
+                    break;
+                case ExpertRouting.QueenlessRule:
+                    if (IsQueenless(in board)) return NnueExpertType.Queenless;
+                    break;
+                case ExpertRouting.ImbalanceRule:
+                    if (HasMaterialImbalance(in board, routing.ImbalanceMargin)) return NnueExpertType.Imbalance;
+                    break;
+                case ExpertRouting.AttackRule:
+                    if (IsOppositeSideCastling(in board))
+                    {
+                        if (routing.AttackMinOpenness <= 0.0f)
+                        {
+                            return NnueExpertType.Attack;
+                        }
+
+                        if (openness < 0.0f) openness = CalculateOpenness(in board);
+                        if (openness >= routing.AttackMinOpenness) return NnueExpertType.Attack;
+                    }
+                    break;
+            }
+        }
+
+        if (openness < 0.0f) openness = CalculateOpenness(in board);
+        return openness >= routing.OpenThreshold ? NnueExpertType.Open : NnueExpertType.Closed;
     }
 }

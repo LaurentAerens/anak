@@ -108,7 +108,8 @@ public class NnueTests
 
         int openCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, openWeights);
         int closedCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, closedWeights);
-        float alpha = (openness - 0.42f) / 0.16f;
+        float blendLow = evaluator.Routing.OpenThreshold - 0.08f;
+        float alpha = (openness - blendLow) / 0.16f;
         int expectedBlendedCp = (int)MathF.Round(((1.0f - alpha) * closedCp) + (alpha * openCp));
 
         int actualCp = evaluator.Evaluate(in boundaryBoard, ReadOnlySpan<Move>.Empty).Raw;

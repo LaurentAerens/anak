@@ -30,6 +30,7 @@
   <ItemGroup>
     <None Include="..\..\book.bin" Link="book.bin" CopyToOutputDirectory="Always" Condition="Exists('..\..\book.bin')" />
     <None Include="..\..\syzygy\**\*.*" Link="syzygy\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\syzygy')" />
+    <None Include="Data\syzygy_reference.txt" Link="Data\syzygy_reference.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

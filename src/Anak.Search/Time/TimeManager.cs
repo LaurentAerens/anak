@@ -26,8 +26,79 @@ public sealed class TimeManager
     public long SoftLimitMs => _softLimitMs;
     public long HardLimitMs => _hardLimitMs;
     public bool HasTimeLimit => _hasTimeLimit;
+    public bool IsTimeCrunch => _hasTimeLimit && (_softLimitMs < 20 || _hardLimitMs < 35);
     public int StableMoveDepths => _stableMoveDepths;
-    public int ScoreDropThreshold { get; set; } = 45;
+    public int ScoreDropThreshold { get; set; } = 46;
+
+    // SPSA-tunable parameters for dynamic Micro budgeting
+    public float MicroMaxShare { get; set; } = 0.06f; // Max 6% of soft limit
+    public int MicroMinTimeThresholdMs { get; set; } = 25; // Disable below 25ms
+    public float MicroDepthGateRatio { get; set; } = 0.85f; // Unlocks at 85% of expected depth
+    public float MicroAheadWeight { get; set; } = 1.0f;
+    public float MicroEqualWeight { get; set; } = 0.75f;
+
+    /// <summary>
+    /// Gets the estimated target depth achievable within the soft time limit.
+    /// In blitz (25ms), typically depth 9-10; in classical, depth 16-22.
+    /// </summary>
+    public int EstimateTargetDepth()
+    {
+        if (!_hasTimeLimit) return 64;
+        if (_softLimitMs < 30) return 9;
+        if (_softLimitMs < 80) return 11;
+        if (_softLimitMs < 250) return 13;
+        if (_softLimitMs < 1000) return 15;
+        if (_softLimitMs < 5000) return 18;
+        return 22;
+    }
+
+    /// <summary>
+    /// Computes the dynamic time budget allocated to the Micro blunder watchdog
+    /// based on remaining time budget, current search depth vs expected depth, and evaluation score.
+    /// </summary>
+    public long ComputeMicroBudget(int currentDepth, int expectedDepth, int scoreCp, bool isMoveStable)
+    {
+        if (!_hasTimeLimit || IsTimeCrunch || _softLimitMs <= MicroMinTimeThresholdMs)
+        {
+            return 0;
+        }
+
+        // 1. Time Factor (scales smoothly with surplus time up to MicroMaxShare)
+        float surplusTime = _softLimitMs - MicroMinTimeThresholdMs;
+        float rTime = Math.Clamp(surplusTime / 200.0f, 0.0f, MicroMaxShare);
+
+        // 2. Depth Factor (unlocks as current depth nears or exceeds expected target depth)
+        float rDepth = 1.0f;
+        if (expectedDepth > 0)
+        {
+            float depthRatio = (float)currentDepth / expectedDepth;
+            if (depthRatio < MicroDepthGateRatio)
+            {
+                return 0;
+            }
+            rDepth = Math.Clamp((depthRatio - MicroDepthGateRatio) / (1.0f - MicroDepthGateRatio + 0.01f), 0.0f, 1.0f);
+        }
+        else if (currentDepth < 8)
+        {
+            return 0;
+        }
+
+        // 3. Eval Factor
+        if (scoreCp <= -50 || Math.Abs(scoreCp) >= Value.MateValue - 100)
+        {
+            return 0; // Pos is bad or mate found: 0% to Micro, 100% to main search
+        }
+
+        float rEval = scoreCp >= 150
+            ? (isMoveStable ? MicroAheadWeight : MicroAheadWeight * 0.5f)
+            : MicroEqualWeight;
+
+        long budget = (long)(_softLimitMs * rTime * rDepth * rEval);
+
+        // Safety guarantee: Micro budget must never exceed the safety margin between soft and hard limits
+        long safetyRoom = Math.Max(0, _hardLimitMs - _stopwatch.ElapsedMilliseconds - SafetyLagMs);
+        return Math.Clamp(budget, 0, safetyRoom);
+    }
 
     /// <summary>
     /// Initializes time allocation based on remaining clock, increment, and move limits.
@@ -119,6 +190,10 @@ public sealed class TimeManager
         float hardMultiplier = remainingTime < 2000 ? 1.3f : 1.7f;
         long targetHard = (long)(_softLimitMs * hardMultiplier);
         _hardLimitMs = Math.Clamp(targetHard, _softLimitMs, maxAllowed);
+
+        // Crucial safety guarantee: soft limit must never exceed 75% of hard limit,
+        // leaving a 25% safety buffer so that completing an iteration never overflows the clock!
+        _softLimitMs = Math.Min(_softLimitMs, Math.Max(5, (long)(_hardLimitMs * 0.75f)));
         _baseSoftLimitMs = _softLimitMs;
         _baseHardLimitMs = _hardLimitMs;
 
@@ -159,10 +234,11 @@ public sealed class TimeManager
         }
         else
         {
-            // Move flipped late in search (depth >= 8) with prior confidence: extend time up to hard limit
+            // Move flipped late in search (depth >= 8) with prior confidence: extend time, capped at 75% of hard limit
             if (depth >= 8 && _stableMoveDepths >= 2)
             {
-                _softLimitMs = Math.Min(_hardLimitMs, (long)(_softLimitMs * 1.8f));
+                long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.75f));
+                _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.5f), 5, maxSoft);
             }
             _lastBestMove = currentBest;
             _stableMoveDepths = 1;
@@ -176,14 +252,15 @@ public sealed class TimeManager
     }
 
     /// <summary>
-    /// Extends soft time limit up to 1.5x (capped by hard limit) when evaluation drops sharply (> ScoreDropThreshold cp).
+    /// Extends soft time limit up to 1.3x (strictly capped by 75% of hard limit) when evaluation drops sharply.
     /// </summary>
     public void HandleScoreDrop(int currentScore, int prevScore, int depth)
     {
         if (!_hasTimeLimit || depth < 6) return;
         if (Math.Abs(prevScore) < Value.MateValue - 100 && currentScore < prevScore - ScoreDropThreshold)
         {
-            _softLimitMs = Math.Min(_hardLimitMs, (long)(_softLimitMs * 1.5f));
+            long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.75f));
+            _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.3f), 5, maxSoft);
         }
     }
 

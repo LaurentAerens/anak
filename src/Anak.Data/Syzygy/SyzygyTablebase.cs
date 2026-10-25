@@ -3,13 +3,14 @@ using Anak.Core;
 namespace Anak.Data.Syzygy;
 
 /// <summary>
-/// Syzygy 3-4-5-6 piece endgame tablebase manager handling WDL (.rtbw) and DTZ (.rtbz) probing,
-/// hit statistics tracking, and graceful fallback when tablebase files are unavailable.
+/// Syzygy endgame tablebase manager (WDL .rtbw and DTZ .rtbz) backed by the managed <see cref="SyzygyProber"/>.
+/// The maximum supported piece count is derived from the table files present in <see cref="SyzygyPath"/>:
+/// the shipped 3-4 piece tables work out of the box, and dropping 5-6 piece tables into the directory enables them.
+/// Probing fails gracefully (returns false) when files are missing so callers can fall back to search.
 /// </summary>
 public sealed class SyzygyTablebase
 {
-    private readonly SyzygyWdl _wdl;
-    private readonly SyzygyDtz _dtz;
+    private readonly SyzygyProber _prober = new();
     private string _syzygyPath = string.Empty;
     private int _syzygyProbeDepth = 1;
     private ulong _tbHits;
@@ -20,9 +21,7 @@ public sealed class SyzygyTablebase
         set
         {
             _syzygyPath = value ?? string.Empty;
-            string effectivePath = ResolvePath(_syzygyPath);
-            _wdl.SetPath(effectivePath);
-            _dtz.SetPath(effectivePath);
+            _prober.SetPath(ResolvePath(_syzygyPath));
         }
     }
 
@@ -40,17 +39,14 @@ public sealed class SyzygyTablebase
     /// <summary>
     /// Maximum piece count of loaded tablebases.
     /// </summary>
-    public int MaxPieces => Math.Max(_wdl.MaxPieces, _dtz.MaxPieces);
+    public int MaxPieces => _prober.MaxPieces;
 
     public SyzygyTablebase()
     {
-        _wdl = new SyzygyWdl();
-        _dtz = new SyzygyDtz();
         string defaultPath = ResolvePath(string.Empty);
         if (!string.IsNullOrEmpty(defaultPath))
         {
-            _wdl.SetPath(defaultPath);
-            _dtz.SetPath(defaultPath);
+            _prober.SetPath(defaultPath);
         }
     }
 
@@ -92,13 +88,13 @@ public sealed class SyzygyTablebase
     /// <summary>
     /// Probes the Win-Draw-Loss value for the given position.
     /// Returns true on a successful tablebase hit and increments TbHits.
-    /// Returns false if tablebase files are missing or position cannot be probed.
+    /// Returns false if tablebase files are missing or the position cannot be probed.
     /// </summary>
     /// <param name="board">Board position to probe.</param>
     /// <param name="wdl">WDL value: 2 (win), 1 (cursed win), 0 (draw), -1 (blessed loss), -2 (loss).</param>
     public bool TryProbeWdl(in Board board, out int wdl)
     {
-        if (_wdl.TryProbe(in board, out wdl))
+        if (_prober.TryProbeWdl(in board, out wdl))
         {
             Interlocked.Increment(ref _tbHits);
             return true;
@@ -107,16 +103,15 @@ public sealed class SyzygyTablebase
     }
 
     /// <summary>
-    /// Probes the optimal DTZ move and distance-to-zeroing metric for the given position.
-    /// Returns true on a successful tablebase hit and increments TbHits.
-    /// Returns false if tablebase files are missing or position cannot be probed.
+    /// Probes the root position: returns the tablebase-best move and the DTZ of the position
+    /// (positive = winning side to move, negative = losing, 0 = draw).
     /// </summary>
     /// <param name="board">Board position to probe.</param>
-    /// <param name="bestMove">Optimal move selected by DTZ / WDL criteria.</param>
-    /// <param name="dtz">Distance in plies to the nearest zeroing move.</param>
+    /// <param name="bestMove">Optimal move selected by WDL / DTZ criteria.</param>
+    /// <param name="dtz">Distance in plies to the nearest zeroing move (DTZ50'' value, signed).</param>
     public bool TryProbeDtz(in Board board, out Move bestMove, out int dtz)
     {
-        if (_dtz.TryProbe(in board, _wdl, out bestMove, out dtz))
+        if (_prober.TryProbeRoot(in board, out bestMove, out dtz))
         {
             Interlocked.Increment(ref _tbHits);
             return true;

@@ -59,6 +59,21 @@
       "tc": "3+0.05",
       "pgn": "tools/fastchess/results/anak_dev_vs_v0.0.3_20261023_204146.pgn",
       "notes": "v0.0.4 release with 8 retrained multi-expert NNUE models, PolyGlot opening book, Syzygy tablebases, SPSA tuned search heuristics (+18.8 Elo over v0.0.3 in 1000 games)"
+    },
+    "v0.0.5-phase5": {
+      "version": "v0.0.5-phase5",
+      "date": "2026-10-24",
+      "estimated_elo": 1725,
+      "elo_margin": 19,
+      "baseline_opponent": "Anak v0.0.4 (Known Elo: 1678)",
+      "score": "567 / 1000",
+      "wins": 478,
+      "losses": 344,
+      "draws": 178,
+      "perf_percent": 56.7,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v0.0.4_20261024_230511.pgn",
+      "notes": "Phase 5: 16 King-Bucketed NNUE architecture with SCReLU activations and SIMD incremental updates; +46.8 Elo over v0.0.4 with 100% LOS"
     }
   }
 }

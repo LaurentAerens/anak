@@ -57,6 +57,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
     public IEvaluator Evaluator => _evaluator;
     public int LastScoreCp { get; internal set; }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool IsTimeUp() => _stopped || _timeManager.IsHardTimeUp();
+
     public int LmrBase
     {
         get => _lmrBase;
@@ -395,7 +398,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             _continuationHistory = new ContinuationHistory();
             _correctionHistory = new CorrectionHistory();
             _counterMoves = new Move[13, 64];
-            _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval);
+            _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval, engine.IsTimeUp);
             _qsearch.DeltaSafetyMargin = engine.QsDeltaMargin;
         }
 
@@ -461,6 +464,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             long lastIterElapsed = 0;
             _incEval?.InitSearch(in board);
+            int expectedDepth = _engine._timeManager.EstimateTargetDepth();
+            int completedDepth = 0;
 
             // --- Iterative Deepening ---
             for (int currentDepth = 1; currentDepth <= maxDepth; currentDepth++)
@@ -478,7 +483,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
                 if (currentDepth > 1 && _engine._timeManager.HasTimeLimit)
                 {
-                    if (currentElapsed >= _engine._timeManager.SoftLimitMs)
+                    long targetTime = GetTargetSearchTime(bestScore, _engine._timeManager.SoftLimitMs, currentDepth, expectedDepth);
+                    if (currentElapsed >= targetTime)
                     {
                         break;
                     }
@@ -548,6 +554,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     bestMove = iterBestMove;
                 }
                 bestScore = score;
+                completedDepth = currentDepth;
                 _engine._timeManager.UpdateMoveStability(bestMove, currentDepth);
                 _engine._timeManager.HandleScoreDrop(score, prevScore, currentDepth);
                 prevScore = score;
@@ -638,7 +645,181 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
 
+            // --- Micro Forward Blunder Watchdog ---
+            // When holding a candidate move, verify with ultra-fast Micro tactical watchdog
+            if (_evaluator is IMultiTierEvaluator multiTier && multiTier.HasMicroModel && !bestMove.IsNull && !cancellationToken.IsCancellationRequested)
+            {
+                bestMove = RunMicroBlunderWatchdog(in rootBoard, bestMove, bestScore, completedDepth, expectedDepth, multiTier, cancellationToken);
+            }
+
             return bestMove;
+        }
+
+        private long GetTargetSearchTime(int score, long softLimitMs, int depth, int expectedDepth)
+        {
+            // If in time crunch, use 60% of soft limit to guarantee zero timeouts
+            if (_engine._timeManager.IsTimeCrunch)
+            {
+                return (long)(softLimitMs * 0.60f);
+            }
+
+            // Depth guard: never terminate early before depth reaches expected target depth.
+            // Early cutoff at shallow depths truncates basic tactical calculation.
+            if (depth < expectedDepth)
+            {
+                return softLimitMs;
+            }
+
+            // Case 1: Pos is bad (score <= -50 cp)
+            // No reason to look for blunders; keep going with the main models using 100% of time.
+            if (score <= -50)
+            {
+                return softLimitMs;
+            }
+
+            // Case 3: Pos is looking great (score >= 150 cp, >= +1.5 pawns)
+            // When winning, target depth is reached, and move has been confirmed stable for >= 3 plies,
+            // comfortably conclude main search at 85% soft limit (saving clock for future moves).
+            if (score >= 150 && _engine._timeManager.StableMoveDepths >= 3)
+            {
+                return (long)(softLimitMs * 0.85f);
+            }
+
+            // In all other cases: main search gets 100% of soft limit!
+            return softLimitMs;
+        }
+
+        private Move RunMicroBlunderWatchdog(
+            in Board rootBoard,
+            Move candidateMove,
+            int candidateScore,
+            int currentDepth,
+            int expectedDepth,
+            IMultiTierEvaluator multiTier,
+            CancellationToken cancellationToken)
+        {
+            if (candidateMove.IsNull || cancellationToken.IsCancellationRequested || _engine._stopped)
+            {
+                return candidateMove;
+            }
+
+            // Compute dynamic Micro budget based on TimeBudget, CurrentDepth, and Eval
+            bool isStable = _engine._timeManager.StableMoveDepths >= 2;
+            long microBudgetMs = _engine._timeManager.ComputeMicroBudget(currentDepth, expectedDepth, candidateScore, isStable);
+
+            // If budget is 0 (due to time crunch, low depth, bad position, etc.), skip completely
+            if (microBudgetMs <= 0)
+            {
+                return candidateMove;
+            }
+
+            long startTime = _engine._timeManager.ElapsedMilliseconds;
+            long deadline = startTime + microBudgetMs;
+
+            // Evaluate root position with Micro to establish baseline Micro score
+            int rootMicro = multiTier.EvaluateMicro(in rootBoard).Raw;
+
+            // Play candidate move to inspect opponent's responses
+            Board boardAfter = rootBoard;
+            boardAfter.MakeMove(candidateMove, out BoardState state);
+
+            // Check opponent's legal moves for immediate tactical refutations
+            MoveList oppMoves = default;
+            MoveGenerator.GenerateLegalMoves(in boardAfter, ref oppMoves);
+
+            bool isRefuted = false;
+
+            for (int i = 0; i < oppMoves.Count; i++)
+            {
+                if (_engine._timeManager.ElapsedMilliseconds >= deadline)
+                {
+                    break;
+                }
+
+                Move oppMove = oppMoves[i];
+
+                // 1. Static Exchange Evaluation (SEE): does opponent have a winning capture?
+                // e.g. hanging queen, rook, or minor piece (SEE >= 200 cp)
+                if (oppMove.IsCapture || oppMove.IsPromotion)
+                {
+                    int see = StaticExchangeEvaluator.Evaluate(in boardAfter, oppMove);
+                    if (see >= 200)
+                    {
+                        isRefuted = true;
+                        break;
+                    }
+                }
+
+                // 2. Micro neural evaluation on tactical checks and captures
+                boardAfter.MakeMove(oppMove, out BoardState replyState);
+                bool inCheck = boardAfter.IsInCheck();
+                bool checkOrTactical = inCheck || oppMove.IsCapture || oppMove.IsPromotion;
+
+                if (checkOrTactical)
+                {
+                    int oppMicro = multiTier.EvaluateMicro(in boardAfter).Raw;
+                    int ourScoreAfter = -oppMicro;
+
+                    // If Micro score collapses by > 280 cp compared to root Micro score
+                    if (rootMicro - ourScoreAfter > 280)
+                    {
+                        isRefuted = true;
+                        boardAfter.UnmakeMove(oppMove, in replyState);
+                        break;
+                    }
+                }
+                boardAfter.UnmakeMove(oppMove, in replyState);
+            }
+
+            boardAfter.UnmakeMove(candidateMove, in state);
+
+            // If candidate move is refuted, look for a safe alternative among root candidates from main search
+            if (isRefuted && _rootCandidates.Count > 1 && _engine._timeManager.ElapsedMilliseconds < deadline)
+            {
+                for (int i = 0; i < _rootCandidates.Count; i++)
+                {
+                    Move altMove = _rootCandidates[i].Move;
+                    if (altMove == candidateMove || altMove.IsNull) continue;
+
+                    // Only consider alternatives that scored within 80 cp of the candidate move in the main search!
+                    // Never switch to an alternative that the main search evaluated as significantly worse!
+                    if (_rootCandidates[i].ScoreCp < candidateScore - 80)
+                    {
+                        continue;
+                    }
+
+                    // Test if altMove is safe from refutation
+                    Board altBoard = rootBoard;
+                    altBoard.MakeMove(altMove, out BoardState altState);
+
+                    MoveList altOppMoves = default;
+                    MoveGenerator.GenerateLegalMoves(in altBoard, ref altOppMoves);
+
+                    bool altIsSafe = true;
+                    for (int j = 0; j < altOppMoves.Count; j++)
+                    {
+                        Move altOppMove = altOppMoves[j];
+                        if (altOppMove.IsCapture || altOppMove.IsPromotion)
+                        {
+                            if (StaticExchangeEvaluator.Evaluate(in altBoard, altOppMove) >= 200)
+                            {
+                                altIsSafe = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    altBoard.UnmakeMove(altMove, in altState);
+
+                    if (altIsSafe)
+                    {
+                        // Found a safe alternative from main search that doesn't hang material!
+                        return altMove;
+                    }
+                }
+            }
+
+            return candidateMove;
         }
 
         /// <summary>

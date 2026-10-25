@@ -280,7 +280,7 @@ public class AlphaBetaTests
         Assert.Equal(SearchHeuristics.TunedConthistReward, adapter.Options.ConthistReward.Value);
         Assert.Equal(SearchHeuristics.TunedConthistPenalty, adapter.Options.ConthistPenalty.Value);
         Assert.Equal(SearchHeuristics.TunedHistoryThreshold, adapter.Options.HistoryThreshold.Value);
-        Assert.Equal(45, adapter.Options.ScoreDropThreshold.Value);
+        Assert.Equal(46, adapter.Options.ScoreDropThreshold.Value);
         Assert.Equal(SearchHeuristics.TunedRfpImprovingMultiplier, adapter.Options.RfpImprovingMultiplier.Value);
         Assert.Equal(SearchHeuristics.TunedSingularMargin, adapter.Options.SingularMargin.Value);
         Assert.Equal(SearchHeuristics.TunedQsDeltaMargin, adapter.Options.QsDeltaMargin.Value);

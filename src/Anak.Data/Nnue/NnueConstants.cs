@@ -16,7 +16,7 @@ public static class NnueConstants
     public const uint FormatVersion = 1;
 
     /// <summary>
-    /// Standard NNUE architecture ID: 768 -> 512x2 -> 64 -> 1.
+    /// Standard King-Bucketed NNUE architecture ID: 12,288 -> 512x2 -> 64 -> 1 with SCReLU.
     /// </summary>
     public const ushort ArchStandard = 0x0001;
 
@@ -26,9 +26,19 @@ public static class NnueConstants
     public const ushort ArchMicro = 0x0002;
 
     /// <summary>
-    /// Number of HalfKP piece-square input features (6 piece types * 2 colors * 64 squares).
+    /// Number of king safety zone buckets with horizontal symmetry (ranks 0-1, 2-3, 4-5, 6-7 x files A-D).
     /// </summary>
-    public const int FeatureCount = 768;
+    public const int KingBuckets = 16;
+
+    /// <summary>
+    /// Number of raw HalfKP piece-square input features (6 piece types * 2 colors * 64 squares).
+    /// </summary>
+    public const int RawFeatureCount = 768;
+
+    /// <summary>
+    /// Total number of bucketed HalfKP piece-square input features (16 buckets * 768 features = 12,288).
+    /// </summary>
+    public const int FeatureCount = KingBuckets * RawFeatureCount;
 
     /// <summary>
     /// Hidden dimension for Standard NNUE feature transformer (per perspective).

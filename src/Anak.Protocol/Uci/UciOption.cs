@@ -288,6 +288,11 @@ public sealed class UciOptionRegistry
     public SpinOption RfpImprovingMultiplier { get; }
     public SpinOption SingularMargin { get; }
     public SpinOption QsDeltaMargin { get; }
+    public StringOption ExpertRouteOrder { get; }
+    public SpinOption ExpertEndgameMaxPieces { get; }
+    public SpinOption ExpertImbalanceMargin { get; }
+    public SpinOption ExpertOpenThreshold { get; }
+    public SpinOption ExpertAttackMinOpenness { get; }
 
     public UciOptionRegistry()
     {
@@ -304,18 +309,25 @@ public sealed class UciOptionRegistry
         BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: true);
         MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
         Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
-        LmrBase = new SpinOption("LmrBase", defaultValue: 80, min: 0, max: 250);
-        LmrDivision = new SpinOption("LmrDivision", defaultValue: 229, min: 50, max: 500);
-        RfpMargin = new SpinOption("RfpMargin", defaultValue: 72, min: 10, max: 300);
+        LmrBase = new SpinOption("LmrBase", defaultValue: 83, min: 0, max: 250);
+        LmrDivision = new SpinOption("LmrDivision", defaultValue: 224, min: 50, max: 500);
+        RfpMargin = new SpinOption("RfpMargin", defaultValue: 77, min: 10, max: 300);
         NmpBase = new SpinOption("NmpBase", defaultValue: 3, min: 1, max: 10);
-        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 27, min: 5, max: 100);
-        ConthistReward = new SpinOption("ConthistReward", defaultValue: 2598, min: 500, max: 6000);
-        ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3839, min: 1000, max: 8000);
-        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2101, min: 500, max: 5000);
-        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 45, min: 10, max: 150);
-        RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 115, min: 100, max: 250);
+        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 20, min: 5, max: 100);
+        ConthistReward = new SpinOption("ConthistReward", defaultValue: 2611, min: 500, max: 6000);
+        ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3805, min: 1000, max: 8000);
+        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2130, min: 500, max: 5000);
+        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 46, min: 10, max: 150);
+        RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 111, min: 100, max: 250);
         SingularMargin = new SpinOption("SingularMargin", defaultValue: 6, min: 1, max: 8);
         QsDeltaMargin = new SpinOption("QsDeltaMargin", defaultValue: 188, min: 50, max: 500);
+
+        // NNUE expert routing (tunable; defaults set to SPSA tuned parameters)
+        ExpertRouteOrder = new StringOption("ExpertRouteOrder", defaultValue: "EQIA");
+        ExpertEndgameMaxPieces = new SpinOption("ExpertEndgameMaxPieces", defaultValue: 16, min: 6, max: 24);
+        ExpertImbalanceMargin = new SpinOption("ExpertImbalanceMargin", defaultValue: 4, min: 1, max: 6);
+        ExpertOpenThreshold = new SpinOption("ExpertOpenThreshold", defaultValue: 49, min: 20, max: 80);
+        ExpertAttackMinOpenness = new SpinOption("ExpertAttackMinOpenness", defaultValue: 3, min: 0, max: 100);
 
         Register(SearchAlgorithm);
         Register(Hash);
@@ -342,6 +354,11 @@ public sealed class UciOptionRegistry
         Register(RfpImprovingMultiplier);
         Register(SingularMargin);
         Register(QsDeltaMargin);
+        Register(ExpertRouteOrder);
+        Register(ExpertEndgameMaxPieces);
+        Register(ExpertImbalanceMargin);
+        Register(ExpertOpenThreshold);
+        Register(ExpertAttackMinOpenness);
     }
 
     public void Register(UciOption option)

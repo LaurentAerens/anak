@@ -17,9 +17,10 @@ public sealed unsafe class NnueWeights : IDisposable
     public ushort ArchId { get; private set; }
     public int HiddenDim { get; private set; }
     public int L1Dim { get; private set; }
+    public int Buckets { get; private set; }
 
     // Pointers into 64-byte aligned memory block
-    public sbyte* FeatureWeights { get; private set; }   // [768 * HiddenDim]
+    public sbyte* FeatureWeights { get; private set; }   // [FeatureCount * HiddenDim]
     public short* FeatureBiases { get; private set; }    // [HiddenDim]
     public sbyte* HiddenWeights { get; private set; }    // [HiddenDim * 2 * L1Dim] (Standard only)
     public short* HiddenBiases { get; private set; }     // [L1Dim] (Standard only)
@@ -65,33 +66,35 @@ public sealed unsafe class NnueWeights : IDisposable
             ushort archId = BinaryPrimitives.ReadUInt16LittleEndian(span[8..10]);
             ushort headerHiddenDim = BinaryPrimitives.ReadUInt16LittleEndian(span[10..12]);
             ushort headerL1Dim = BinaryPrimitives.ReadUInt16LittleEndian(span[12..14]);
+            ushort headerBuckets = BinaryPrimitives.ReadUInt16LittleEndian(span[14..16]);
             ReadOnlySpan<byte> payload = span[16..];
 
             int hiddenDim;
             int l1Dim;
+            int buckets;
 
             if (archId == NnueConstants.ArchStandard)
             {
-                if (headerHiddenDim > 0 && headerL1Dim > 0)
-                {
-                    hiddenDim = headerHiddenDim;
-                    l1Dim = headerL1Dim;
-                }
-                else if (payload.Length < 400_000)
-                {
-                    hiddenDim = 256;
-                    l1Dim = 32;
-                }
-                else
-                {
-                    hiddenDim = NnueConstants.StandardHiddenDim;
-                    l1Dim = NnueConstants.StandardL1Dim;
-                }
+                hiddenDim = headerHiddenDim > 0 ? headerHiddenDim : NnueConstants.StandardHiddenDim;
+                l1Dim = headerL1Dim > 0 ? headerL1Dim : NnueConstants.StandardL1Dim;
+                buckets = headerBuckets > 0 ? headerBuckets : NnueConstants.KingBuckets;
             }
             else if (archId == NnueConstants.ArchMicro)
             {
                 hiddenDim = headerHiddenDim > 0 ? headerHiddenDim : NnueConstants.MicroHiddenDim;
                 l1Dim = 0;
+                if (headerBuckets > 0)
+                {
+                    buckets = headerBuckets;
+                }
+                else if (payload.Length >= NnueConstants.KingBuckets * NnueConstants.RawFeatureCount * hiddenDim)
+                {
+                    buckets = NnueConstants.KingBuckets;
+                }
+                else
+                {
+                    buckets = 1;
+                }
             }
             else
             {
@@ -102,10 +105,11 @@ public sealed unsafe class NnueWeights : IDisposable
             {
                 ArchId = archId,
                 HiddenDim = hiddenDim,
-                L1Dim = l1Dim
+                L1Dim = l1Dim,
+                Buckets = buckets
             };
 
-            weights.AllocateAndLoad(payload, archId, hiddenDim, l1Dim);
+            weights.AllocateAndLoad(payload, archId, hiddenDim, l1Dim, buckets);
             return weights;
         }
         catch
@@ -114,9 +118,10 @@ public sealed unsafe class NnueWeights : IDisposable
         }
     }
 
-    private void AllocateAndLoad(ReadOnlySpan<byte> payload, ushort archId, int hiddenDim, int l1Dim)
+    private void AllocateAndLoad(ReadOnlySpan<byte> payload, ushort archId, int hiddenDim, int l1Dim, int buckets)
     {
-        int ftWeightsBytes = NnueConstants.FeatureCount * hiddenDim * sizeof(sbyte);
+        int featureCount = buckets * NnueConstants.RawFeatureCount;
+        int ftWeightsBytes = featureCount * hiddenDim * sizeof(sbyte);
         int ftBiasesBytes = hiddenDim * sizeof(short);
 
         int hiddenWeightsBytes = archId == NnueConstants.ArchStandard ? (hiddenDim * 2 * l1Dim * sizeof(sbyte)) : 0;

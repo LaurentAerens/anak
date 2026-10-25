@@ -163,16 +163,24 @@ public static unsafe class NnueInference
 
             for (int i = 0; i < halfDim; i += 32)
             {
-                // Process ourAcc 32 shorts -> 32 bytes
+                // Process ourAcc 32 shorts -> 32 bytes with SCReLU: (clamp(x, 0, 64)^2) >> 6
                 Vector256<short> o0 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i), vZero), vMax);
                 Vector256<short> o1 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i + 16), vZero), vMax);
-                Vector256<byte> oBytes = Vector256.AsByte(Vector256.Narrow(o0, o1));
+                Vector256<short> o0Sq = Avx2.MultiplyLow(o0, o0);
+                Vector256<short> o1Sq = Avx2.MultiplyLow(o1, o1);
+                Vector256<short> o0Act = Avx2.ShiftRightLogical(o0Sq, 6);
+                Vector256<short> o1Act = Avx2.ShiftRightLogical(o1Sq, 6);
+                Vector256<byte> oBytes = Vector256.AsByte(Vector256.Narrow(o0Act, o1Act));
                 oBytes.Store(pAct + i);
 
-                // Process theirAcc 32 shorts -> 32 bytes
+                // Process theirAcc 32 shorts -> 32 bytes with SCReLU: (clamp(x, 0, 64)^2) >> 6
                 Vector256<short> t0 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i), vZero), vMax);
                 Vector256<short> t1 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i + 16), vZero), vMax);
-                Vector256<byte> tBytes = Vector256.AsByte(Vector256.Narrow(t0, t1));
+                Vector256<short> t0Sq = Avx2.MultiplyLow(t0, t0);
+                Vector256<short> t1Sq = Avx2.MultiplyLow(t1, t1);
+                Vector256<short> t0Act = Avx2.ShiftRightLogical(t0Sq, 6);
+                Vector256<short> t1Act = Avx2.ShiftRightLogical(t1Sq, 6);
+                Vector256<byte> tBytes = Vector256.AsByte(Vector256.Narrow(t0Act, t1Act));
                 tBytes.Store(pAct + halfDim + i);
             }
         }
@@ -180,8 +188,11 @@ public static unsafe class NnueInference
         {
             for (int i = 0; i < halfDim; i++)
             {
-                pAct[i] = (byte)Math.Clamp(ourAcc[i], (short)0, NnueConstants.ClippedReluMax);
-                pAct[halfDim + i] = (byte)Math.Clamp(theirAcc[i], (short)0, NnueConstants.ClippedReluMax);
+                int oClamped = Math.Clamp(ourAcc[i], (short)0, NnueConstants.ClippedReluMax);
+                pAct[i] = (byte)((oClamped * oClamped) >> 6);
+
+                int tClamped = Math.Clamp(theirAcc[i], (short)0, NnueConstants.ClippedReluMax);
+                pAct[halfDim + i] = (byte)((tClamped * tClamped) >> 6);
             }
         }
     }
@@ -204,7 +215,8 @@ public static unsafe class NnueInference
                 }
 
                 int dot = (hiddenBiases[k] * NnueConstants.WeightScale) + Vector256.Sum(acc);
-                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                int clamped = Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                hiddenOutput[k] = (short)((clamped * clamped) >> 6);
             }
         }
         else if (Avx512BW.IsSupported)
@@ -228,7 +240,8 @@ public static unsafe class NnueInference
                 }
 
                 int dot = (hiddenBiases[k] * NnueConstants.WeightScale) + Vector512.Sum(acc);
-                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                int clamped = Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                hiddenOutput[k] = (short)((clamped * clamped) >> 6);
             }
         }
         else if (Avx2.IsSupported)
@@ -246,7 +259,8 @@ public static unsafe class NnueInference
                 }
 
                 int dot = (hiddenBiases[k] * NnueConstants.WeightScale) + Vector256.Sum(acc);
-                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                int clamped = Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                hiddenOutput[k] = (short)((clamped * clamped) >> 6);
             }
         }
         else
@@ -261,7 +275,8 @@ public static unsafe class NnueInference
                     dot += pAct[j] * wCol[j];
                 }
 
-                hiddenOutput[k] = (short)Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                int clamped = Math.Clamp(dot / NnueConstants.WeightScale, 0, (int)NnueConstants.ClippedReluMax);
+                hiddenOutput[k] = (short)((clamped * clamped) >> 6);
             }
         }
     }
