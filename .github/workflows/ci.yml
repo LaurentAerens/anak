@@ -53,7 +53,7 @@ jobs:
 
       - name: Generate Code Coverage Report
         if: matrix.os == 'ubuntu-latest'
-        uses: danielpalme/ReportGenerator-GitHub-Action@5.4.4
+        uses: danielpalme/ReportGenerator-GitHub-Action@5.5.11
         with:
           reports: 'coverage/**/coverage.cobertura.xml'
           targetdir: 'coveragereport'
