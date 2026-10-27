@@ -63,6 +63,7 @@ public static class Fen
                                     case PieceType.Queen: board.Queens |= bit; break;
                                     case PieceType.King: board.Kings |= bit; break;
                                 }
+                                board.SetPiece(sq, piece);
                                 file++;
                             }
                         }

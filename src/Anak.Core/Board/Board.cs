@@ -10,6 +10,12 @@ public struct RepetitionTable
     private ulong _element0;
 }
 
+[InlineArray(64)]
+public struct Mailbox
+{
+    private byte _element0;
+}
+
 [StructLayout(LayoutKind.Sequential)]
 public struct Board : IEquatable<Board>
 {
@@ -35,6 +41,9 @@ public struct Board : IEquatable<Board>
     // Repetition history
     private RepetitionTable _history;
     private int _gamePly;
+
+    // Piece mailbox
+    private Mailbox _mailbox;
 
     public int GamePly => _gamePly;
 
@@ -83,19 +92,13 @@ public struct Board : IEquatable<Board>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly Piece GetPieceAt(Square square)
     {
-        ulong bit = 1UL << (byte)square;
-        if ((Occupied & bit) == 0) return Piece.None;
+        return (uint)square < 64 ? (Piece)_mailbox[(int)square] : Piece.None;
+    }
 
-        Color color = (White & bit) != 0 ? Color.White : Color.Black;
-        PieceType type =
-            (Pawns & bit) != 0 ? PieceType.Pawn :
-            (Knights & bit) != 0 ? PieceType.Knight :
-            (Bishops & bit) != 0 ? PieceType.Bishop :
-            (Rooks & bit) != 0 ? PieceType.Rook :
-            (Queens & bit) != 0 ? PieceType.Queen :
-            PieceType.King;
-
-        return PieceExtensions.Create(color, type);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void SetPiece(Square sq, Piece piece)
+    {
+        if ((uint)sq < 64) _mailbox[(int)sq] = (byte)piece;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -157,6 +160,7 @@ public struct Board : IEquatable<Board>
             case PieceType.Queen: Queens |= bit; break;
             case PieceType.King: Kings |= bit; break;
         }
+        _mailbox[(byte)sq] = (byte)PieceExtensions.Create(color, type);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -173,6 +177,7 @@ public struct Board : IEquatable<Board>
             case PieceType.Queen: Queens &= ~bit; break;
             case PieceType.King: Kings &= ~bit; break;
         }
+        _mailbox[(byte)sq] = 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -189,6 +194,8 @@ public struct Board : IEquatable<Board>
             case PieceType.Queen: Queens ^= mask; break;
             case PieceType.King: Kings ^= mask; break;
         }
+        _mailbox[(byte)to] = _mailbox[(byte)from];
+        _mailbox[(byte)from] = 0;
     }
 
     public bool MakeMove(Move move, out BoardState state)
@@ -355,7 +362,7 @@ public struct Board : IEquatable<Board>
         else
         {
             Piece movedPiece = GetPieceAt(to);
-            MovePiece(from, to, us, movedPiece.Type());
+            MovePiece(to, from, us, movedPiece.Type());
         }
 
         // 2. Undo capture
@@ -381,7 +388,7 @@ public struct Board : IEquatable<Board>
                 rFrom = us == Color.White ? Square.A1 : Square.A8;
                 rTo = us == Color.White ? Square.D1 : Square.D8;
             }
-            MovePiece(rFrom, rTo, us, PieceType.Rook);
+            MovePiece(rTo, rFrom, us, PieceType.Rook);
         }
 
         // 4. Restore state

@@ -179,6 +179,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.0_20261027_182542.pgn",
       "notes": "1D flattened ContinuationHistory table eliminating multi-dimensional array lookup overhead and bounds checks (+5.8% NPS speedup, +3.1 Elo in 10,000 games with 84.8% LOS)"
+    },
+    "v1.0.2": {
+      "version": "v1.0.2",
+      "date": "2026-10-27",
+      "estimated_elo": 2270,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.1 (Known Elo: 2264)",
+      "score": "5090.5 / 10000",
+      "wins": 4293,
+      "losses": 4112,
+      "draws": 1595,
+      "perf_percent": 50.91,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.1_20261027_200840.pgn",
+      "notes": "Inline fixed Mailbox Piece[64] in Board eliminating bitboard branch chains in GetPieceAt (+6.3 Elo over v1.0.1 in 10,000 games with 97.9% LOS)"
     }
   }
 }
