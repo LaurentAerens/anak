@@ -12,8 +12,16 @@ public sealed class ContinuationHistory
 {
     public const int MaxHistory = 16384;
 
-    private readonly int[,,,] _table1Ply = new int[13, 64, 13, 64];
-    private readonly int[,,,] _table2Ply = new int[13, 64, 13, 64];
+    public const int TableSize = 16 * 64 * 16 * 64;
+
+    private readonly int[] _table1Ply = new int[TableSize];
+    private readonly int[] _table2Ply = new int[TableSize];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetIndex(Piece p1, Square to1, Piece p2, Square to2)
+    {
+        return ((int)p1 << 16) | ((int)to1 << 10) | ((int)p2 << 6) | (int)to2;
+    }
 
     /// <summary>
     /// Maps a <see cref="Piece"/> enum (0, 1..6, 9..14) to dense index [0..12].
@@ -35,9 +43,7 @@ public sealed class ContinuationHistory
         if (prevPiece == Piece.None || prevTo == Square.None || currPiece == Piece.None || currTo == Square.None)
             return 0;
 
-        int p1 = PieceToIndex(prevPiece);
-        int p2 = PieceToIndex(currPiece);
-        return _table1Ply[p1, (byte)prevTo, p2, (byte)currTo];
+        return _table1Ply[GetIndex(prevPiece, prevTo, currPiece, currTo)];
     }
 
     /// <summary>
@@ -49,9 +55,7 @@ public sealed class ContinuationHistory
         if (prevPiece == Piece.None || prevTo == Square.None || currPiece == Piece.None || currTo == Square.None)
             return 0;
 
-        int p1 = PieceToIndex(prevPiece);
-        int p2 = PieceToIndex(currPiece);
-        return _table2Ply[p1, (byte)prevTo, p2, (byte)currTo];
+        return _table2Ply[GetIndex(prevPiece, prevTo, currPiece, currTo)];
     }
 
     /// <summary>
@@ -73,9 +77,8 @@ public sealed class ContinuationHistory
         if (prevPiece == Piece.None || prevTo == Square.None || currPiece == Piece.None || currTo == Square.None)
             return;
 
-        int p1 = PieceToIndex(prevPiece);
-        int p2 = PieceToIndex(currPiece);
-        ref int val = ref _table1Ply[p1, (byte)prevTo, p2, (byte)currTo];
+        int idx = GetIndex(prevPiece, prevTo, currPiece, currTo);
+        ref int val = ref _table1Ply[idx];
         val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
     }
 
@@ -88,9 +91,8 @@ public sealed class ContinuationHistory
         if (prevPiece == Piece.None || prevTo == Square.None || currPiece == Piece.None || currTo == Square.None)
             return;
 
-        int p1 = PieceToIndex(prevPiece);
-        int p2 = PieceToIndex(currPiece);
-        ref int val = ref _table2Ply[p1, (byte)prevTo, p2, (byte)currTo];
+        int idx = GetIndex(prevPiece, prevTo, currPiece, currTo);
+        ref int val = ref _table2Ply[idx];
         val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
     }
 

@@ -251,9 +251,9 @@ def parse_args():
     parser.add_argument("--tc", type=str, default="3+0.05",
                         help="Time control base+inc in seconds (default: 3+0.05 for high-volume 1000-game matches)")
     total_cpus = os.cpu_count() or 2
-    default_concurrency = max(1, total_cpus - 4) if total_cpus > 8 else max(1, total_cpus - 1)
+    default_concurrency = max(1, (total_cpus // 2) - 2) if total_cpus > 8 else max(1, total_cpus // 2)
     parser.add_argument("--concurrency", type=int, default=default_concurrency,
-                        help=f"Number of concurrent games (default: {default_concurrency} leaving headroom for OS)")
+                        help=f"Number of concurrent games (default: {default_concurrency} leaving headroom for OS and 2 engines/game)")
     parser.add_argument("--hash", type=int, default=64,
                         help="Transposition Table Hash in MB per engine (default: 64)")
     parser.add_argument("--threads", type=int, default=1,
