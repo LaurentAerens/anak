@@ -170,5 +170,33 @@ public class TranspositionTableTests
         Assert.Equal(key2, e2.Key);
         Assert.Equal(move2, e2.BestMove);
     }
+
+    [Fact]
+    public void StoreAndRetrieve_ExpertId_PreservedAndIsolated()
+    {
+        var tt = new TranspositionTable(1);
+        ulong key = 0xFEEDFACECAFEBEEFUL;
+        Move move = new Move(Square.E2, Square.E4);
+
+        // Store with expert 4 (Imbalance)
+        tt.Store(key, move, depth: 6, score: 120, age: tt.CurrentAge, flags: TTFlags.Exact, expertId: 4);
+
+        Assert.True(tt.TryGet(key, out var entry));
+        Assert.Equal(key, entry.Key);
+        Assert.Equal(move, entry.BestMove);
+        Assert.Equal(6, entry.Depth);
+        Assert.Equal(120, entry.Score);
+        Assert.Equal(4, entry.ExpertId);
+
+        // Update with expert 0 (Open)
+        Move move2 = new Move(Square.D2, Square.D4);
+        tt.Store(key, move2, depth: 7, score: 85, age: tt.CurrentAge, flags: TTFlags.Exact, expertId: 0);
+
+        Assert.True(tt.TryGet(key, out var updated));
+        Assert.Equal(move2, updated.BestMove);
+        Assert.Equal(7, updated.Depth);
+        Assert.Equal(85, updated.Score);
+        Assert.Equal(0, updated.ExpertId);
+    }
 }
 

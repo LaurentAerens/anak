@@ -87,6 +87,7 @@ public sealed class UciHandler
                 break;
 
             case "isready":
+                _adapter.Warmup();
                 SendLine("readyok");
                 break;
 

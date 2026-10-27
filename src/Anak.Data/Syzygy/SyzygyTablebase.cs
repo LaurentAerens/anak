@@ -8,7 +8,7 @@ namespace Anak.Data.Syzygy;
 /// the shipped 3-4 piece tables work out of the box, and dropping 5-6 piece tables into the directory enables them.
 /// Probing fails gracefully (returns false) when files are missing so callers can fall back to search.
 /// </summary>
-public sealed class SyzygyTablebase
+public sealed class SyzygyTablebase : ITablebaseProber
 {
     private readonly SyzygyProber _prober = new();
     private string _syzygyPath = string.Empty;
