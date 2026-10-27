@@ -96,60 +96,19 @@ This document maintains a living backlog of concrete architectural experiments, 
 
 ---
 
-## ⚡ Category 2: Search Heuristics, Pruning & SPSA Parameter Tuning
+## ⚡ Category 2: Search Heuristics & Advanced Pruning Research
 
-### 1. Comprehensive SPSA Re-Tuning Post-Engine Changes
-- **Background & Context:**
-  - In recent iterations, multiple foundational search, data structure, and evaluation changes landed in Anak:
-    - **`v1.0.1`:** Flattened `ContinuationHistory` to a 1D contiguous table (+5.8% NPS, +3.1 Elo).
-    - **`v1.0.2`:** Inlined fixed mailbox `Piece[64]` directly in `Board` struct (+6.3 Elo, 97.9% LOS).
-    - **`v1.0.3`:** Removed per-node micro accumulator cloning in `MultiTierNnueEvaluator`, eliminating search loop overhead.
-    - **Search features:** In-search Syzygy 3-4 piece WDL probing and Unified Transposition Table with `ExpertId` tagging.
-  - These optimizations increased search speed by **+12% to +18% NPS** overall. Because search tree depth per millisecond has increased, the existing heuristic constants—previously tuned on slower engine builds—are now suboptimal and miscalibrated.
-- **Target Heuristics for Re-Tuning (via `tools/tuning/spsa.py`):**
-  1. **Late Move Reductions (LMR):**
-     - Recalibrate `LmrBase` and `LmrDivision` for deeper tree searches.
-  2. **Pruning Margins:**
-     - `RfpMargin` (Reverse Futility Pruning depth multiplier).
-     - `NmpBase` and depth reduction divisors for Null Move Pruning.
-     - `FutilityMarginD1D2` and `FutilityMarginD3` quiet move pruning thresholds.
-  3. **History Tables & Reductions:**
-     - `ConthistReward` and `ConthistPenalty` thresholds (newly flattened 1D table scale).
-     - `HistoryThreshold` and `HistoryBonusScale` for butterfly move ordering.
-  4. **Dynamic Time Management:**
-     - `TimeMovesToGo`, `TimeIncFactor`, `TimeStableScale`, `TimeFlipScale`, and `ScoreDropThreshold`.
-- **Execution Plan:**
-  - Launch SPSA tuning runs across 16 threads using `fastchess` on `openings.epd` at `2+0.02` or `3+0.05` time control:
-    ```bash
-    python tools/tuning/spsa.py --steps 100 --games-per-step 40 --concurrency 16 --tc 2+0.02
-    ```
-
----
-
-### 2. Capture History Penalty / Malus on Failed Captures
-- **Context:** Currently, `CaptureHistory` rewards captures that produce a beta cutoff. However, non-cutoff captures (especially speculative or refuted captures) receive no penalty.
-- **Direction:** Apply a symmetric malus penalty to failing captures in `CaptureHistory` when they fail to produce a cutoff, pushing losing tactical captures down the move ordering list in subsequent search nodes.
-
----
-
-### 3. TT Move Ordering in Quiescence Search
-- **Context:** Currently, Quiescence Search relies strictly on MVV-LVA and SEE for move ordering.
-- **Direction:** Probe the Transposition Table for a valid hash move at shallow plies of QSearch (or depth 0 / root of QSearch) to order winning captures and evasions earlier.
-
----
-
-### 4. Refined ProbCut (Probability Cutoff) with SEE Safeguards
+### 1. Refined ProbCut (Probability Cutoff) with SEE Safeguards
 - **Context:** A naive ProbCut experiment was reverted in `v0.0.5` due to search instability when elevated QSearch cutoffs pruned critical defensive tactics.
 - **Direction:** Re-investigate ProbCut gated by strict Static Exchange Evaluation ($\text{SEE} \ge 0$) and limited to non-quiet moves when static eval exceeds $\beta + 200\text{ cp}$.
 
+### 2. Comprehensive SPSA Re-Tuning Post-Engine Changes
+- **Context:** Multiple foundational search, data structure, and evaluation changes landed in Anak (`v1.0.1`, `v1.0.2`, `v1.0.3`, Syzygy probing, unified TT). Once all structural search features in the active plan are implemented, a comprehensive long-running SPSA re-tune across all pruning thresholds and time management parameters should be executed.
+
 ---
 
-## 🚀 Category 3: Engine Speedups & C# / .NET Intrinsics (NPS)
+## 🚀 Category 3: Low-Level Hardware Research
 
-### 1. Bulk Incremental Feature Updates in `NnueAccumulator`
-- **Context:** Incremental accumulator updates currently loop through added and removed pieces sequentially.
-- **Direction:** Batch piece additions and removals into combined SIMD feature pointers, vectorizing the weight additions and subtractions to minimize memory bus traffic.
-
-### 2. Memory Prefetching in Transposition Table & History Probing
+### 1. Memory Prefetching in Transposition Table & History Probing
 - **Context:** Probing the Transposition Table and butterfly history tables accounts for a notable fraction of L3 cache misses in deep searches.
 - **Direction:** Issue hardware prefetch instructions (`_mm_prefetch` via C# `System.Runtime.Intrinsics.X86.Sse.Prefetch0`) for target TT cluster addresses during move generation and candidate move unpacking.
