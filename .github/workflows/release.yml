@@ -9,6 +9,44 @@ permissions:
   contents: write
 
 jobs:
+  test-and-verify:
+    name: Test & Engine Diagnostics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Setup .NET SDK 11
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '11.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build solution in Release mode
+        run: dotnet build -c Release --no-restore
+
+      - name: Run unit & regression tests
+        run: |
+          mkdir -p diagnostics
+          dotnet test -c Release --no-build --verbosity normal | tee diagnostics/test_results.txt
+
+      - name: Run Perft sanity check
+        run: |
+          dotnet run --project src/Anak.Protocol -c Release --no-build -- --perft 4 | tee diagnostics/perft_results.txt
+
+      - name: Run NPS benchmark check
+        run: |
+          dotnet run --project src/Anak.Protocol -c Release --no-build -- bench | tee diagnostics/bench_results.txt
+
+      - name: Upload diagnostics artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: diagnostics
+          path: diagnostics/
+
   build:
     name: Build (${{ matrix.rid }})
     runs-on: ubuntu-latest
@@ -120,15 +158,22 @@ jobs:
           path: asset/
 
   publish-release:
-    name: Draft GitHub Release
-    needs: build
+    name: Publish GitHub Release
+    needs: [test-and-verify, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: Checkout code
+      - name: Checkout code (with history for changelog)
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Download all build artifacts
         uses: actions/download-artifact@v8
@@ -143,11 +188,32 @@ jobs:
           cat *.sha256 | sort -u > SHA256SUMS.txt
           ls -la
 
-      - name: Draft GitHub Release
+      - name: Locate diagnostic logs
+        id: diagnostics
+        run: |
+          mkdir -p logs
+          find artifacts/ -type f -name "test_results.txt" -exec cp {} logs/ \; || true
+          find artifacts/ -type f -name "perft_results.txt" -exec cp {} logs/ \; || true
+          find artifacts/ -type f -name "bench_results.txt" -exec cp {} logs/ \; || true
+          ls -la logs/
+
+      - name: Generate Release Notes & Elo Progression Chart
+        run: |
+          python tools/generate_release_notes.py \
+            --tag "${{ github.ref_name }}" \
+            --ratings tools/fastchess/ratings.json \
+            --output-notes dist/release_notes.md \
+            --output-svg dist/elo_progression.svg \
+            --bench-results logs/bench_results.txt \
+            --test-results logs/test_results.txt \
+            --perft-results logs/perft_results.txt \
+            --repo "${{ github.repository }}"
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          draft: true
+          draft: false
           name: Anak ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: dist/release_notes.md
           files: |
             dist/*

@@ -6,7 +6,7 @@
 [![.NET](https://img.shields.io/badge/.NET-11.0-512BD4.svg)](https://dotnet.microsoft.com/)
 [![C#](https://img.shields.io/badge/C%23-preview%20(14%2F15)-239120.svg)](https://learn.microsoft.com/dotnet/csharp/)
 
-**Anak** is an ultra-high-performance chess engine architected for the `.NET 11` runtime (`net11.0`), leveraging modern hardware intrinsics, zero-GC allocation discipline, Magic Bitboards, a tournament-grade **Alpha-Beta (Negamax / PVS)** search engine with Lazy SMP alongside an alternative **Monte Carlo Tree Search (MCTS)** engine, pure managed **Syzygy endgame tablebase probing**, a **PolyGlot opening book reader**, a **Multi-Tier NNUE evaluation pipeline**, and complete UCI/SPRT tournament compliance.
+**Anak** is an ultra-high-performance chess engine authored by **Laurent Aerens** (Belgium), architected for the `.NET 11` runtime (`net11.0`), leveraging modern hardware intrinsics, zero-GC allocation discipline, Magic Bitboards, a tournament-grade **Alpha-Beta (Negamax / PVS)** search engine with Lazy SMP alongside an alternative **Monte Carlo Tree Search (MCTS)** engine, pure managed **Syzygy endgame tablebase probing**, a **PolyGlot opening book reader**, a **Multi-Tier NNUE evaluation pipeline**, and complete UCI/SPRT tournament compliance.
 
 ---
 
@@ -336,7 +336,7 @@ The runner automatically compiles `anak.exe`, matches candidate vs baseline usin
 | [**v0.0.2**](https://github.com/laerens/anak/releases/tag/v0.0.2) | MCTS + Multi-Tier NNUE | **1616** | Baseline v0.0.1 |
 | [**v0.0.3**](https://github.com/laerens/anak/releases/tag/v0.0.3) | Alpha-Beta (Negamax/PVS) | **1659** | Stockfish 19 (1800 Elo) |
 | [**v0.0.4**](https://github.com/laerens/anak/releases/tag/v0.0.4) | Alpha-Beta + NNUE Retrain + Book + Syzygy + SPSA | **1678** | Anak v0.0.3 (+18.8 Elo) |
-| [**v1.0.0**](https://github.com/laerens/anak/releases/tag/v1.0.0) | Managed Syzygy + Dynamic Micro Watchdog + Multi-Tier NNUE | **2063** | Stockfish 19 (2000 Elo: +63 Elo) |
+| [**v1.0.0**](https://github.com/laerens/anak/releases/tag/v1.0.0) | Multi-Tier NNUE (6 Experts) + Alpha-Beta PVS + Syzygy + Unified TT | **2261** | Stockfish Ladder / current_dev (+31 Elo) |
 
 See [BENCHMARKS.md](BENCHMARKS.md) and [tools/fastchess/README.md](tools/fastchess/README.md) for complete details.
 
@@ -455,6 +455,17 @@ Features:
 - Built-in engine self-play mode.
 
 *Note: The UI tool is strictly for local developer use and is not packaged into the standalone engine distribution (`anak.exe`). See [tools/Anak.UI/README.md](tools/Anak.UI/README.md) for details and open-source attribution.*
+
+---
+
+## Author & Credits
+
+<img align="right" width="160" src="assets/logo.jpg" alt="Anak Chess Engine Logo" />
+
+- **Author**: **Laurent Aerens** (Belgium)
+- **GitHub**: [@laerens](https://github.com/laerens)
+
+See [CREDITS.md](CREDITS.md) for detailed third-party acknowledgments and asset licenses.
 
 ---
 

@@ -186,7 +186,7 @@ internal static class SyzygyKeys
 /// </summary>
 internal static class SyzygyIndexing
 {
-    private static readonly long[,] BinomTable = BuildBinom();
+    private static readonly long[,] _binomTable = BuildBinom();
 
     public static readonly long[,] PawnIdx = new long[5, 24];
     public static readonly long[,] PawnFactor = new long[5, 4];
@@ -225,7 +225,7 @@ internal static class SyzygyIndexing
         return t;
     }
 
-    public static long Binom(int x, int y) => (x < 0 || y < 0 || y > x || x > 64) ? 0 : BinomTable[x, y];
+    public static long Binom(int x, int y) => (x < 0 || y < 0 || y > x || x > 64) ? 0 : _binomTable[x, y];
 
     public static long SubFactor(int k, int n)
     {

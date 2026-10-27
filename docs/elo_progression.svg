@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 420" width="100%" height="auto" style="background:#0d1117; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif; border-radius: 8px; border: 1px solid #30363d;">
+  <defs>
+    <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#58a6ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#1f6feb" stop-opacity="0.0"/>
+    </linearGradient>
+    <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#388bfd"/>
+      <stop offset="100%" stop-color="#2ea043"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#2ea043" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+
+  <!-- Title -->
+  <text x="410.0" y="36" text-anchor="middle" font-size="18" font-weight="600" fill="#f0f6fc">Anak Chess Engine — Elo Rating Progression</text>
+  <text x="410.0" y="54" text-anchor="middle" font-size="12" fill="#8b949e">Benchmark tracking against reference baselines and calibrated Stockfish</text>
+
+  <!-- Grid Lines & Y-Labels -->
+  <line x1="75" y1="337.2" x2="770" y2="337.2" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="341.2" text-anchor="end" font-size="12" fill="#8b949e">1600</text>
+  <line x1="75" y1="301.6" x2="770" y2="301.6" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="305.6" text-anchor="end" font-size="12" fill="#8b949e">1700</text>
+  <line x1="75" y1="265.9" x2="770" y2="265.9" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="269.9" text-anchor="end" font-size="12" fill="#8b949e">1800</text>
+  <line x1="75" y1="230.3" x2="770" y2="230.3" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="234.3" text-anchor="end" font-size="12" fill="#8b949e">1900</text>
+  <line x1="75" y1="194.7" x2="770" y2="194.7" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="198.7" text-anchor="end" font-size="12" fill="#8b949e">2000</text>
+  <line x1="75" y1="159.1" x2="770" y2="159.1" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="163.1" text-anchor="end" font-size="12" fill="#8b949e">2100</text>
+  <line x1="75" y1="123.4" x2="770" y2="123.4" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="127.4" text-anchor="end" font-size="12" fill="#8b949e">2200</text>
+  <line x1="75" y1="87.8" x2="770" y2="87.8" stroke="#21262d" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="63" y="91.8" text-anchor="end" font-size="12" fill="#8b949e">2300</text>
+  <line x1="75" y1="355" x2="770" y2="355" stroke="#30363d" stroke-width="1.5"/>
+  <path d="M 75.0 331.5 L 144.5 331.5 L 214.0 316.2 L 283.5 309.4 L 353.0 292.7 L 422.5 112.8 L 492.0 101.3 L 561.5 101.3 L 631.0 101.0 L 700.5 101.7 L 770.0 101.7 L 770.0 355.0 L 75.0 355.0 Z" fill="url(#areaGradient)" />
+  <path d="M 75.0 331.5 L 144.5 331.5 L 214.0 316.2 L 283.5 309.4 L 353.0 292.7 L 422.5 112.8 L 492.0 101.3 L 561.5 101.3 L 631.0 101.0 L 700.5 101.7 L 770.0 101.7" fill="none" stroke="url(#lineGradient)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="75.0" cy="331.5" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="75.0" y="317.5" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">1616 ±215</text>
+  <text x="75.0" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.1</text>
+  <text x="75.0" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-19</text>
+  <circle cx="144.5" cy="331.5" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="144.5" y="317.5" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">1616</text>
+  <text x="144.5" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.2</text>
+  <text x="144.5" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-20</text>
+  <circle cx="214.0" cy="316.2" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="214.0" y="302.2" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">1659 ±23</text>
+  <text x="214.0" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.3</text>
+  <text x="214.0" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-20</text>
+  <circle cx="283.5" cy="309.4" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="283.5" y="295.4" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">1678 ±18</text>
+  <text x="283.5" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.4</text>
+  <text x="283.5" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-23</text>
+  <circle cx="353.0" cy="292.7" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="353.0" y="278.7" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">1725 ±19</text>
+  <text x="353.0" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.5-phase5</text>
+  <text x="353.0" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-24</text>
+  <circle cx="422.5" cy="112.8" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="422.5" y="98.8" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">2230 ±30</text>
+  <text x="422.5" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">current_dev</text>
+  <text x="422.5" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-26</text>
+  <circle cx="492.0" cy="101.3" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="492.0" y="87.3" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">2262 ±6</text>
+  <text x="492.0" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.6-transition-warmup</text>
+  <text x="492.0" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-26</text>
+  <circle cx="561.5" cy="101.3" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="561.5" y="87.3" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">2262 ±6</text>
+  <text x="561.5" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.7-rfp-capture-see</text>
+  <text x="561.5" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-27</text>
+  <circle cx="631.0" cy="101.0" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="631.0" y="87.0" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">2263 ±6</text>
+  <text x="631.0" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.8-syzygy-search</text>
+  <text x="631.0" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-27</text>
+  <circle cx="700.5" cy="101.7" r="5" fill="#58a6ff" stroke="#0d1117" stroke-width="2"/>
+  <text x="700.5" y="87.7" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">2261 ±6</text>
+  <text x="700.5" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v0.0.9-unified-tt-tagging</text>
+  <text x="700.5" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-27</text>
+  <circle cx="770.0" cy="101.7" r="6" fill="#2ea043" stroke="#ffffff" stroke-width="2" filter="url(#glow)"/>
+  <text x="770.0" y="87.7" text-anchor="middle" font-size="13" font-weight="700" fill="#f0f6fc">2261 ±6</text>
+  <text x="770.0" y="377.0" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">v1.0.0</text>
+  <text x="770.0" y="393.0" text-anchor="middle" font-size="10" fill="#8b949e">2026-10-27</text>
+</svg>

@@ -119,7 +119,7 @@ public sealed class TranspositionTable
     /// Stores or updates an entry for Minimax / Alpha-Beta search.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Store(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags)
+    public void Store(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0)
     {
         ulong index = key & _mask;
         ref TTCluster cluster = ref _clusters[index];
@@ -127,13 +127,13 @@ public sealed class TranspositionTable
         // 1. If key matches either entry in the cluster, update in-place
         if (cluster.Entry0.Key == key)
         {
-            UpdateMinimaxEntry(ref cluster.Entry0, key, bestMove, depth, score, age, flags);
+            UpdateMinimaxEntry(ref cluster.Entry0, key, bestMove, depth, score, age, flags, expertId);
             return;
         }
 
         if (cluster.Entry1.Key == key)
         {
-            UpdateMinimaxEntry(ref cluster.Entry1, key, bestMove, depth, score, age, flags);
+            UpdateMinimaxEntry(ref cluster.Entry1, key, bestMove, depth, score, age, flags, expertId);
             return;
         }
 
@@ -141,54 +141,72 @@ public sealed class TranspositionTable
         // Prefer uninitialized / invalid slot
         if (!cluster.Entry0.IsValid)
         {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags);
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
             return;
         }
 
         if (!cluster.Entry1.IsValid)
         {
-            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags);
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
             return;
         }
 
         // Prefer replacing slot with older age
         if (cluster.Entry0.Age != age && cluster.Entry1.Age == age)
         {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags);
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
             return;
         }
 
         if (cluster.Entry1.Age != age && cluster.Entry0.Age == age)
         {
-            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags);
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
             return;
+        }
+
+        // If both slots are from older searches, prefer replacing slot from a different expert
+        if (cluster.Entry0.Age != age && cluster.Entry1.Age != age)
+        {
+            if (cluster.Entry0.ExpertId != expertId && cluster.Entry1.ExpertId == expertId)
+            {
+                cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+                return;
+            }
+
+            if (cluster.Entry1.ExpertId != expertId && cluster.Entry0.ExpertId == expertId)
+            {
+                cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+                return;
+            }
         }
 
         // Prefer replacing slot with shallower depth
         if (cluster.Entry0.Depth <= cluster.Entry1.Depth)
         {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags);
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
         }
         else
         {
-            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags);
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void UpdateMinimaxEntry(ref TTEntry existing, ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags)
+    private static void UpdateMinimaxEntry(ref TTEntry existing, ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId)
     {
         // Overwrite score and depth if:
         // - New entry is Exact, OR
         // - New search depth is >= existing depth, OR
-        // - Existing entry is from an older search generation
-        if (flags == TTFlags.Exact || depth >= existing.Depth || existing.Age != age)
+        // - Existing entry is from an older search generation, OR
+        // - Existing entry is from a different expert
+        if (flags == TTFlags.Exact || depth >= existing.Depth || existing.Age != age || existing.ExpertId != expertId)
         {
             existing.Key = key;
             existing.Depth = depth;
             existing.Score = score;
             existing.Flags = flags;
             existing.Age = age;
+            existing.ExpertId = expertId;
             existing.Visits = Math.Max(1u, (uint)depth);
         }
 

@@ -26,6 +26,11 @@ public sealed class QuiescenceSearch
     public const int DeltaMargin = 900;
     public int DeltaSafetyMargin { get; set; } = SearchHeuristics.TunedQsDeltaMargin;
 
+    /// <summary>
+    /// ID of the active NNUE expert network for TT isolation and tagging.
+    /// </summary>
+    public byte ActiveExpertId { get; set; } = 0;
+
     public QuiescenceSearch(
         IEvaluator evaluator,
         TranspositionTable? tt = null,
@@ -55,7 +60,7 @@ public sealed class QuiescenceSearch
         Move bestMove = Move.Null;
 
         // 1. Transposition Table probe
-        if (_tt != null && _tt.TryGet(key, out TTEntry entry))
+        if (_tt != null && _tt.TryGet(key, out TTEntry entry) && entry.ExpertId == ActiveExpertId)
         {
             int ttScore = TTEntry.ScoreFromTt(entry.Score, ply);
             if (entry.Flags == TTFlags.Exact) return ttScore;
@@ -213,7 +218,7 @@ public sealed class QuiescenceSearch
 
             if (score >= beta)
             {
-                _tt?.Store(key, move, 0, TTEntry.ScoreToTt(beta, ply), _tt.CurrentAge, TTFlags.LowerBound);
+                _tt?.Store(key, move, 0, TTEntry.ScoreToTt(beta, ply), _tt.CurrentAge, TTFlags.LowerBound, ActiveExpertId);
                 return beta;
             }
 
@@ -225,7 +230,7 @@ public sealed class QuiescenceSearch
         }
 
         TTFlags flag = (alpha > originalAlpha) ? TTFlags.Exact : TTFlags.UpperBound;
-        _tt?.Store(key, bestMove, 0, TTEntry.ScoreToTt(alpha, ply), _tt?.CurrentAge ?? 1, flag);
+        _tt?.Store(key, bestMove, 0, TTEntry.ScoreToTt(alpha, ply), _tt?.CurrentAge ?? 1, flag, ActiveExpertId);
         return alpha;
     }
 }

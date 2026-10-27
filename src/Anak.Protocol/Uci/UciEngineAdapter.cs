@@ -142,6 +142,8 @@ public sealed class UciEngineAdapter
             nnueTb.Tablebase = _tablebase;
         }
 
+        _alphaBetaEngine.Tablebase = _tablebase;
+
         // Wire AlphaBeta search options for SPSA tuning
         _alphaBetaEngine.LmrBase = _options.LmrBase.Value;
         _alphaBetaEngine.LmrDivision = _options.LmrDivision.Value;
@@ -204,6 +206,22 @@ public sealed class UciEngineAdapter
 
 
     /// <summary>
+    /// Warms up evaluation and search JIT compilation paths before games start.
+    /// </summary>
+    public void Warmup()
+    {
+        lock (_syncLock)
+        {
+            Board b = Fen.Parse(Fen.StartPosition);
+            _evaluator.Evaluate(in b, ReadOnlySpan<Move>.Empty);
+            _alphaBetaEngine.Search(in b, new SearchLimits { Depth = 1 });
+            _alphaBetaEngine.TranspositionTable.Clear();
+            _alphaBetaEngine.ClearHistory();
+            _alphaBetaEngine.ResetLastRootExpert();
+        }
+    }
+
+    /// <summary>
     /// Resets the engine state for a new game: clears transposition table,
     /// resets move history, and restores starting board position.
     /// </summary>
@@ -214,6 +232,7 @@ public sealed class UciEngineAdapter
             StopSearchInternal();
             _alphaBetaEngine.TranspositionTable.Clear();
             _alphaBetaEngine.ClearHistory();
+            _alphaBetaEngine.ResetLastRootExpert();
             _mctsEngine.TranspositionTable.Clear();
             _mctsEngine.ClearHistory();
             _gameMoves.Clear();
