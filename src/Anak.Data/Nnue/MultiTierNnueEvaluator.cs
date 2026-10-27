@@ -30,8 +30,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     private readonly DefaultEvaluator _fallbackEvaluator;
     private readonly short[] _stackWhite = new short[256 * 512];
     private readonly short[] _stackBlack = new short[256 * 512];
-    private readonly short[] _stackMicroWhite = new short[256 * 16];
-    private readonly short[] _stackMicroBlack = new short[256 * 16];
     private readonly ulong[] _stackKeys = new ulong[256];
     private int _stackDepth = -1;
     private bool _disposed;
@@ -269,13 +267,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             {
                 NnueAccumulator.ComputeFull(in rootBoard, weights, wPtr, bPtr);
             }
-            if (_microWeights != null)
-            {
-                fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
-                {
-                    NnueAccumulator.ComputeFull(in rootBoard, _microWeights, mwPtr, mbPtr);
-                }
-            }
             _stackKeys[0] = rootBoard.ZobristKey;
             _stackDepth = 0;
         }
@@ -311,32 +302,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, nextW, nextB, in boardAfter);
         }
 
-        if (_microWeights != null)
-        {
-            int curM = _stackDepth * 16;
-            int nextM = (_stackDepth + 1) * 16;
-            fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
-            {
-                short* curMW = mwPtr + curM;
-                short* curMB = mbPtr + curM;
-                short* nextMW = mwPtr + nextM;
-                short* nextMB = mbPtr + nextM;
-
-                if (Avx2.IsSupported)
-                {
-                    Vector256.Load(curMW).Store(nextMW);
-                    Vector256.Load(curMB).Store(nextMB);
-                }
-                else
-                {
-                    Buffer.MemoryCopy(curMW, nextMW, 16 * sizeof(short), 16 * sizeof(short));
-                    Buffer.MemoryCopy(curMB, nextMB, 16 * sizeof(short), 16 * sizeof(short));
-                }
-
-                NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, _microWeights, nextMW, nextMB, in boardAfter);
-            }
-        }
-
         _stackDepth++;
         _stackKeys[_stackDepth] = boardAfter.ZobristKey;
     }
@@ -363,25 +328,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
             CopyAccumulator(curW, nextW, dim);
             CopyAccumulator(curB, nextB, dim);
-        }
-
-        if (_microWeights != null)
-        {
-            int curM = _stackDepth * 16;
-            int nextM = (_stackDepth + 1) * 16;
-            fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
-            {
-                if (Avx2.IsSupported)
-                {
-                    Vector256.Load(mwPtr + curM).Store(mwPtr + nextM);
-                    Vector256.Load(mbPtr + curM).Store(mbPtr + nextM);
-                }
-                else
-                {
-                    Buffer.MemoryCopy(mwPtr + curM, mwPtr + nextM, 16 * sizeof(short), 16 * sizeof(short));
-                    Buffer.MemoryCopy(mbPtr + curM, mbPtr + nextM, 16 * sizeof(short), 16 * sizeof(short));
-                }
-            }
         }
 
         _stackDepth++;
@@ -524,21 +470,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         if (!UseNnue || _microWeights == null)
         {
             return Evaluate(in board, ReadOnlySpan<Move>.Empty);
-        }
-
-        // Fast incremental path during active search (1 single SIMD dot product)
-        if (_stackDepth >= 0 && _stackKeys[_stackDepth] == board.ZobristKey)
-        {
-            int offset = _stackDepth * 16;
-            fixed (short* mwPtr = _stackMicroWhite, mbPtr = _stackMicroBlack)
-            {
-                short* wAcc = mwPtr + offset;
-                short* bAcc = mbPtr + offset;
-                short* ourAcc = board.SideToMove == Color.White ? wAcc : bAcc;
-                short* theirAcc = board.SideToMove == Color.White ? bAcc : wAcc;
-                int score = NnueInference.EvaluateMicro(ourAcc, theirAcc, _microWeights);
-                return new Value(score);
-            }
         }
 
         const int dim = NnueConstants.MicroHiddenDim;

@@ -194,6 +194,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.1_20261027_200840.pgn",
       "notes": "Inline fixed Mailbox Piece[64] in Board eliminating bitboard branch chains in GetPieceAt (+6.3 Elo over v1.0.1 in 10,000 games with 97.9% LOS)"
+    },
+    "v1.0.3": {
+      "version": "v1.0.3",
+      "date": "2026-10-27",
+      "estimated_elo": 2274,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.2 (Known Elo: 2270)",
+      "score": "5059 / 10000",
+      "wins": 4246,
+      "losses": 4128,
+      "draws": 1626,
+      "perf_percent": 50.59,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.2_20261027_215944.pgn",
+      "notes": "Bypass Micro-NNUE accumulator updates during search and qsearch (+4.1 Elo over v1.0.2 in 10,000 games with 90.7% LOS)"
     }
   }
 }
