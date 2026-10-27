@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "tools\\fastchess\\results\\anak_vs_sf2000_20261025_173220.pgn",
+        "file": "tools\\fastchess\\results\\anak_dev_vs_current_dev_20261027_135801.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -60,7 +60,7 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 6218096331934147516,
+    "seed": 18171765943306788448,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -70,7 +70,7 @@
     "autosaveinterval": 20,
     "games": 2,
     "rounds": 5000,
-    "concurrency": 26,
+    "concurrency": 14,
     "force_concurrency": false,
     "recover": false,
     "noswap": false,
@@ -101,7 +101,7 @@
                 ],
                 [
                     "Hash",
-                    "32"
+                    "64"
                 ]
             ],
             "limit": {
@@ -118,9 +118,9 @@
             "variant": 0
         },
         {
-            "name": "Stockfish-2000",
-            "dir": "tools\\fastchess\\bin",
-            "cmd": "stockfish.exe",
+            "name": "Anak-current_dev",
+            "dir": "tools\\fastchess\\baselines\\current_dev",
+            "cmd": "anak.exe",
             "args": "",
             "restart": false,
             "options": [
@@ -130,15 +130,7 @@
                 ],
                 [
                     "Hash",
-                    "32"
-                ],
-                [
-                    "UCI_LimitStrength",
-                    "true"
-                ],
-                [
-                    "UCI_Elo",
-                    "2000"
+                    "64"
                 ]
             ],
             "limit": {
@@ -156,16 +148,16 @@
         }
     ],
     "stats": {
-        "Anak-Dev vs Stockfish-2000": {
-            "wins": 5461,
-            "losses": 3782,
-            "draws": 757,
-            "penta_WW": 1477,
-            "penta_WD": 413,
-            "penta_WL": 2094,
-            "penta_DD": 27,
-            "penta_LD": 290,
-            "penta_LL": 699
+        "Anak-Dev vs Anak-current_dev": {
+            "wins": 4631,
+            "losses": 3746,
+            "draws": 1623,
+            "penta_WW": 1029,
+            "penta_WD": 788,
+            "penta_WL": 1785,
+            "penta_DD": 124,
+            "penta_LD": 587,
+            "penta_LL": 687
         }
     }
 }

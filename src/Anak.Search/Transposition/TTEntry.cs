@@ -75,17 +75,23 @@ public struct TTEntry
     public TTFlags Flags;
 
     /// <summary>
-    /// Padding fields to ensure struct size is exactly 32 bytes.
+    /// ID of the specialized NNUE expert model that evaluated or searched this entry.
+    /// Dual-purpose: safely isolates score cutoffs across disparate neural evaluation domains,
+    /// while retaining best-move ordering and multi-ply memory when returning to this expert.
+    /// </summary>
+    public byte ExpertId;
+
+    /// <summary>
+    /// Padding field to ensure struct size is exactly 32 bytes.
     /// 8 + 4 + 4 + 4 + 2 + 2 + 1 + 1 + 1 + 1 + 4 = 32 bytes.
     /// </summary>
-    private readonly byte _pad0;
     private readonly uint _pad1;
 
     /// <summary>
     /// Minimax / Alpha-Beta constructor.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public TTEntry(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags)
+    public TTEntry(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0)
     {
         Key = key;
         Visits = Math.Max(1u, (uint)depth);
@@ -96,7 +102,7 @@ public struct TTEntry
         Depth = depth;
         Age = age;
         Flags = flags;
-        _pad0 = 0;
+        ExpertId = expertId;
         _pad1 = 0;
     }
 
@@ -115,7 +121,7 @@ public struct TTEntry
         Depth = 0;
         Age = age;
         Flags = flags;
-        _pad0 = 0;
+        ExpertId = 0;
         _pad1 = 0;
     }
 
@@ -169,5 +175,6 @@ public struct TTEntry
         Depth = 0;
         Age = 0;
         Flags = TTFlags.None;
+        ExpertId = 0;
     }
 }

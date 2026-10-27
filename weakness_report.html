@@ -1,0 +1,2409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Anak Weakness Finder — Deep Big-Data Analytics Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f141c; color: #e1e7ec; margin: 0; padding: 24px; }
+    .container { max-width: 1440px; margin: 0 auto; }
+    h1, h2, h3 { color: #58a6ff; font-weight: 600; margin-top: 32px; }
+    .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; margin: 20px 0; }
+    .card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 18px; }
+    .card-num { font-size: 24px; font-weight: bold; color: #f0883e; margin-top: 6px; }
+    .card-num.good { color: #3fb950; }
+    .card-num.bad { color: #f85149; }
+
+    .split-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.28fr) minmax(0, 0.92fr);
+        gap: 20px;
+        align-items: stretch;
+        margin-bottom: 28px;
+    }
+    @media (max-width: 1100px) {
+        .split-grid { grid-template-columns: 1fr; }
+    }
+    .table-pane { min-width: 0; overflow-x: auto; }
+    .chart-pane { min-width: 0; display: flex; flex-direction: column; }
+    .chart-card {
+        background: #161b22;
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        padding: 18px;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+    }
+    .chart-title {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #8b949e;
+        text-transform: uppercase;
+        letter-spacing: 0.6px;
+    }
+    .chart-badge {
+        font-size: 11px;
+        padding: 2px 7px;
+        background: rgba(88, 166, 255, 0.15);
+        color: #58a6ff;
+        border-radius: 12px;
+    }
+    .chart-box {
+        position: relative;
+        flex: 1;
+        min-height: 270px;
+        width: 100%;
+    }
+
+    table { width: 100%; border-collapse: collapse; margin-top: 0; background: #161b22; border-radius: 8px; overflow: hidden; border: 1px solid #30363d; }
+    th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid #21262d; font-size: 13px; }
+    th { background: #21262d; color: #8b949e; text-transform: uppercase; font-size: 11.5px; letter-spacing: 0.5px; }
+    tr:hover { background: #1f242c; }
+    .badge { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+    .badge-bad { background: rgba(248,81,73,0.2); color: #f85149; }
+    .badge-good { background: rgba(63,185,80,0.2); color: #3fb950; }
+    .badge-warn { background: rgba(210,153,34,0.2); color: #d29922; }
+    .badge-info { background: rgba(88,166,255,0.2); color: #58a6ff; }
+    .fen-text { font-family: monospace; font-size: 11px; color: #8b949e; max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<div class="container">
+    <h1>Anak Weakness Finder — Deep Big-Data Analytics Dashboard</h1>
+    <p style="color: #8b949e;">Columnar Big-Data telemetry across <strong>50,000 games</strong> (29,696W - 17,107L - 3,197D).</p>
+
+    <div class="card-grid">
+        <div class="card">
+            <div>Total Match Games</div>
+            <div class="card-num">50,000</div>
+            <small style="color: #8b949e;">62.6% Overall Score</small>
+        </div>
+        <div class="card">
+            <div>Score as White</div>
+            <div class="card-num good">68.4%</div>
+            <small style="color: #8b949e;">First-move advantage</small>
+        </div>
+        <div class="card">
+            <div>Score as Black</div>
+            <div class="card-num good">56.7%</div>
+            <small style="color: #8b949e;">Defensive performance</small>
+        </div>
+        <div class="card">
+            <div>Color Asymmetry Gap</div>
+            <div class="card-num bad">+11.7%</div>
+            <small style="color: #8b949e;">White Perf - Black Perf</small>
+        </div>
+        <div class="card">
+            <div>Thrown Wins (Lead Blown)</div>
+            <div class="card-num bad">11,815</div>
+            <small style="color: #8b949e;">Had >= +1.50 advantage</small>
+        </div>
+        <div class="card">
+            <div>Cracked Defenses</div>
+            <div class="card-num bad">5,106</div>
+            <small style="color: #8b949e;">Failed to hold equal position</small>
+        </div>
+        <div class="card">
+            <div>Top Blunder Motif</div>
+            <div class="card-num bad" style="font-size: 19px;">Positional / Tactical Slip</div>
+            <small style="color: #8b949e;">13,813 occurrences</small>
+        </div>
+        <div class="card">
+            <div>Catastrophic 1-Ply Throws</div>
+            <div class="card-num bad">94.2%</div>
+            <small style="color: #8b949e;">Single drop >= 2.5 cp</small>
+        </div>
+        <div class="card">
+            <div>Highest Transition Spike</div>
+            <div class="card-num bad" style="font-size: 18px;">Attack -> Endgame (23.53%)</div>
+            <small style="color: #8b949e;">Blunder rate on handoff</small>
+        </div>
+    </div>
+
+    <h2>1. Match Ladder Progression</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <table>
+                <thead>
+                    <tr><th>Opponent</th><th>Target Elo</th><th>Total Games</th><th>Score %</th><th>W / L / D</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Stockfish-1600</strong></td>
+                        <td>1600</td>
+                        <td>10,000</td>
+                        <td><span class="badge badge-good">85.80000305175781%</span></td>
+                        <td>8,461 / 1,298 / 241</td>
+                        <td>Passed (>= 50%)</td>
+                    </tr><tr>
+                        <td><strong>Stockfish-1800</strong></td>
+                        <td>1800</td>
+                        <td>10,000</td>
+                        <td><span class="badge badge-good">76.0%</span></td>
+                        <td>7,372 / 2,173 / 455</td>
+                        <td>Passed (>= 50%)</td>
+                    </tr><tr>
+                        <td><strong>Stockfish-2000</strong></td>
+                        <td>2000</td>
+                        <td>10,000</td>
+                        <td><span class="badge badge-good">63.400001525878906%</span></td>
+                        <td>6,026 / 3,346 / 628</td>
+                        <td>Passed (>= 50%)</td>
+                    </tr><tr>
+                        <td><strong>Stockfish-2200</strong></td>
+                        <td>2200</td>
+                        <td>10,000</td>
+                        <td><span class="badge badge-good">50.79999923706055%</span></td>
+                        <td>4,661 / 4,502 / 837</td>
+                        <td>Passed (>= 50%)</td>
+                    </tr><tr>
+                        <td><strong>Stockfish-2400</strong></td>
+                        <td>2400</td>
+                        <td>10,000</td>
+                        <td><span class="badge badge-bad">36.900001525878906%</span></td>
+                        <td>3,176 / 5,788 / 1,036</td>
+                        <td>Ceiling Reached</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Ladder Performance vs Elo</span>
+                    <span class="chart-badge">Parity Benchmark 50%</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasLadder"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>2. Failure Archetypes: Blown Leads vs. Defense Collapses</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <table>
+                <thead>
+                    <tr><th>Failure Mode</th><th>Total Games</th><th>% of Losses</th><th>White Losses</th><th>Black Losses</th><th>Black/White Ratio</th><th>Avg Loss Ply</th><th>Avg Eval Drop</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Blown Lead (Eval &gt;= +1.50 -&gt; Loss)</strong></td>
+                        <td>11,815</td>
+                        <td><span class="badge badge-bad">69.1%</span></td>
+                        <td>6,228</td>
+                        <td><strong>5,587</strong></td>
+                        <td><code>0.90x</code></td>
+                        <td>105.5</td>
+                        <td><code>-24.70 cp</code></td>
+                    </tr><tr>
+                        <td><strong>Cracked Defense (Equal -&gt; Loss)</strong></td>
+                        <td>5,106</td>
+                        <td><span class="badge badge-bad">29.8%</span></td>
+                        <td>905</td>
+                        <td><strong>4,201</strong></td>
+                        <td><code>4.64x</code></td>
+                        <td>88.1</td>
+                        <td><code>-21.90 cp</code></td>
+                    </tr><tr>
+                        <td><strong>Missed Win (Lead Blown to Draw)</strong></td>
+                        <td>2,895</td>
+                        <td><span class="badge badge-bad">16.9%</span></td>
+                        <td>1,458</td>
+                        <td><strong>1,437</strong></td>
+                        <td><code>0.99x</code></td>
+                        <td>178.9</td>
+                        <td><code>-3.55 cp</code></td>
+                    </tr><tr>
+                        <td><strong>Opening Squeeze (Never Equal -&gt; Loss)</strong></td>
+                        <td>186</td>
+                        <td><span class="badge badge-bad">1.1%</span></td>
+                        <td>0</td>
+                        <td><strong>186</strong></td>
+                        <td><code>-</code></td>
+                        <td>70.3</td>
+                        <td><code>-22.65 cp</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Loss Archetype Distribution</span>
+                    <span class="chart-badge">Breakdown</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasArchetypes"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>3. Endgame Material & Piece Taxonomy Vulnerability</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <table>
+                <thead>
+                    <tr><th>Endgame Archetype</th><th>Total Games</th><th>Score %</th><th>W / L / D</th><th>Black Losses</th><th>Thrown Wins</th><th>Cracked Defenses</th><th>Avg Loss Ply</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Queen &amp; Pieces</strong></td>
+                        <td>27,613</td>
+                        <td><span class="badge badge-good">64.7%</span></td>
+                        <td>17,473 / 9,330 / 810</td>
+                        <td><strong>5,515</strong></td>
+                        <td><span class="badge badge-bad">6,270</span></td>
+                        <td><span class="badge badge-warn">2,944</span></td>
+                        <td>75.8</td>
+                    </tr><tr>
+                        <td><strong>Rook &amp; Minor Pieces</strong></td>
+                        <td>12,763</td>
+                        <td><span class="badge badge-good">68.3%</span></td>
+                        <td>8,374 / 3,714 / 675</td>
+                        <td><strong>2,155</strong></td>
+                        <td><span class="badge badge-bad">2,400</span></td>
+                        <td><span class="badge badge-warn">1,260</span></td>
+                        <td>118.3</td>
+                    </tr><tr>
+                        <td><strong>Rook &amp; Pawn</strong></td>
+                        <td>4,181</td>
+                        <td><span class="badge badge-bad">47.3%</span></td>
+                        <td>1,620 / 1,848 / 713</td>
+                        <td><strong>1,049</strong></td>
+                        <td><span class="badge badge-bad">1,477</span></td>
+                        <td><span class="badge badge-warn">360</span></td>
+                        <td>141.0</td>
+                    </tr><tr>
+                        <td><strong>Bishop Endgame</strong></td>
+                        <td>1,225</td>
+                        <td><span class="badge badge-bad">37.6%</span></td>
+                        <td>386 / 689 / 150</td>
+                        <td><strong>401</strong></td>
+                        <td><span class="badge badge-bad">524</span></td>
+                        <td><span class="badge badge-warn">164</span></td>
+                        <td>137.6</td>
+                    </tr><tr>
+                        <td><strong>Queen &amp; Pawn</strong></td>
+                        <td>1,039</td>
+                        <td><span class="badge badge-bad">48.9%</span></td>
+                        <td>430 / 453 / 156</td>
+                        <td><strong>249</strong></td>
+                        <td><span class="badge badge-bad">365</span></td>
+                        <td><span class="badge badge-warn">87</span></td>
+                        <td>120.0</td>
+                    </tr><tr>
+                        <td><strong>Pure King &amp; Pawn</strong></td>
+                        <td>992</td>
+                        <td><span class="badge badge-good">57.7%</span></td>
+                        <td>429 / 277 / 286</td>
+                        <td><strong>156</strong></td>
+                        <td><span class="badge badge-bad">224</span></td>
+                        <td><span class="badge badge-warn">52</span></td>
+                        <td>125.8</td>
+                    </tr><tr>
+                        <td><strong>Knight Endgame</strong></td>
+                        <td>920</td>
+                        <td><span class="badge badge-bad">50.3%</span></td>
+                        <td>402 / 396 / 122</td>
+                        <td><strong>211</strong></td>
+                        <td><span class="badge badge-bad">317</span></td>
+                        <td><span class="badge badge-warn">77</span></td>
+                        <td>137.7</td>
+                    </tr><tr>
+                        <td><strong>Mixed Minor Pieces</strong></td>
+                        <td>536</td>
+                        <td><span class="badge badge-bad">46.7%</span></td>
+                        <td>234 / 269 / 33</td>
+                        <td><strong>161</strong></td>
+                        <td><span class="badge badge-bad">166</span></td>
+                        <td><span class="badge badge-warn">103</span></td>
+                        <td>167.8</td>
+                    </tr><tr>
+                        <td><strong>Bishop vs Knight</strong></td>
+                        <td>348</td>
+                        <td><span class="badge badge-good">69.4%</span></td>
+                        <td>200 / 65 / 83</td>
+                        <td><strong>35</strong></td>
+                        <td><span class="badge badge-bad">37</span></td>
+                        <td><span class="badge badge-warn">28</span></td>
+                        <td>141.8</td>
+                    </tr><tr>
+                        <td><strong>Opposite-Colored Bishops</strong></td>
+                        <td>279</td>
+                        <td><span class="badge badge-good">56.8%</span></td>
+                        <td>81 / 43 / 155</td>
+                        <td><strong>26</strong></td>
+                        <td><span class="badge badge-bad">26</span></td>
+                        <td><span class="badge badge-warn">17</span></td>
+                        <td>151.4</td>
+                    </tr><tr>
+                        <td><strong>Same-Colored Bishops</strong></td>
+                        <td>104</td>
+                        <td><span class="badge badge-good">71.2%</span></td>
+                        <td>67 / 23 / 14</td>
+                        <td><strong>16</strong></td>
+                        <td><span class="badge badge-bad">9</span></td>
+                        <td><span class="badge badge-warn">14</span></td>
+                        <td>128.6</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Score % by Endgame Material</span>
+                    <span class="chart-badge">50% Threshold</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasEndgame"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>4. Tactical Blunder Motifs & Failure Classifications</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <table>
+                <thead>
+                    <tr><th>Blunder Motif</th><th>Total Blunders</th><th>% of Blunders</th><th>White Blunders</th><th>Black Blunders</th><th>Avg Blunder Drop</th><th>Avg Ply</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Positional / Tactical Slip</strong></td>
+                        <td>13,813</td>
+                        <td><span class="badge badge-bad">20.6%</span></td>
+                        <td>6,218</td>
+                        <td><strong>7,595</strong></td>
+                        <td><code>-7.21 cp</code></td>
+                        <td>86.9</td>
+                    </tr><tr>
+                        <td><strong>Heavy Piece Misplacement</strong></td>
+                        <td>12,690</td>
+                        <td><span class="badge badge-bad">19.0%</span></td>
+                        <td>5,972</td>
+                        <td><strong>6,718</strong></td>
+                        <td><code>-5.25 cp</code></td>
+                        <td>60.4</td>
+                    </tr><tr>
+                        <td><strong>Flawed Pawn Advance</strong></td>
+                        <td>10,624</td>
+                        <td><span class="badge badge-bad">15.9%</span></td>
+                        <td>4,855</td>
+                        <td><strong>5,769</strong></td>
+                        <td><code>-6.94 cp</code></td>
+                        <td>56.2</td>
+                    </tr><tr>
+                        <td><strong>Hanging Piece Drop</strong></td>
+                        <td>10,131</td>
+                        <td><span class="badge badge-bad">15.1%</span></td>
+                        <td>4,454</td>
+                        <td><strong>5,677</strong></td>
+                        <td><code>-13.99 cp</code></td>
+                        <td>57.2</td>
+                    </tr><tr>
+                        <td><strong>King Safety / Check Danger</strong></td>
+                        <td>9,899</td>
+                        <td><span class="badge badge-bad">14.8%</span></td>
+                        <td>4,701</td>
+                        <td><strong>5,198</strong></td>
+                        <td><code>-6.69 cp</code></td>
+                        <td>80.4</td>
+                    </tr><tr>
+                        <td><strong>Blunder Under Check</strong></td>
+                        <td>7,251</td>
+                        <td><span class="badge badge-bad">10.8%</span></td>
+                        <td>3,179</td>
+                        <td><strong>4,072</strong></td>
+                        <td><code>-14.69 cp</code></td>
+                        <td>83.3</td>
+                    </tr><tr>
+                        <td><strong>Bad Material Exchange</strong></td>
+                        <td>2,544</td>
+                        <td><span class="badge badge-bad">3.8%</span></td>
+                        <td>1,141</td>
+                        <td><strong>1,403</strong></td>
+                        <td><code>-9.97 cp</code></td>
+                        <td>49.3</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Blunder Motif Proportions</span>
+                    <span class="chart-badge">66k+ Blunders</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasBlunders"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>5. Lead Bleed Dynamics: How Winning Advantages Are Blown</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <table>
+                <thead>
+                    <tr><th>Bleed Mode</th><th>Thrown Games</th><th>% of Thrown</th><th>Avg Peak Lead</th><th>White</th><th>Black</th><th>Avg Worst Drop</th><th>Avg Loss Ply</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Catastrophic Blunder (Drop &gt;= 2.5 cp)</strong></td>
+                        <td>11,129</td>
+                        <td><span class="badge badge-bad">94.2%</span></td>
+                        <td><code>+3.39 cp</code></td>
+                        <td>5,845</td>
+                        <td><strong>5,284</strong></td>
+                        <td><code>-26.10 cp</code></td>
+                        <td>104.0</td>
+                    </tr><tr>
+                        <td><strong>Significant Tactical Slip (Drop 1.5 - 2.5 cp)</strong></td>
+                        <td>646</td>
+                        <td><span class="badge badge-bad">5.5%</span></td>
+                        <td><code>+2.49 cp</code></td>
+                        <td>364</td>
+                        <td><strong>282</strong></td>
+                        <td><code>-2.12 cp</code></td>
+                        <td>129.5</td>
+                    </tr><tr>
+                        <td><strong>Gradual Positional Erosion</strong></td>
+                        <td>40</td>
+                        <td><span class="badge badge-bad">0.3%</span></td>
+                        <td><code>+2.09 cp</code></td>
+                        <td>19</td>
+                        <td><strong>21</strong></td>
+                        <td><code>-1.32 cp</code></td>
+                        <td>128.8</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Thrown Lead Decay Mode</span>
+                    <span class="chart-badge">11k+ Blown Leads</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasBleed"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>6. NNUE Expert Transition Boundaries & Jumps</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <h3>NNUE Expert Switches per Game</h3>
+            <table>
+                <thead>
+                    <tr><th>Switches in Game</th><th>Total Games</th><th>% of Games</th><th>Cumulative %</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>0 switches</strong></td>
+                        <td>2,748</td>
+                        <td><span class="badge badge-neutral">5.50%</span></td>
+                        <td><code>5.50%</code></td>
+                    </tr><tr>
+                        <td><strong>1 switch</strong></td>
+                        <td>7,324</td>
+                        <td><span class="badge badge-good">14.65%</span></td>
+                        <td><code>20.15%</code></td>
+                    </tr><tr>
+                        <td><strong>2 switches</strong></td>
+                        <td>10,201</td>
+                        <td><span class="badge badge-good">20.40%</span></td>
+                        <td><code>40.55%</code></td>
+                    </tr><tr>
+                        <td><strong>3 switches</strong></td>
+                        <td>10,146</td>
+                        <td><span class="badge badge-good">20.29%</span></td>
+                        <td><code>60.84%</code></td>
+                    </tr><tr>
+                        <td><strong>4 switches</strong></td>
+                        <td>8,459</td>
+                        <td><span class="badge badge-good">16.92%</span></td>
+                        <td><code>77.76%</code></td>
+                    </tr><tr>
+                        <td><strong>5 switches</strong></td>
+                        <td>5,881</td>
+                        <td><span class="badge badge-warn">11.76%</span></td>
+                        <td><code>89.52%</code></td>
+                    </tr><tr>
+                        <td><strong>6 switches</strong></td>
+                        <td>3,312</td>
+                        <td><span class="badge badge-warn">6.62%</span></td>
+                        <td><code>96.14%</code></td>
+                    </tr><tr>
+                        <td><strong>7 switches</strong></td>
+                        <td>1,408</td>
+                        <td><span class="badge badge-warn">2.82%</span></td>
+                        <td><code>98.96%</code></td>
+                    </tr><tr>
+                        <td><strong>8 switches</strong></td>
+                        <td>422</td>
+                        <td><span class="badge badge-warn">0.84%</span></td>
+                        <td><code>99.80%</code></td>
+                    </tr><tr>
+                        <td><strong>9 switches</strong></td>
+                        <td>77</td>
+                        <td><span class="badge badge-warn">0.15%</span></td>
+                        <td><code>99.95%</code></td>
+                    </tr><tr>
+                        <td><strong>10 switches</strong></td>
+                        <td>18</td>
+                        <td><span class="badge badge-warn">0.04%</span></td>
+                        <td><code>99.99%</code></td>
+                    </tr><tr>
+                        <td><strong>11 switches</strong></td>
+                        <td>4</td>
+                        <td><span class="badge badge-warn">0.01%</span></td>
+                        <td><code>100.00%</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Top Transition Blunder Rates</span>
+                    <span class="chart-badge">Handoff Jumps</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasTransitions"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div style="margin-top: 20px;">
+        <h3>Top Transition Handoff Pairs</h3>
+        <table>
+            <thead>
+                <tr><th>Handoff Pair</th><th>From Expert</th><th>To Expert</th><th>Transitions</th><th>Blunders</th><th>Blunder Rate %</th><th>Avg Eval Swing</th></tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Attack -&gt; Endgame</strong></td>
+                    <td><code>Attack</code></td>
+                    <td><code>Endgame</code></td>
+                    <td>170</td>
+                    <td>40</td>
+                    <td><span class="badge badge-bad">23.53%</span></td>
+                    <td><code>±1.85 cp</code></td>
+                </tr><tr>
+                    <td><strong>Queenless -&gt; Imbalance</strong></td>
+                    <td><code>Queenless</code></td>
+                    <td><code>Imbalance</code></td>
+                    <td>189</td>
+                    <td>43</td>
+                    <td><span class="badge badge-bad">22.75%</span></td>
+                    <td><code>±2.71 cp</code></td>
+                </tr><tr>
+                    <td><strong>Open -&gt; Endgame</strong></td>
+                    <td><code>Open</code></td>
+                    <td><code>Endgame</code></td>
+                    <td>939</td>
+                    <td>157</td>
+                    <td><span class="badge badge-bad">16.72%</span></td>
+                    <td><code>±2.31 cp</code></td>
+                </tr><tr>
+                    <td><strong>Imbalance -&gt; Endgame</strong></td>
+                    <td><code>Imbalance</code></td>
+                    <td><code>Endgame</code></td>
+                    <td>4,149</td>
+                    <td>543</td>
+                    <td><span class="badge badge-bad">13.09%</span></td>
+                    <td><code>±2.62 cp</code></td>
+                </tr><tr>
+                    <td><strong>Attack -&gt; Imbalance</strong></td>
+                    <td><code>Attack</code></td>
+                    <td><code>Imbalance</code></td>
+                    <td>5,050</td>
+                    <td>598</td>
+                    <td><span class="badge badge-bad">11.84%</span></td>
+                    <td><code>±1.62 cp</code></td>
+                </tr><tr>
+                    <td><strong>Open -&gt; Imbalance</strong></td>
+                    <td><code>Open</code></td>
+                    <td><code>Imbalance</code></td>
+                    <td>30,746</td>
+                    <td>2,679</td>
+                    <td><span class="badge badge-bad">8.71%</span></td>
+                    <td><code>±1.21 cp</code></td>
+                </tr><tr>
+                    <td><strong>Imbalance -&gt; Attack</strong></td>
+                    <td><code>Imbalance</code></td>
+                    <td><code>Attack</code></td>
+                    <td>6,029</td>
+                    <td>401</td>
+                    <td><span class="badge badge-bad">6.65%</span></td>
+                    <td><code>±1.14 cp</code></td>
+                </tr><tr>
+                    <td><strong>Queenless -&gt; Endgame</strong></td>
+                    <td><code>Queenless</code></td>
+                    <td><code>Endgame</code></td>
+                    <td>6,664</td>
+                    <td>424</td>
+                    <td><span class="badge badge-bad">6.36%</span></td>
+                    <td><code>±0.99 cp</code></td>
+                </tr><tr>
+                    <td><strong>Attack -&gt; Open</strong></td>
+                    <td><code>Attack</code></td>
+                    <td><code>Open</code></td>
+                    <td>261</td>
+                    <td>16</td>
+                    <td><span class="badge badge-bad">6.13%</span></td>
+                    <td><code>±2.02 cp</code></td>
+                </tr><tr>
+                    <td><strong>Imbalance -&gt; Open</strong></td>
+                    <td><code>Imbalance</code></td>
+                    <td><code>Open</code></td>
+                    <td>42,434</td>
+                    <td>1,875</td>
+                    <td><span class="badge badge-warn">4.42%</span></td>
+                    <td><code>±0.83 cp</code></td>
+                </tr><tr>
+                    <td><strong>Closed -&gt; Imbalance</strong></td>
+                    <td><code>Closed</code></td>
+                    <td><code>Imbalance</code></td>
+                    <td>11,074</td>
+                    <td>345</td>
+                    <td><span class="badge badge-warn">3.12%</span></td>
+                    <td><code>±0.61 cp</code></td>
+                </tr><tr>
+                    <td><strong>Closed -&gt; Open</strong></td>
+                    <td><code>Closed</code></td>
+                    <td><code>Open</code></td>
+                    <td>9,998</td>
+                    <td>200</td>
+                    <td><span class="badge badge-warn">2.0%</span></td>
+                    <td><code>±0.57 cp</code></td>
+                </tr><tr>
+                    <td><strong>Open -&gt; Attack</strong></td>
+                    <td><code>Open</code></td>
+                    <td><code>Attack</code></td>
+                    <td>1,902</td>
+                    <td>29</td>
+                    <td><span class="badge badge-warn">1.52%</span></td>
+                    <td><code>±0.83 cp</code></td>
+                </tr><tr>
+                    <td><strong>Imbalance -&gt; Queenless</strong></td>
+                    <td><code>Imbalance</code></td>
+                    <td><code>Queenless</code></td>
+                    <td>13,069</td>
+                    <td>173</td>
+                    <td><span class="badge badge-warn">1.32%</span></td>
+                    <td><code>±0.49 cp</code></td>
+                </tr><tr>
+                    <td><strong>Imbalance -&gt; Closed</strong></td>
+                    <td><code>Imbalance</code></td>
+                    <td><code>Closed</code></td>
+                    <td>16,312</td>
+                    <td>183</td>
+                    <td><span class="badge badge-warn">1.12%</span></td>
+                    <td><code>±0.38 cp</code></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h2>7. Search Depth Deficit & Blunder Rate Correlation</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <table>
+                <thead>
+                    <tr><th>Depth Deficit Tier</th><th>Plies Played</th><th>Blunders</th><th>Blunder Rate %</th><th>Avg Anak Depth</th><th>Avg Opp Depth</th><th>Avg Time/Move</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Severe Search Deficit (5+ plies behind)</strong></td>
+                        <td>1,007,990</td>
+                        <td>38,797</td>
+                        <td><span class="badge badge-bad">3.85%</span></td>
+                        <td>6.1</td>
+                        <td>12.4</td>
+                        <td><code>0.02s</code></td>
+                    </tr><tr>
+                        <td><strong>Parity (Within 1 ply)</strong></td>
+                        <td>61,666</td>
+                        <td>1,967</td>
+                        <td><span class="badge badge-bad">3.19%</span></td>
+                        <td>7.6</td>
+                        <td>8.3</td>
+                        <td><code>0.021s</code></td>
+                    </tr><tr>
+                        <td><strong>Moderate Deficit (2-4 plies behind)</strong></td>
+                        <td>904,320</td>
+                        <td>25,939</td>
+                        <td><span class="badge badge-good">2.87%</span></td>
+                        <td>6.6</td>
+                        <td>9.9</td>
+                        <td><code>0.023s</code></td>
+                    </tr><tr>
+                        <td><strong>Anak Outsearching (+2 or more plies)</strong></td>
+                        <td>14,098</td>
+                        <td>249</td>
+                        <td><span class="badge badge-good">1.77%</span></td>
+                        <td>89.7</td>
+                        <td>12.4</td>
+                        <td><code>0.005s</code></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Blunder Rate vs Depth Deficit</span>
+                    <span class="chart-badge">Correlation</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasDeficit"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>8. NNUE Expert Model Vulnerability (Middlegame Phase)</h2>
+    <table>
+        <thead>
+            <tr><th>Active NNUE Expert</th><th>Middlegame Games</th><th>Score %</th><th>W / L / D</th><th>White Losses</th><th>Black Losses</th><th>Thrown Wins</th><th>Cracked Defenses</th><th>Defensive Bias</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Attack</strong></td>
+                <td>3,065</td>
+                <td><span class="badge badge-bad">53.1%</span></td>
+                <td>1,531 / 1,344 / 190</td>
+                <td>645</td>
+                <td><strong>699</strong></td>
+                <td><span class="badge badge-bad">934</span></td>
+                <td><span class="badge badge-warn">395</span></td>
+                <td><span class="badge badge-warn">1.1x Black Losses</span></td>
+            </tr><tr>
+                <td><strong>Endgame</strong></td>
+                <td>19</td>
+                <td><span class="badge badge-bad">55.3%</span></td>
+                <td>8 / 6 / 5</td>
+                <td>1</td>
+                <td><strong>5</strong></td>
+                <td><span class="badge badge-bad">3</span></td>
+                <td><span class="badge badge-warn">3</span></td>
+                <td><span class="badge badge-bad">5.0x Black Losses</span></td>
+            </tr><tr>
+                <td><strong>Closed</strong></td>
+                <td>6,196</td>
+                <td><span class="badge badge-bad">56.0%</span></td>
+                <td>3,277 / 2,532 / 387</td>
+                <td>1,235</td>
+                <td><strong>1,297</strong></td>
+                <td><span class="badge badge-bad">1,753</span></td>
+                <td><span class="badge badge-warn">757</span></td>
+                <td><span class="badge badge-warn">1.1x Black Losses</span></td>
+            </tr><tr>
+                <td><strong>Open</strong></td>
+                <td>14,636</td>
+                <td><span class="badge badge-bad">57.9%</span></td>
+                <td>7,910 / 5,593 / 1,133</td>
+                <td>2,404</td>
+                <td><strong>3,189</strong></td>
+                <td><span class="badge badge-bad">3,981</span></td>
+                <td><span class="badge badge-warn">1,572</span></td>
+                <td><span class="badge badge-warn">1.3x Black Losses</span></td>
+            </tr><tr>
+                <td><strong>Imbalance</strong></td>
+                <td>15,617</td>
+                <td><span class="badge badge-good">64.4%</span></td>
+                <td>9,712 / 5,217 / 688</td>
+                <td>1,932</td>
+                <td><strong>3,285</strong></td>
+                <td><span class="badge badge-bad">3,570</span></td>
+                <td><span class="badge badge-warn">1,578</span></td>
+                <td><span class="badge badge-bad">1.7x Black Losses</span></td>
+            </tr><tr>
+                <td><strong>Queenless</strong></td>
+                <td>9,215</td>
+                <td><span class="badge badge-good">69.9%</span></td>
+                <td>6,047 / 2,382 / 786</td>
+                <td>905</td>
+                <td><strong>1,477</strong></td>
+                <td><span class="badge badge-bad">1,564</span></td>
+                <td><span class="badge badge-warn">780</span></td>
+                <td><span class="badge badge-bad">1.6x Black Losses</span></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>9. Game Phase at Failure (When are Games Lost?)</h2>
+    <div class="split-grid">
+        <div class="table-pane">
+            <table>
+                <thead>
+                    <tr><th>Failure Phase</th><th>Total Losses</th><th>% of Losses</th><th>White Losses</th><th>Black Losses</th><th>Black vs White Ratio</th><th>Avg Loss Ply</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Endgame Attrition (Ply &gt; 60)</strong></td>
+                        <td>12,642</td>
+                        <td><span class="badge badge-bad">73.9%</span></td>
+                        <td>5,609</td>
+                        <td><strong>7,033</strong></td>
+                        <td><code>1.3x</code></td>
+                        <td>119.3</td>
+                    </tr><tr>
+                        <td><strong>Middlegame Collapse (Ply 31-60)</strong></td>
+                        <td>3,965</td>
+                        <td><span class="badge badge-bad">23.2%</span></td>
+                        <td>1,409</td>
+                        <td><strong>2,556</strong></td>
+                        <td><code>1.8x</code></td>
+                        <td>47.5</td>
+                    </tr><tr>
+                        <td><strong>Early Knockout (Ply &lt;= 30)</strong></td>
+                        <td>500</td>
+                        <td><span class="badge badge-bad">2.9%</span></td>
+                        <td>115</td>
+                        <td><strong>385</strong></td>
+                        <td><code>3.3x</code></td>
+                        <td>25.4</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+        <div class="chart-pane">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <span class="chart-title">Loss Phase Proportions</span>
+                    <span class="chart-badge">Phase Timing</span>
+                </div>
+                <div class="chart-box">
+                    <canvas id="canvasPhases"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h2>10. Opening Families & Pawn Structure Vulnerability Matrix</h2>
+    <table>
+        <thead>
+            <tr><th>Opening Family</th><th>Pawn Structure Archetype</th><th>Games</th><th>Score %</th><th>W / L / D</th><th>Black Losses</th><th>Avg Loss Ply</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>King&#x27;s Indian Setup</strong></td>
+                <td>Locked Center Ram (d5 vs e5/c5)</td>
+                <td>62</td>
+                <td><span class="badge badge-bad">42.7%</span></td>
+                <td>24 / 33 / 5</td>
+                <td><strong>16</strong></td>
+                <td>86.5</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Gambit</strong></td>
+                <td>Queen&#x27;s Gambit Tension (c4-d4 vs d5)</td>
+                <td>90</td>
+                <td><span class="badge badge-bad">59.4%</span></td>
+                <td>52 / 35 / 3</td>
+                <td><strong>20</strong></td>
+                <td>114.7</td>
+            </tr><tr>
+                <td><strong>Open Game (1.e4 e5)</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>1,166</td>
+                <td><span class="badge badge-bad">59.8%</span></td>
+                <td>655 / 427 / 84</td>
+                <td><strong>249</strong></td>
+                <td>94.9</td>
+            </tr><tr>
+                <td><strong>Flank / Uncommon Opening</strong></td>
+                <td>Symmetrical / Flank</td>
+                <td>162</td>
+                <td><span class="badge badge-good">60.2%</span></td>
+                <td>90 / 57 / 15</td>
+                <td><strong>36</strong></td>
+                <td>98.1</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Indian Defense</strong></td>
+                <td>Queen&#x27;s Pawn Structure</td>
+                <td>970</td>
+                <td><span class="badge badge-good">60.3%</span></td>
+                <td>551 / 351 / 68</td>
+                <td><strong>207</strong></td>
+                <td>95.5</td>
+            </tr><tr>
+                <td><strong>Ruy Lopez</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>146</td>
+                <td><span class="badge badge-good">60.6%</span></td>
+                <td>83 / 52 / 11</td>
+                <td><strong>30</strong></td>
+                <td>94.8</td>
+            </tr><tr>
+                <td><strong>English Opening</strong></td>
+                <td>English Flank (c4 vs e5/c5)</td>
+                <td>3,018</td>
+                <td><span class="badge badge-good">61.2%</span></td>
+                <td>1,750 / 1,074 / 194</td>
+                <td><strong>620</strong></td>
+                <td>102.7</td>
+            </tr><tr>
+                <td><strong>King&#x27;s Indian Defense</strong></td>
+                <td>Locked Center Ram (d5 vs e5/c5)</td>
+                <td>2,546</td>
+                <td><span class="badge badge-good">61.4%</span></td>
+                <td>1,479 / 900 / 167</td>
+                <td><strong>500</strong></td>
+                <td>101.8</td>
+            </tr><tr>
+                <td><strong>French Defense</strong></td>
+                <td>French Pawn Chain (d4-e5 vs d5-e6)</td>
+                <td>5,374</td>
+                <td><span class="badge badge-good">61.6%</span></td>
+                <td>3,148 / 1,902 / 324</td>
+                <td><strong>1,130</strong></td>
+                <td>95.8</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Pawn Game</strong></td>
+                <td>Queen&#x27;s Pawn Structure</td>
+                <td>5,072</td>
+                <td><span class="badge badge-good">62.0%</span></td>
+                <td>2,974 / 1,752 / 346</td>
+                <td><strong>1,046</strong></td>
+                <td>99.5</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense</strong></td>
+                <td>Sicilian Asymmetry (c5 vs d4)</td>
+                <td>15,436</td>
+                <td><span class="badge badge-good">62.3%</span></td>
+                <td>9,143 / 5,357 / 936</td>
+                <td><strong>3,098</strong></td>
+                <td>100.0</td>
+            </tr><tr>
+                <td><strong>Flank / Uncommon Opening</strong></td>
+                <td>Fluid Center</td>
+                <td>5,112</td>
+                <td><span class="badge badge-good">63.6%</span></td>
+                <td>3,076 / 1,685 / 351</td>
+                <td><strong>989</strong></td>
+                <td>101.7</td>
+            </tr><tr>
+                <td><strong>Scotch Game / Center Game</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>1,696</td>
+                <td><span class="badge badge-good">63.9%</span></td>
+                <td>1,034 / 563 / 99</td>
+                <td><strong>312</strong></td>
+                <td>104.8</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td>Queen&#x27;s Pawn Structure</td>
+                <td>4,860</td>
+                <td><span class="badge badge-good">64.7%</span></td>
+                <td>2,993 / 1,561 / 306</td>
+                <td><strong>910</strong></td>
+                <td>101.0</td>
+            </tr><tr>
+                <td><strong>Caro-Kann Defense</strong></td>
+                <td>Caro-Kann Pawn Structure (c6-d5)</td>
+                <td>1,992</td>
+                <td><span class="badge badge-good">64.9%</span></td>
+                <td>1,228 / 636 / 128</td>
+                <td><strong>383</strong></td>
+                <td>99.3</td>
+            </tr><tr>
+                <td><strong>Italian Game</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>402</td>
+                <td><span class="badge badge-good">65.0%</span></td>
+                <td>243 / 122 / 37</td>
+                <td><strong>70</strong></td>
+                <td>100.0</td>
+            </tr><tr>
+                <td><strong>Dutch Defense</strong></td>
+                <td>Dutch Asymmetric Flank (f5 vs d4)</td>
+                <td>1,896</td>
+                <td><span class="badge badge-good">65.1%</span></td>
+                <td>1,173 / 600 / 123</td>
+                <td><strong>358</strong></td>
+                <td>100.6</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>11. Critical Weak Opening Lines (0% to 10% Score)</h2>
+    <table>
+        <thead>
+            <tr><th>Opening Line</th><th>ECO</th><th>Score %</th><th>W / L / D</th><th>Avg Loss Ply</th><th>Starting Board FEN</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Sicilian Defense: Scheveningen</strong></td>
+                <td><code>B80</code></td>
+                <td><span class="badge badge-bad">0.0%</span></td>
+                <td>0 / 6 / 0</td>
+                <td>76.5</td>
+                <td class="fen-text" title="r2qk2r/pb1pbppp/2n1pn2/2p5/4P3/2PB1N2/PP2QPPP/RNB2RK1 w kq - 0 9">r2qk2r/pb1pbppp/2n1pn2/2p5/4P3/2PB1N2/PP2QPPP/RNB2RK1 w kq - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense</strong></td>
+                <td><code>B20</code></td>
+                <td><span class="badge badge-bad">0.0%</span></td>
+                <td>0 / 6 / 0</td>
+                <td>121.7</td>
+                <td class="fen-text" title="rn1qkb1r/pb3ppp/3p1n2/2pP4/2B5/2N5/PPQ2PPP/R1B1K1NR w KQkq - 0 9">rn1qkb1r/pb3ppp/3p1n2/2pP4/2B5/2N5/PPQ2PPP/R1B1K1NR w KQkq - 0 9</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Pawn Game</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">0.0%</span></td>
+                <td>0 / 6 / 0</td>
+                <td>128.8</td>
+                <td class="fen-text" title="rnbqk2r/1pp2ppp/4p3/p7/2pPn3/5NP1/PP1QPPBP/RN3RK1 w kq - 1 9">rnbqk2r/1pp2ppp/4p3/p7/2pPn3/5NP1/PP1QPPBP/RN3RK1 w kq - 1 9</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">8.3%</span></td>
+                <td>0 / 5 / 1</td>
+                <td>110.8</td>
+                <td class="fen-text" title="r1bqk1nr/2pn1pb1/p2pp1p1/1p5p/3PP2P/2N1B2N/PPPQ1PP1/2KR1B1R w kq - 0 9">r1bqk1nr/2pn1pb1/p2pp1p1/1p5p/3PP2P/2N1B2N/PPPQ1PP1/2KR1B1R w kq - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Paulsen / Kan</strong></td>
+                <td><code>B40</code></td>
+                <td><span class="badge badge-bad">8.3%</span></td>
+                <td>0 / 5 / 1</td>
+                <td>86.0</td>
+                <td class="fen-text" title="r1bqk2r/1p1nbppp/p2ppn2/8/3NP3/2N1BQ2/PPP2PPP/2KR1B1R w kq - 4 9">r1bqk2r/1p1nbppp/p2ppn2/8/3NP3/2N1BQ2/PPP2PPP/2KR1B1R w kq - 4 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Scheveningen</strong></td>
+                <td><code>B80</code></td>
+                <td><span class="badge badge-bad">8.3%</span></td>
+                <td>0 / 5 / 1</td>
+                <td>133.6</td>
+                <td class="fen-text" title="r2qkb1r/pp1nnppp/4p1b1/2ppP3/3P3N/2P5/PP1NBPPP/R1BQK2R w KQkq - 2 9">r2qkb1r/pp1nnppp/4p1b1/2ppP3/3P3N/2P5/PP1NBPPP/R1BQK2R w KQkq - 2 9</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>98.0</td>
+                <td class="fen-text" title="rnbq1rk1/ppp1ppbp/6p1/3pP3/3P1PP1/2n1B3/PPP1B2P/R2QK1NR w KQ - 0 9">rnbq1rk1/ppp1ppbp/6p1/3pP3/3P1PP1/2n1B3/PPP1B2P/R2QK1NR w KQ - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Dragon</strong></td>
+                <td><code>B70</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>130.2</td>
+                <td class="fen-text" title="r1bq1rk1/pp1nppbp/3p1np1/2p5/2PPP3/2NB4/PP2NPPP/1RBQ1RK1 w - - 0 9">r1bq1rk1/pp1nppbp/3p1np1/2p5/2PPP3/2NB4/PP2NPPP/1RBQ1RK1 w - - 0 9</td>
+            </tr><tr>
+                <td><strong>King&#x27;s Indian Defense</strong></td>
+                <td><code>E60</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>123.6</td>
+                <td class="fen-text" title="rnbq1rk1/pp3pbp/2pp2p1/3Pp2n/2P1P3/2N2NP1/PP2BP1P/R1BQK2R w KQ - 0 9">rnbq1rk1/pp3pbp/2pp2p1/3Pp2n/2P1P3/2N2NP1/PP2BP1P/R1BQK2R w KQ - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Paulsen / Kan</strong></td>
+                <td><code>B40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>94.4</td>
+                <td class="fen-text" title="r3kbnr/1pqb1ppp/p1npp3/8/3NPP2/2N1B3/PPP1B1PP/R2QK2R w KQkq - 2 9">r3kbnr/1pqb1ppp/p1npp3/8/3NPP2/2N1B3/PPP1B1PP/R2QK2R w KQkq - 2 9</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Pawn Game</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>106.8</td>
+                <td class="fen-text" title="r1b1k2r/ppp1qppp/2n1pn2/8/2pP4/P1B2NP1/1P2PP1P/R2QKB1R w KQkq - 0 9">r1b1k2r/ppp1qppp/2n1pn2/8/2pP4/P1B2NP1/1P2PP1P/R2QKB1R w KQkq - 0 9</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>95.4</td>
+                <td class="fen-text" title="r2qk2r/ppp1ppbp/1nn3p1/8/3P2b1/2N2NP1/PP2PPBP/R1BQ1RK1 w kq - 6 9">r2qk2r/ppp1ppbp/1nn3p1/8/3P2b1/2N2NP1/PP2PPBP/R1BQ1RK1 w kq - 6 9</td>
+            </tr><tr>
+                <td><strong>French Defense</strong></td>
+                <td><code>C00</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>99.4</td>
+                <td class="fen-text" title="r2q1rk1/pppb1ppp/2nbpn2/3p4/1PPP4/P4N2/2QNPPPP/R1B1KB1R w KQ - 3 9">r2q1rk1/pppb1ppp/2nbpn2/3p4/1PPP4/P4N2/2QNPPPP/R1B1KB1R w KQ - 3 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Dragon</strong></td>
+                <td><code>B70</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>69.4</td>
+                <td class="fen-text" title="r1bq1rk1/pp2pp1p/2np2pn/8/2PNP3/2N5/PP2BPPP/R2QK2R w KQ - 0 9">r1bq1rk1/pp2pp1p/2np2pn/8/2PNP3/2N5/PP2BPPP/R2QK2R w KQ - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Scheveningen</strong></td>
+                <td><code>B80</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>76.8</td>
+                <td class="fen-text" title="rn1qkb1r/pb3ppp/1pnpp3/8/2PNP3/2N3P1/PP3PBP/R1BQK2R w KQkq - 3 9">rn1qkb1r/pb3ppp/1pnpp3/8/2PNP3/2N3P1/PP3PBP/R1BQK2R w KQkq - 3 9</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>12. Full-Power Stockfish Oracle Ground-Truth Audit (ST9 Training & ST20 Truth)</h2>
+    <table>
+        <thead>
+            <tr><th>Game ID</th><th>Ply</th><th>Active Expert</th><th>Anak Eval</th><th>ST9 Eval (ce)</th><th>ST9 Best Move</th><th>ST20 True Eval</th><th>Eval Error</th><th>Classification</th><th>FEN</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>tier_sf1800_1793043025_g5120</code></td>
+                <td>40</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8e8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="5rk1/2q2p1p/p2b1P1Q/3P2P1/2p1p3/3p4/Pr1N4/3R2RK b - - 0 28">5rk1/2q2p1p/p2b1P1Q/3P2P1/2p1p3/3p4/Pr1N4/3R2RK b - - 0 28</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g9517</code></td>
+                <td>60</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>h8g7</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="4Q2k/1q3p1p/5Np1/r5P1/p2p3P/1n4P1/2r5/3R2K1 b - - 1 38">4Q2k/1q3p1p/5Np1/r5P1/p2p3P/1n4P1/2r5/3R2K1 b - - 1 38</td>
+            </tr><tr>
+                <td><code>tier_sf2000_1793044475_g9214</code></td>
+                <td>246</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f5c8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="1R5k/7P/7K/5b2/8/8/8/8 b - - 10 131">1R5k/7P/7K/5b2/8/8/8/8 b - - 10 131</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g6706</code></td>
+                <td>34</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>a4c5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="3rqrk1/2p2p1p/1pn1pP1Q/8/n1b5/1R3NPP/5PBK/5R2 b - - 0 25">3rqrk1/2p2p1p/1pn1pP1Q/8/n1b5/1R3NPP/5PBK/5R2 b - - 0 25</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g3439</code></td>
+                <td>200</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f6a6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="R7/1R6/5r2/8/k7/8/4K3/8 b - - 55 108">R7/1R6/5r2/8/k7/8/4K3/8 b - - 55 108</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g2714</code></td>
+                <td>96</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b4b3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="8/7r/6p1/6Bk/1p3P2/5K1b/1b6/7R b - - 1 56">8/7r/6p1/6Bk/1p3P2/5K1b/1b6/7R b - - 1 56</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g74</code></td>
+                <td>30</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d8d6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r2r2k1/pp3p1p/3R1PpQ/2p5/7P/1qp2P2/5P2/5RK1 b - - 0 23">r2r2k1/pp3p1p/3R1PpQ/2p5/7P/1qp2P2/5P2/5RK1 b - - 0 23</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g3574</code></td>
+                <td>76</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>e5d4</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="2r2r2/8/p3Qp2/4k3/1p1N4/P4p2/KPPB4/3q4 b - - 1 46">2r2r2/8/p3Qp2/4k3/1p1N4/P4p2/KPPB4/3q4 b - - 1 46</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g6606</code></td>
+                <td>30</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c6c5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r3r1k1/pp3p1p/q1p2BpQ/8/2PNp1b1/6P1/PP3P2/2R3K1 b - - 1 23">r3r1k1/pp3p1p/q1p2BpQ/8/2PNp1b1/6P1/PP3P2/2R3K1 b - - 1 23</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g8106</code></td>
+                <td>38</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g8h8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r3qrk1/1p3p1p/2nbpPpQ/1R1pn1B1/8/2p4P/2B1N1P1/5R1K b - - 3 27">r3qrk1/1p3p1p/2nbpPpQ/1R1pn1B1/8/2p4P/2B1N1P1/5R1K b - - 3 27</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g1878</code></td>
+                <td>58</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c3c2</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="7R/2q2pQ1/6pp/4p1Nk/4P2P/1bp3K1/5Pn1/2r5 b - - 1 37">7R/2q2pQ1/6pp/4p1Nk/4P2P/1bp3K1/5Pn1/2r5 b - - 1 37</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g4789</code></td>
+                <td>176</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b4f8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="2R4k/8/5KP1/8/1b6/8/8/8 b - - 8 96">2R4k/8/5KP1/8/1b6/8/8/8 b - - 8 96</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g2377</code></td>
+                <td>46</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8g8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="5r2/3q1p1k/1rn1pP2/1p4Q1/2Pp4/7P/1P3PP1/4R1K1 b - - 0 31">5r2/3q1p1k/1rn1pP2/1p4Q1/2Pp4/7P/1P3PP1/4R1K1 b - - 0 31</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g7156</code></td>
+                <td>196</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f2a7</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="R7/8/8/8/2K5/k1B5/5b2/8 b - - 38 106">R7/8/8/8/2K5/k1B5/5b2/8 b - - 38 106</td>
+            </tr><tr>
+                <td><code>tier_sf2000_1793044475_g3682</code></td>
+                <td>50</td>
+                <td><strong>Queenless</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c4c3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Queenless)</span></td>
+                <td class="fen-text" title="2b1B3/8/1r2pRpp/pp5k/2p2PpP/6K1/PP6/8 b - - 3 33">2b1B3/8/1r2pRpp/pp5k/2p2PpP/6K1/PP6/8 b - - 3 33</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g6638</code></td>
+                <td>38</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b4e1</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r4rk1/2pb1p2/4pQpB/p3P2P/1qn5/8/5PPK/4R3 b - - 2 27">r4rk1/2pb1p2/4pQpB/p3P2P/1qn5/8/5PPK/4R3 b - - 2 27</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g6815</code></td>
+                <td>36</td>
+                <td><strong>Queenless</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d7b8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Queenless)</span></td>
+                <td class="fen-text" title="1Rkr3r/p2n2R1/3B1n1p/2pP4/2P1p1bp/2P3P1/P1B4P/6K1 b - - 2 26">1Rkr3r/p2n2R1/3B1n1p/2pP4/2P1p1bp/2P3P1/P1B4P/6K1 b - - 2 26</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g7517</code></td>
+                <td>22</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g3h5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r1b2rBk/pp2qpp1/1b6/7R/5P1P/2N1p1n1/PPQ3P1/4K1N1 b - - 3 19">r1b2rBk/pp2qpp1/1b6/7R/5P1P/2N1p1n1/PPQ3P1/4K1N1 b - - 3 19</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g2400</code></td>
+                <td>32</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8d8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="rnq2rk1/1p3p2/4p1pQ/p3P3/b2R4/P1B2p2/1PP2P2/2K4R b - - 0 24">rnq2rk1/1p3p2/4p1pQ/p3P3/b2R4/P1B2p2/1PP2P2/2K4R b - - 0 24</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g7427</code></td>
+                <td>98</td>
+                <td><strong>Queenless</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f4f3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Queenless)</span></td>
+                <td class="fen-text" title="8/5N2/1n2R2p/1P1p1p1k/r2P1p2/6PK/p7/R7 b - - 0 57">8/5N2/1n2R2p/1P1p1p1k/r2P1p2/6PK/p7/R7 b - - 0 57</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g4494</code></td>
+                <td>46</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f7g6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="4rrk1/pp3b1p/2p3R1/1q6/1P1Q4/P3P2P/1B3PP1/6K1 b - - 0 31">4rrk1/pp3b1p/2p3R1/1q6/1P1Q4/P3P2P/1B3PP1/6K1 b - - 0 31</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g4593</code></td>
+                <td>42</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g7g6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r4rk1/qb3ppp/5B2/ppp2N1P/Pn1R2Q1/1p4P1/4nPBK/8 b - - 1 29">r4rk1/qb3ppp/5B2/ppp2N1P/Pn1R2Q1/1p4P1/4nPBK/8 b - - 1 29</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g8029</code></td>
+                <td>354</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d8e8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="3k4/8/3KB3/6R1/8/8/8/8 b - - 8 185">3k4/8/3KB3/6R1/8/8/8/8 b - - 8 185</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g2038</code></td>
+                <td>54</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g8h7</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="4r1k1/p6P/3pN3/3P2Q1/q1p1p3/P1r2P2/1n4P1/6K1 b - - 0 35">4r1k1/p6P/3pN3/3P2Q1/q1p1p3/P1r2P2/1n4P1/6K1 b - - 0 35</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g6211</code></td>
+                <td>32</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>h8g8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r4rRk/pp3p2/2p2Q1P/4p3/P3n3/1P6/1P1q1P1P/1K6 b - - 1 24">r4rRk/pp3p2/2p2Q1P/4p3/P3n3/1P6/1P1q1P1P/1K6 b - - 1 24</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g3491</code></td>
+                <td>72</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f2f1q</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="6k1/5p1p/5K2/R4Bp1/4p3/4P2P/5pr1/8 b - - 1 44">6k1/5p1p/5K2/R4Bp1/4p3/4P2P/5pr1/8 b - - 1 44</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g3745</code></td>
+                <td>32</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b7c8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="5b1k/rb3p2/npn1pP2/p2p2NP/8/8/P4PP1/1Q4K1 b - - 2 24">5b1k/rb3p2/npn1pP2/p2p2NP/8/8/P4PP1/1Q4K1 b - - 2 24</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g1775</code></td>
+                <td>28</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f7g6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="rnbq1rk1/1p3p2/2n1p1P1/Pp1pP1p1/1b3P2/7Q/1B2B1P1/R4K1R b - - 0 22">rnbq1rk1/1p3p2/2n1p1P1/Pp1pP1p1/1b3P2/7Q/1B2B1P1/R4K1R b - - 0 22</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g9558</code></td>
+                <td>34</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d8g5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="2rq1rk1/p4p2/1n2p1p1/3pP1P1/2nP1N2/P6Q/3BKPP1/7R b - - 3 25">2rq1rk1/p4p2/1n2p1p1/3pP1P1/2nP1N2/P6Q/3BKPP1/7R b - - 3 25</td>
+            </tr><tr>
+                <td><code>tier_sf2000_1793044475_g7494</code></td>
+                <td>220</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c8b8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="2kb1R2/8/2K5/1N6/8/8/8/8 b - - 12 118">2kb1R2/8/2K5/1N6/8/8/8/8 b - - 12 118</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g5141</code></td>
+                <td>136</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8g8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="5k2/3P4/5K2/8/8/3B4/8/8 b - - 0 76">5k2/3P4/5K2/8/8/3B4/8/8 b - - 0 76</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g6007</code></td>
+                <td>40</td>
+                <td><strong>Open</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c6f3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Open)</span></td>
+                <td class="fen-text" title="5rk1/2p2p1p/1pb2PpQ/4p3/2P5/5N2/q4PPP/4R2K b - - 1 28">5rk1/2p2p1p/1pb2PpQ/4p3/2P5/5N2/q4PPP/4R2K b - - 1 28</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g512</code></td>
+                <td>244</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>e1h4</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="8/8/7k/4BK2/8/8/7R/4b3 b - - 78 130">8/8/7k/4BK2/8/8/7R/4b3 b - - 78 130</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g6117</code></td>
+                <td>34</td>
+                <td><strong>Open</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b1b2</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Open)</span></td>
+                <td class="fen-text" title="2r3k1/3b1p1p/p3pPpQ/3p4/2p5/8/P1P2PPP/1q1B1RK1 b - - 9 25">2r3k1/3b1p1p/p3pPpQ/3p4/2p5/8/P1P2PPP/1q1B1RK1 b - - 9 25</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g326</code></td>
+                <td>208</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c8b8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="2k5/5Q2/2K5/8/8/8/7b/8 b - - 22 112">2k5/5Q2/2K5/8/8/8/7b/8 b - - 22 112</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    Chart.defaults.color = '#8b949e';
+    Chart.defaults.borderColor = '#21262d';
+    Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+    // 1. Ladder Progression Chart
+    new Chart(document.getElementById('canvasLadder'), {
+        type: 'line',
+        data: {
+            labels: ["Stockfish-1600", "Stockfish-1800", "Stockfish-2000", "Stockfish-2200", "Stockfish-2400"],
+            datasets: [{
+                label: 'Score %',
+                data: [85.8, 76.0, 63.4, 50.8, 36.9],
+                borderColor: '#58a6ff',
+                backgroundColor: 'rgba(88, 166, 255, 0.15)',
+                fill: true,
+                tension: 0.25,
+                borderWidth: 3,
+                pointBackgroundColor: '#58a6ff',
+                pointRadius: 5
+            }, {
+                label: '50% Threshold',
+                data: [50.0, 50.0, 50.0, 50.0, 50.0],
+                borderColor: '#f85149',
+                borderDash: [5, 5],
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: false
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#8b949e' } } },
+            scales: {
+                y: { min: 0, max: 100, ticks: { color: '#8b949e', callback: v => v + '%' }, grid: { color: '#21262d' } },
+                x: { ticks: { color: '#8b949e' }, grid: { color: '#21262d' } }
+            }
+        }
+    });
+
+    // 2. Archetypes Doughnut Chart
+    new Chart(document.getElementById('canvasArchetypes'), {
+        type: 'doughnut',
+        data: {
+            labels: ["Blown Lead", "Cracked Defense", "Opening Squeeze"],
+            datasets: [{
+                data: [11815, 5106, 186],
+                backgroundColor: ['#f85149', '#d29922', '#8b949e'],
+                borderColor: '#161b22',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { color: '#8b949e', boxWidth: 12, font: { size: 11 } } } }
+        }
+    });
+
+    // 3. Endgame Material Bar Chart
+    new Chart(document.getElementById('canvasEndgame'), {
+        type: 'bar',
+        data: {
+            labels: ["Queen & Pieces", "Rook & Minor Pieces", "Rook & Pawn", "Bishop Endgame", "Queen & Pawn", "Pure King & Pawn", "Knight Endgame", "Mixed Minor Pieces", "Bishop vs Knight", "Opposite-Colored Bishops", "Same-Colored Bishops"],
+            datasets: [{
+                label: 'Score %',
+                data: [64.7, 68.3, 47.3, 37.6, 48.9, 57.7, 50.3, 46.7, 69.4, 56.8, 71.2],
+                backgroundColor: ["#3fb950", "#3fb950", "#f85149", "#f85149", "#f85149", "#3fb950", "#3fb950", "#f85149", "#3fb950", "#3fb950", "#3fb950"],
+                borderRadius: 4
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { min: 0, max: 100, ticks: { color: '#8b949e', callback: v => v + '%' }, grid: { color: '#21262d' } },
+                y: { ticks: { color: '#8b949e', font: { size: 10.5 } }, grid: { display: false } }
+            }
+        }
+    });
+
+    // 4. Blunder Motifs Doughnut Chart
+    new Chart(document.getElementById('canvasBlunders'), {
+        type: 'doughnut',
+        data: {
+            labels: ["Positional / Tactical Slip", "Heavy Piece Misplacement", "Flawed Pawn Advance", "Hanging Piece Drop", "King Safety / Check Danger", "Blunder Under Check", "Bad Material Exchange"],
+            datasets: [{
+                data: [13813, 12690, 10624, 10131, 9899, 7251, 2544],
+                backgroundColor: ['#58a6ff', '#bc8cff', '#f0883e', '#f85149', '#d29922', '#ff7b72', '#76e3ea'],
+                borderColor: '#161b22',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { color: '#8b949e', boxWidth: 10, font: { size: 10.5 } } } }
+        }
+    });
+
+    // 5. Lead Bleed Dynamics Bar Chart
+    new Chart(document.getElementById('canvasBleed'), {
+        type: 'bar',
+        data: {
+            labels: ["Catastrophic Blunder", "Significant Tactical Slip", "Gradual Positional Erosion"],
+            datasets: [{
+                label: '% of Thrown Leads',
+                data: [94.2, 5.5, 0.3],
+                backgroundColor: ['#f85149', '#d29922', '#3fb950'],
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { min: 0, max: 100, ticks: { color: '#8b949e', callback: v => v + '%' }, grid: { color: '#21262d' } },
+                x: { ticks: { color: '#8b949e', font: { size: 9.5 } }, grid: { display: false } }
+            }
+        }
+    });
+
+    // 6. NNUE Expert Transitions Bar Chart
+    new Chart(document.getElementById('canvasTransitions'), {
+        type: 'bar',
+        data: {
+            labels: ["Attack -> Endgame", "Queenless -> Imbalance", "Open -> Endgame", "Imbalance -> Endgame", "Attack -> Imbalance", "Open -> Imbalance", "Imbalance -> Attack", "Queenless -> Endgame"],
+            datasets: [{
+                label: 'Blunder Rate %',
+                data: [23.53, 22.75, 16.72, 13.09, 11.84, 8.71, 6.65, 6.36],
+                backgroundColor: '#f85149',
+                borderRadius: 4
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { min: 0, ticks: { color: '#8b949e', callback: v => v + '%' }, grid: { color: '#21262d' } },
+                y: { ticks: { color: '#8b949e', font: { size: 10.5 } }, grid: { display: false } }
+            }
+        }
+    });
+
+    // 7. Search Depth Deficit Bar Chart
+    new Chart(document.getElementById('canvasDeficit'), {
+        type: 'bar',
+        data: {
+            labels: ["Severe Search Deficit", "Parity", "Moderate Deficit", "Anak Outsearching"],
+            datasets: [{
+                label: 'Blunder Rate %',
+                data: [3.85, 3.19, 2.87, 1.77],
+                backgroundColor: ['#f85149', '#d29922', '#f0883e', '#3fb950'],
+                borderRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { min: 0, ticks: { color: '#8b949e', callback: v => v + '%' }, grid: { color: '#21262d' } },
+                x: { ticks: { color: '#8b949e', font: { size: 9.5 } }, grid: { display: false } }
+            }
+        }
+    });
+
+    // 9. Loss Phase Doughnut Chart
+    new Chart(document.getElementById('canvasPhases'), {
+        type: 'doughnut',
+        data: {
+            labels: ["Endgame Attrition", "Middlegame Collapse", "Early Knockout"],
+            datasets: [{
+                data: [12642, 3965, 500],
+                backgroundColor: ['#bc8cff', '#f0883e', '#f85149'],
+                borderColor: '#161b22',
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'bottom', labels: { color: '#8b949e', boxWidth: 12 } } }
+        }
+    });
+</script>
+
+    <h2>10. Opening Families & Pawn Structure Vulnerability Matrix</h2>
+    <table>
+        <thead>
+            <tr><th>Opening Family</th><th>Pawn Structure Archetype</th><th>Games</th><th>Score %</th><th>W / L / D</th><th>Black Losses</th><th>Avg Loss Ply</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>King&#x27;s Indian Setup</strong></td>
+                <td>Locked Center Ram (d5 vs e5/c5)</td>
+                <td>62</td>
+                <td><span class="badge badge-bad">42.7%</span></td>
+                <td>24 / 33 / 5</td>
+                <td><strong>16</strong></td>
+                <td>86.5</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Gambit</strong></td>
+                <td>Queen&#x27;s Gambit Tension (c4-d4 vs d5)</td>
+                <td>90</td>
+                <td><span class="badge badge-bad">59.4%</span></td>
+                <td>52 / 35 / 3</td>
+                <td><strong>20</strong></td>
+                <td>114.7</td>
+            </tr><tr>
+                <td><strong>Open Game (1.e4 e5)</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>1,166</td>
+                <td><span class="badge badge-bad">59.8%</span></td>
+                <td>655 / 427 / 84</td>
+                <td><strong>249</strong></td>
+                <td>94.9</td>
+            </tr><tr>
+                <td><strong>Flank / Uncommon Opening</strong></td>
+                <td>Symmetrical / Flank</td>
+                <td>162</td>
+                <td><span class="badge badge-good">60.2%</span></td>
+                <td>90 / 57 / 15</td>
+                <td><strong>36</strong></td>
+                <td>98.1</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Indian Defense</strong></td>
+                <td>Queen&#x27;s Pawn Structure</td>
+                <td>970</td>
+                <td><span class="badge badge-good">60.3%</span></td>
+                <td>551 / 351 / 68</td>
+                <td><strong>207</strong></td>
+                <td>95.5</td>
+            </tr><tr>
+                <td><strong>Ruy Lopez</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>146</td>
+                <td><span class="badge badge-good">60.6%</span></td>
+                <td>83 / 52 / 11</td>
+                <td><strong>30</strong></td>
+                <td>94.8</td>
+            </tr><tr>
+                <td><strong>English Opening</strong></td>
+                <td>English Flank (c4 vs e5/c5)</td>
+                <td>3,018</td>
+                <td><span class="badge badge-good">61.2%</span></td>
+                <td>1,750 / 1,074 / 194</td>
+                <td><strong>620</strong></td>
+                <td>102.7</td>
+            </tr><tr>
+                <td><strong>King&#x27;s Indian Defense</strong></td>
+                <td>Locked Center Ram (d5 vs e5/c5)</td>
+                <td>2,546</td>
+                <td><span class="badge badge-good">61.4%</span></td>
+                <td>1,479 / 900 / 167</td>
+                <td><strong>500</strong></td>
+                <td>101.8</td>
+            </tr><tr>
+                <td><strong>French Defense</strong></td>
+                <td>French Pawn Chain (d4-e5 vs d5-e6)</td>
+                <td>5,374</td>
+                <td><span class="badge badge-good">61.6%</span></td>
+                <td>3,148 / 1,902 / 324</td>
+                <td><strong>1,130</strong></td>
+                <td>95.8</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Pawn Game</strong></td>
+                <td>Queen&#x27;s Pawn Structure</td>
+                <td>5,072</td>
+                <td><span class="badge badge-good">62.0%</span></td>
+                <td>2,974 / 1,752 / 346</td>
+                <td><strong>1,046</strong></td>
+                <td>99.5</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense</strong></td>
+                <td>Sicilian Asymmetry (c5 vs d4)</td>
+                <td>15,436</td>
+                <td><span class="badge badge-good">62.3%</span></td>
+                <td>9,143 / 5,357 / 936</td>
+                <td><strong>3,098</strong></td>
+                <td>100.0</td>
+            </tr><tr>
+                <td><strong>Flank / Uncommon Opening</strong></td>
+                <td>Fluid Center</td>
+                <td>5,112</td>
+                <td><span class="badge badge-good">63.6%</span></td>
+                <td>3,076 / 1,685 / 351</td>
+                <td><strong>989</strong></td>
+                <td>101.7</td>
+            </tr><tr>
+                <td><strong>Scotch Game / Center Game</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>1,696</td>
+                <td><span class="badge badge-good">63.9%</span></td>
+                <td>1,034 / 563 / 99</td>
+                <td><strong>312</strong></td>
+                <td>104.8</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td>Queen&#x27;s Pawn Structure</td>
+                <td>4,860</td>
+                <td><span class="badge badge-good">64.7%</span></td>
+                <td>2,993 / 1,561 / 306</td>
+                <td><strong>910</strong></td>
+                <td>101.0</td>
+            </tr><tr>
+                <td><strong>Caro-Kann Defense</strong></td>
+                <td>Caro-Kann Pawn Structure (c6-d5)</td>
+                <td>1,992</td>
+                <td><span class="badge badge-good">64.9%</span></td>
+                <td>1,228 / 636 / 128</td>
+                <td><strong>383</strong></td>
+                <td>99.3</td>
+            </tr><tr>
+                <td><strong>Italian Game</strong></td>
+                <td>Open Center (e4 vs e5)</td>
+                <td>402</td>
+                <td><span class="badge badge-good">65.0%</span></td>
+                <td>243 / 122 / 37</td>
+                <td><strong>70</strong></td>
+                <td>100.0</td>
+            </tr><tr>
+                <td><strong>Dutch Defense</strong></td>
+                <td>Dutch Asymmetric Flank (f5 vs d4)</td>
+                <td>1,896</td>
+                <td><span class="badge badge-good">65.1%</span></td>
+                <td>1,173 / 600 / 123</td>
+                <td><strong>358</strong></td>
+                <td>100.6</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>11. Critical Weak Opening Lines (0% to 10% Score)</h2>
+    <table>
+        <thead>
+            <tr><th>Opening Line</th><th>ECO</th><th>Score %</th><th>W / L / D</th><th>Avg Loss Ply</th><th>Starting Board FEN</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><strong>Sicilian Defense: Scheveningen</strong></td>
+                <td><code>B80</code></td>
+                <td><span class="badge badge-bad">0.0%</span></td>
+                <td>0 / 6 / 0</td>
+                <td>76.5</td>
+                <td class="fen-text" title="r2qk2r/pb1pbppp/2n1pn2/2p5/4P3/2PB1N2/PP2QPPP/RNB2RK1 w kq - 0 9">r2qk2r/pb1pbppp/2n1pn2/2p5/4P3/2PB1N2/PP2QPPP/RNB2RK1 w kq - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense</strong></td>
+                <td><code>B20</code></td>
+                <td><span class="badge badge-bad">0.0%</span></td>
+                <td>0 / 6 / 0</td>
+                <td>121.7</td>
+                <td class="fen-text" title="rn1qkb1r/pb3ppp/3p1n2/2pP4/2B5/2N5/PPQ2PPP/R1B1K1NR w KQkq - 0 9">rn1qkb1r/pb3ppp/3p1n2/2pP4/2B5/2N5/PPQ2PPP/R1B1K1NR w KQkq - 0 9</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Pawn Game</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">0.0%</span></td>
+                <td>0 / 6 / 0</td>
+                <td>128.8</td>
+                <td class="fen-text" title="rnbqk2r/1pp2ppp/4p3/p7/2pPn3/5NP1/PP1QPPBP/RN3RK1 w kq - 1 9">rnbqk2r/1pp2ppp/4p3/p7/2pPn3/5NP1/PP1QPPBP/RN3RK1 w kq - 1 9</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">8.3%</span></td>
+                <td>0 / 5 / 1</td>
+                <td>110.8</td>
+                <td class="fen-text" title="r1bqk1nr/2pn1pb1/p2pp1p1/1p5p/3PP2P/2N1B2N/PPPQ1PP1/2KR1B1R w kq - 0 9">r1bqk1nr/2pn1pb1/p2pp1p1/1p5p/3PP2P/2N1B2N/PPPQ1PP1/2KR1B1R w kq - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Paulsen / Kan</strong></td>
+                <td><code>B40</code></td>
+                <td><span class="badge badge-bad">8.3%</span></td>
+                <td>0 / 5 / 1</td>
+                <td>86.0</td>
+                <td class="fen-text" title="r1bqk2r/1p1nbppp/p2ppn2/8/3NP3/2N1BQ2/PPP2PPP/2KR1B1R w kq - 4 9">r1bqk2r/1p1nbppp/p2ppn2/8/3NP3/2N1BQ2/PPP2PPP/2KR1B1R w kq - 4 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Scheveningen</strong></td>
+                <td><code>B80</code></td>
+                <td><span class="badge badge-bad">8.3%</span></td>
+                <td>0 / 5 / 1</td>
+                <td>133.6</td>
+                <td class="fen-text" title="r2qkb1r/pp1nnppp/4p1b1/2ppP3/3P3N/2P5/PP1NBPPP/R1BQK2R w KQkq - 2 9">r2qkb1r/pp1nnppp/4p1b1/2ppP3/3P3N/2P5/PP1NBPPP/R1BQK2R w KQkq - 2 9</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>98.0</td>
+                <td class="fen-text" title="rnbq1rk1/ppp1ppbp/6p1/3pP3/3P1PP1/2n1B3/PPP1B2P/R2QK1NR w KQ - 0 9">rnbq1rk1/ppp1ppbp/6p1/3pP3/3P1PP1/2n1B3/PPP1B2P/R2QK1NR w KQ - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Dragon</strong></td>
+                <td><code>B70</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>130.2</td>
+                <td class="fen-text" title="r1bq1rk1/pp1nppbp/3p1np1/2p5/2PPP3/2NB4/PP2NPPP/1RBQ1RK1 w - - 0 9">r1bq1rk1/pp1nppbp/3p1np1/2p5/2PPP3/2NB4/PP2NPPP/1RBQ1RK1 w - - 0 9</td>
+            </tr><tr>
+                <td><strong>King&#x27;s Indian Defense</strong></td>
+                <td><code>E60</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>123.6</td>
+                <td class="fen-text" title="rnbq1rk1/pp3pbp/2pp2p1/3Pp2n/2P1P3/2N2NP1/PP2BP1P/R1BQK2R w KQ - 0 9">rnbq1rk1/pp3pbp/2pp2p1/3Pp2n/2P1P3/2N2NP1/PP2BP1P/R1BQK2R w KQ - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Paulsen / Kan</strong></td>
+                <td><code>B40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>94.4</td>
+                <td class="fen-text" title="r3kbnr/1pqb1ppp/p1npp3/8/3NPP2/2N1B3/PPP1B1PP/R2QK2R w KQkq - 2 9">r3kbnr/1pqb1ppp/p1npp3/8/3NPP2/2N1B3/PPP1B1PP/R2QK2R w KQkq - 2 9</td>
+            </tr><tr>
+                <td><strong>Queen&#x27;s Pawn Game</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>106.8</td>
+                <td class="fen-text" title="r1b1k2r/ppp1qppp/2n1pn2/8/2pP4/P1B2NP1/1P2PP1P/R2QKB1R w KQkq - 0 9">r1b1k2r/ppp1qppp/2n1pn2/8/2pP4/P1B2NP1/1P2PP1P/R2QKB1R w KQkq - 0 9</td>
+            </tr><tr>
+                <td><strong>Modern / Pirc Setup</strong></td>
+                <td><code>A40</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>95.4</td>
+                <td class="fen-text" title="r2qk2r/ppp1ppbp/1nn3p1/8/3P2b1/2N2NP1/PP2PPBP/R1BQ1RK1 w kq - 6 9">r2qk2r/ppp1ppbp/1nn3p1/8/3P2b1/2N2NP1/PP2PPBP/R1BQ1RK1 w kq - 6 9</td>
+            </tr><tr>
+                <td><strong>French Defense</strong></td>
+                <td><code>C00</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>99.4</td>
+                <td class="fen-text" title="r2q1rk1/pppb1ppp/2nbpn2/3p4/1PPP4/P4N2/2QNPPPP/R1B1KB1R w KQ - 3 9">r2q1rk1/pppb1ppp/2nbpn2/3p4/1PPP4/P4N2/2QNPPPP/R1B1KB1R w KQ - 3 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Dragon</strong></td>
+                <td><code>B70</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>69.4</td>
+                <td class="fen-text" title="r1bq1rk1/pp2pp1p/2np2pn/8/2PNP3/2N5/PP2BPPP/R2QK2R w KQ - 0 9">r1bq1rk1/pp2pp1p/2np2pn/8/2PNP3/2N5/PP2BPPP/R2QK2R w KQ - 0 9</td>
+            </tr><tr>
+                <td><strong>Sicilian Defense: Scheveningen</strong></td>
+                <td><code>B80</code></td>
+                <td><span class="badge badge-bad">16.7%</span></td>
+                <td>1 / 5 / 0</td>
+                <td>76.8</td>
+                <td class="fen-text" title="rn1qkb1r/pb3ppp/1pnpp3/8/2PNP3/2N3P1/PP3PBP/R1BQK2R w KQkq - 3 9">rn1qkb1r/pb3ppp/1pnpp3/8/2PNP3/2N3P1/PP3PBP/R1BQK2R w KQkq - 3 9</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h2>12. Full-Power Stockfish Oracle Ground-Truth Audit (ST9 Training & ST20 Truth)</h2>
+    <table>
+        <thead>
+            <tr><th>Game ID</th><th>Ply</th><th>Active Expert</th><th>Anak Eval</th><th>ST9 Eval (ce)</th><th>ST9 Best Move</th><th>ST20 True Eval</th><th>Eval Error</th><th>Classification</th><th>FEN</th></tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>tier_sf1800_1793043025_g5120</code></td>
+                <td>40</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8e8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="5rk1/2q2p1p/p2b1P1Q/3P2P1/2p1p3/3p4/Pr1N4/3R2RK b - - 0 28">5rk1/2q2p1p/p2b1P1Q/3P2P1/2p1p3/3p4/Pr1N4/3R2RK b - - 0 28</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g9517</code></td>
+                <td>60</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>h8g7</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="4Q2k/1q3p1p/5Np1/r5P1/p2p3P/1n4P1/2r5/3R2K1 b - - 1 38">4Q2k/1q3p1p/5Np1/r5P1/p2p3P/1n4P1/2r5/3R2K1 b - - 1 38</td>
+            </tr><tr>
+                <td><code>tier_sf2000_1793044475_g9214</code></td>
+                <td>246</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f5c8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="1R5k/7P/7K/5b2/8/8/8/8 b - - 10 131">1R5k/7P/7K/5b2/8/8/8/8 b - - 10 131</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g6706</code></td>
+                <td>34</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>a4c5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="3rqrk1/2p2p1p/1pn1pP1Q/8/n1b5/1R3NPP/5PBK/5R2 b - - 0 25">3rqrk1/2p2p1p/1pn1pP1Q/8/n1b5/1R3NPP/5PBK/5R2 b - - 0 25</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g3439</code></td>
+                <td>200</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f6a6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="R7/1R6/5r2/8/k7/8/4K3/8 b - - 55 108">R7/1R6/5r2/8/k7/8/4K3/8 b - - 55 108</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g2714</code></td>
+                <td>96</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b4b3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="8/7r/6p1/6Bk/1p3P2/5K1b/1b6/7R b - - 1 56">8/7r/6p1/6Bk/1p3P2/5K1b/1b6/7R b - - 1 56</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g74</code></td>
+                <td>30</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d8d6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r2r2k1/pp3p1p/3R1PpQ/2p5/7P/1qp2P2/5P2/5RK1 b - - 0 23">r2r2k1/pp3p1p/3R1PpQ/2p5/7P/1qp2P2/5P2/5RK1 b - - 0 23</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g3574</code></td>
+                <td>76</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>e5d4</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="2r2r2/8/p3Qp2/4k3/1p1N4/P4p2/KPPB4/3q4 b - - 1 46">2r2r2/8/p3Qp2/4k3/1p1N4/P4p2/KPPB4/3q4 b - - 1 46</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g6606</code></td>
+                <td>30</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c6c5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r3r1k1/pp3p1p/q1p2BpQ/8/2PNp1b1/6P1/PP3P2/2R3K1 b - - 1 23">r3r1k1/pp3p1p/q1p2BpQ/8/2PNp1b1/6P1/PP3P2/2R3K1 b - - 1 23</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g8106</code></td>
+                <td>38</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g8h8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r3qrk1/1p3p1p/2nbpPpQ/1R1pn1B1/8/2p4P/2B1N1P1/5R1K b - - 3 27">r3qrk1/1p3p1p/2nbpPpQ/1R1pn1B1/8/2p4P/2B1N1P1/5R1K b - - 3 27</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g1878</code></td>
+                <td>58</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c3c2</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="7R/2q2pQ1/6pp/4p1Nk/4P2P/1bp3K1/5Pn1/2r5 b - - 1 37">7R/2q2pQ1/6pp/4p1Nk/4P2P/1bp3K1/5Pn1/2r5 b - - 1 37</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g4789</code></td>
+                <td>176</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b4f8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="2R4k/8/5KP1/8/1b6/8/8/8 b - - 8 96">2R4k/8/5KP1/8/1b6/8/8/8 b - - 8 96</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g2377</code></td>
+                <td>46</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8g8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="5r2/3q1p1k/1rn1pP2/1p4Q1/2Pp4/7P/1P3PP1/4R1K1 b - - 0 31">5r2/3q1p1k/1rn1pP2/1p4Q1/2Pp4/7P/1P3PP1/4R1K1 b - - 0 31</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g7156</code></td>
+                <td>196</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f2a7</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="R7/8/8/8/2K5/k1B5/5b2/8 b - - 38 106">R7/8/8/8/2K5/k1B5/5b2/8 b - - 38 106</td>
+            </tr><tr>
+                <td><code>tier_sf2000_1793044475_g3682</code></td>
+                <td>50</td>
+                <td><strong>Queenless</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c4c3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Queenless)</span></td>
+                <td class="fen-text" title="2b1B3/8/1r2pRpp/pp5k/2p2PpP/6K1/PP6/8 b - - 3 33">2b1B3/8/1r2pRpp/pp5k/2p2PpP/6K1/PP6/8 b - - 3 33</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g6638</code></td>
+                <td>38</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b4e1</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r4rk1/2pb1p2/4pQpB/p3P2P/1qn5/8/5PPK/4R3 b - - 2 27">r4rk1/2pb1p2/4pQpB/p3P2P/1qn5/8/5PPK/4R3 b - - 2 27</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g6815</code></td>
+                <td>36</td>
+                <td><strong>Queenless</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d7b8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Queenless)</span></td>
+                <td class="fen-text" title="1Rkr3r/p2n2R1/3B1n1p/2pP4/2P1p1bp/2P3P1/P1B4P/6K1 b - - 2 26">1Rkr3r/p2n2R1/3B1n1p/2pP4/2P1p1bp/2P3P1/P1B4P/6K1 b - - 2 26</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g7517</code></td>
+                <td>22</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g3h5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r1b2rBk/pp2qpp1/1b6/7R/5P1P/2N1p1n1/PPQ3P1/4K1N1 b - - 3 19">r1b2rBk/pp2qpp1/1b6/7R/5P1P/2N1p1n1/PPQ3P1/4K1N1 b - - 3 19</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g2400</code></td>
+                <td>32</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8d8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="rnq2rk1/1p3p2/4p1pQ/p3P3/b2R4/P1B2p2/1PP2P2/2K4R b - - 0 24">rnq2rk1/1p3p2/4p1pQ/p3P3/b2R4/P1B2p2/1PP2P2/2K4R b - - 0 24</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g7427</code></td>
+                <td>98</td>
+                <td><strong>Queenless</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f4f3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Queenless)</span></td>
+                <td class="fen-text" title="8/5N2/1n2R2p/1P1p1p1k/r2P1p2/6PK/p7/R7 b - - 0 57">8/5N2/1n2R2p/1P1p1p1k/r2P1p2/6PK/p7/R7 b - - 0 57</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g4494</code></td>
+                <td>46</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f7g6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="4rrk1/pp3b1p/2p3R1/1q6/1P1Q4/P3P2P/1B3PP1/6K1 b - - 0 31">4rrk1/pp3b1p/2p3R1/1q6/1P1Q4/P3P2P/1B3PP1/6K1 b - - 0 31</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g4593</code></td>
+                <td>42</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g7g6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r4rk1/qb3ppp/5B2/ppp2N1P/Pn1R2Q1/1p4P1/4nPBK/8 b - - 1 29">r4rk1/qb3ppp/5B2/ppp2N1P/Pn1R2Q1/1p4P1/4nPBK/8 b - - 1 29</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g8029</code></td>
+                <td>354</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d8e8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="3k4/8/3KB3/6R1/8/8/8/8 b - - 8 185">3k4/8/3KB3/6R1/8/8/8/8 b - - 8 185</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g2038</code></td>
+                <td>54</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>g8h7</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="4r1k1/p6P/3pN3/3P2Q1/q1p1p3/P1r2P2/1n4P1/6K1 b - - 0 35">4r1k1/p6P/3pN3/3P2Q1/q1p1p3/P1r2P2/1n4P1/6K1 b - - 0 35</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g6211</code></td>
+                <td>32</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>h8g8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="r4rRk/pp3p2/2p2Q1P/4p3/P3n3/1P6/1P1q1P1P/1K6 b - - 1 24">r4rRk/pp3p2/2p2Q1P/4p3/P3n3/1P6/1P1q1P1P/1K6 b - - 1 24</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g3491</code></td>
+                <td>72</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f2f1q</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="6k1/5p1p/5K2/R4Bp1/4p3/4P2P/5pr1/8 b - - 1 44">6k1/5p1p/5K2/R4Bp1/4p3/4P2P/5pr1/8 b - - 1 44</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g3745</code></td>
+                <td>32</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b7c8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="5b1k/rb3p2/npn1pP2/p2p2NP/8/8/P4PP1/1Q4K1 b - - 2 24">5b1k/rb3p2/npn1pP2/p2p2NP/8/8/P4PP1/1Q4K1 b - - 2 24</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g1775</code></td>
+                <td>28</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f7g6</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="rnbq1rk1/1p3p2/2n1p1P1/Pp1pP1p1/1b3P2/7Q/1B2B1P1/R4K1R b - - 0 22">rnbq1rk1/1p3p2/2n1p1P1/Pp1pP1p1/1b3P2/7Q/1B2B1P1/R4K1R b - - 0 22</td>
+            </tr><tr>
+                <td><code>tier_sf2200_1793046065_g9558</code></td>
+                <td>34</td>
+                <td><strong>Imbalance</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>d8g5</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Imbalance)</span></td>
+                <td class="fen-text" title="2rq1rk1/p4p2/1n2p1p1/3pP1P1/2nP1N2/P6Q/3BKPP1/7R b - - 3 25">2rq1rk1/p4p2/1n2p1p1/3pP1P1/2nP1N2/P6Q/3BKPP1/7R b - - 3 25</td>
+            </tr><tr>
+                <td><code>tier_sf2000_1793044475_g7494</code></td>
+                <td>220</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c8b8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="2kb1R2/8/2K5/1N6/8/8/8/8 b - - 12 118">2kb1R2/8/2K5/1N6/8/8/8/8 b - - 12 118</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g5141</code></td>
+                <td>136</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>f8g8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="5k2/3P4/5K2/8/8/3B4/8/8 b - - 0 76">5k2/3P4/5K2/8/8/3B4/8/8 b - - 0 76</td>
+            </tr><tr>
+                <td><code>tier_sf1600_1793041700_g6007</code></td>
+                <td>40</td>
+                <td><strong>Open</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c6f3</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Open)</span></td>
+                <td class="fen-text" title="5rk1/2p2p1p/1pb2PpQ/4p3/2P5/5N2/q4PPP/4R2K b - - 1 28">5rk1/2p2p1p/1pb2PpQ/4p3/2P5/5N2/q4PPP/4R2K b - - 1 28</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g512</code></td>
+                <td>244</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>e1h4</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="8/8/7k/4BK2/8/8/7R/4b3 b - - 78 130">8/8/7k/4BK2/8/8/7R/4b3 b - - 78 130</td>
+            </tr><tr>
+                <td><code>tier_sf1800_1793043025_g6117</code></td>
+                <td>34</td>
+                <td><strong>Open</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>b1b2</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Open)</span></td>
+                <td class="fen-text" title="2r3k1/3b1p1p/p3pPpQ/3p4/2p5/8/P1P2PPP/1q1B1RK1 b - - 9 25">2r3k1/3b1p1p/p3pPpQ/3p4/2p5/8/P1P2PPP/1q1B1RK1 b - - 9 25</td>
+            </tr><tr>
+                <td><code>tier_sf2400_1793047759_g326</code></td>
+                <td>208</td>
+                <td><strong>Endgame</strong></td>
+                <td>-98.00</td>
+                <td><code>9900 cp</code></td>
+                <td><strong>c8b8</strong></td>
+                <td><span class="badge badge-bad">+99.00</span></td>
+                <td><code>197.00</code></td>
+                <td><span class="badge badge-bad">Lead Blown (Endgame)</span></td>
+                <td class="fen-text" title="2k5/5Q2/2K5/8/8/8/7b/8 b - - 22 112">2k5/5Q2/2K5/8/8/8/7b/8 b - - 22 112</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

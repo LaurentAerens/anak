@@ -190,6 +190,42 @@ MICRO_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
+# Weakness Remediation Parameters (Watchdog & Syzygy Probing)
+WEAKNESS_PARAMETERS: List[SpsaParam] = [
+    SpsaParam(
+        name="WatchdogCollapseThreshold",
+        default=280.0,
+        min_val=100.0,
+        max_val=600.0,
+        c=25.0,
+        a=500.0,
+    ),
+    SpsaParam(
+        name="WatchdogFallbackDelta",
+        default=120.0,
+        min_val=50.0,
+        max_val=300.0,
+        c=15.0,
+        a=300.0,
+    ),
+    SpsaParam(
+        name="SyzygyProbeDepth",
+        default=6.0,
+        min_val=1.0,
+        max_val=15.0,
+        c=1.0,
+        a=15.0,
+    ),
+    SpsaParam(
+        name="QsCheckDepth",
+        default=1.0,
+        min_val=0.0,
+        max_val=2.0,
+        c=0.5,
+        a=5.0,
+    ),
+]
+
 # Batch B, C, D Hidden Parameters Suite
 BATCH_BCD_PARAMETERS: List[SpsaParam] = [
     # Batch B: History Dynamics & Pawn Correction
@@ -402,6 +438,16 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
         lines.append(f"public const int TunedLmpMultiplier = {int(round(params['LmpMultiplier']))};")
     if "IirMinDepth" in params:
         lines.append(f"public const int TunedIirMinDepth = {int(round(params['IirMinDepth']))};")
+
+    # Weakness Remediation Parameters
+    if "WatchdogCollapseThreshold" in params:
+        lines.append(f"public const int TunedWatchdogCollapseThreshold = {int(round(params['WatchdogCollapseThreshold']))};")
+    if "WatchdogFallbackDelta" in params:
+        lines.append(f"public const int TunedWatchdogFallbackDelta = {int(round(params['WatchdogFallbackDelta']))};")
+    if "SyzygyProbeDepth" in params:
+        lines.append(f"public const int TunedSyzygyProbeDepth = {int(round(params['SyzygyProbeDepth']))};")
+    if "QsCheckDepth" in params:
+        lines.append(f"public const int TunedQsCheckDepth = {int(round(params['QsCheckDepth']))};")
 
     if "ScoreDropThreshold" in params:
         lines.append("")
@@ -809,8 +855,8 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["bcd", "all", "search", "micro"], default="bcd",
-                        help="Parameter batch to tune ('bcd' for 13 new hidden constants, 'all' for all 25 parameters, 'search' for 12 search heuristics, 'micro' for 5 dynamic Micro budget parameters)")
+    parser.add_argument("--batch", type=str, choices=["bcd", "all", "search", "micro", "weakness"], default="bcd",
+                        help="Parameter batch to tune ('bcd' for 13 new hidden constants, 'all' for all 25 parameters, 'search' for 12 search heuristics, 'micro' for 5 dynamic Micro budget parameters, 'weakness' for remediation parameters)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--output", type=str, default=None, help="Path to spsa_progress.json output")
     return parser.parse_args()
@@ -831,8 +877,10 @@ def main():
         param_set = DEFAULT_PARAMETERS
     elif args.batch == "micro":
         param_set = MICRO_PARAMETERS
+    elif args.batch == "weakness":
+        param_set = WEAKNESS_PARAMETERS
     else:
-        param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS
+        param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS + WEAKNESS_PARAMETERS
 
     tuner = SpsaTuner(
         params=param_set,

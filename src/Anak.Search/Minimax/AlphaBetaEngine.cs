@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using Anak.Core;
 
@@ -51,10 +52,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private int _singularMargin = SearchHeuristics.TunedSingularMargin;
     private int _qsDeltaMargin = SearchHeuristics.TunedQsDeltaMargin;
     private readonly int[,] _lmrTable = new int[MaxSearchDepth, 128];
+    private NnueExpertType? _lastRootExpert;
 
     public TranspositionTable TranspositionTable => _tt;
     public TimeManager TimeManager => _timeManager;
     public IEvaluator Evaluator => _evaluator;
+    public ITablebaseProber? Tablebase { get; set; }
     public int LastScoreCp { get; internal set; }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -266,6 +269,14 @@ public sealed class AlphaBetaEngine : ISearchEngine
     }
 
     /// <summary>
+    /// Resets the remembered neural expert type across game boundaries.
+    /// </summary>
+    public void ResetLastRootExpert()
+    {
+        _lastRootExpert = null;
+    }
+
+    /// <summary>
     /// Executes Alpha-Beta / PVS search for the given board position within the specified limits.
     /// </summary>
     public Move Search(
@@ -278,9 +289,21 @@ public sealed class AlphaBetaEngine : ISearchEngine
         _tt.NewSearch();
 
         // 2. Classify and pin root neural expert if multi-tier evaluator
+        byte activeExpertId = 0;
         if (_evaluator is IMultiTierEvaluator multiTier)
         {
             multiTier.SetRootTopology(in board);
+            activeExpertId = (byte)multiTier.ActiveRootExpert;
+
+            // If active root expert transitioned (e.g. Open -> Endgame or Imbalance -> Endgame),
+            // clear history tables to avoid move ordering bias across incompatible game phases.
+            // TT is preserved! TTEntry.ExpertId isolates foreign score cutoffs while retaining
+            // hash moves and restoring full search depth when returning to a previously visited expert.
+            if (_lastRootExpert.HasValue && _lastRootExpert.Value != multiTier.ActiveRootExpert)
+            {
+                ClearHistory();
+            }
+            _lastRootExpert = multiTier.ActiveRootExpert;
         }
 
         // 3. Initialize time manager
@@ -295,7 +318,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
         for (int i = 0; i < _workers.Length; i++)
         {
-            _workers[i].ResetForSearch();
+            _workers[i].ResetForSearch(activeExpertId);
         }
 
         // 5. Check if position has zero legal moves
@@ -388,6 +411,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly IIncrementalEvaluator? _incEval;
         private readonly TranspositionTable _tt;
         private readonly QuiescenceSearch _qsearch;
+        private byte _activeExpertId;
 
         public ulong Nodes;
         public int SelDepth;
@@ -437,8 +461,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             _qsearch.DeltaSafetyMargin = margin;
         }
 
-        public void ResetForSearch()
+        public void ResetForSearch(byte expertId)
         {
+            _activeExpertId = expertId;
+            _qsearch.ActiveExpertId = expertId;
             Nodes = 0;
             SelDepth = 0;
             BetaCutoffs = 0;
@@ -1038,7 +1064,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             // Store in TT
             TTFlags flag = (bestScore >= beta) ? TTFlags.LowerBound : (bestScore > alphaOrig ? TTFlags.Exact : TTFlags.UpperBound);
             Move storeMove = !rootBestMove.IsNull ? rootBestMove : ttMove;
-            _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, 0), _tt.CurrentAge, flag);
+            _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, 0), _tt.CurrentAge, flag, _activeExpertId);
 
             return bestScore;
         }
@@ -1122,13 +1148,44 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
 
+            // 3b. Syzygy Tablebase WDL Probe
+            if (_engine.Tablebase != null &&
+                depth >= _engine.Tablebase.SyzygyProbeDepth &&
+                ply > 0 &&
+                board.Castling == CastlingRights.None &&
+                BitOperations.PopCount(board.Occupied) <= _engine.Tablebase.MaxPieces &&
+                _stack[ply].ExcludedMove.IsNull)
+            {
+                if (_engine.Tablebase.TryProbeWdl(in board, out int wdl))
+                {
+                    int tbScore = wdl switch
+                    {
+                        2 => Value.MateValue - 100 - ply,
+                        1 => 100, // Cursed win
+                        0 => 0,   // Draw
+                        -1 => -100, // Blessed loss
+                        -2 => -(Value.MateValue - 100 - ply),
+                        _ => 0
+                    };
+
+                    TTFlags flag = TTFlags.Exact;
+                    if (tbScore >= beta) flag = TTFlags.LowerBound;
+                    else if (tbScore <= alpha) flag = TTFlags.UpperBound;
+
+                    _tt.Store(key, Move.Null, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(tbScore, ply), _tt.CurrentAge, flag, _activeExpertId);
+
+                    return tbScore;
+                }
+            }
+
             // 4. Transposition Table Probe
             bool ttHit = _tt.TryGet(key, out TTEntry entry);
             Move ttMove = ttHit ? entry.BestMove : Move.Null;
             int ttScore = ttHit ? TTEntry.ScoreFromTt(entry.Score, ply) : 0;
+            bool ttExpertMatch = ttHit && entry.ExpertId == _activeExpertId;
 
-            // TT Cutoff for non-PV nodes
-            if (!isPv && ttHit && entry.Depth >= depth && _stack[ply].ExcludedMove.IsNull)
+            // TT Cutoff for non-PV nodes (only when evaluation expert matches active root expert)
+            if (!isPv && ttExpertMatch && entry.Depth >= depth && _stack[ply].ExcludedMove.IsNull)
             {
                 if (entry.Flags == TTFlags.Exact) return ttScore;
                 if (entry.Flags == TTFlags.LowerBound && ttScore >= beta) return ttScore;
@@ -1144,7 +1201,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 staticEval = _correctionHistory.GetAdjustedEval(in board, rawEval);
                 eval = staticEval;
 
-                if (ttHit)
+                if (ttExpertMatch)
                 {
                     if (entry.Flags == TTFlags.Exact)
                     {
@@ -1183,7 +1240,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
 
             // 6. Reverse Futility Pruning (Static Null Move Pruning) for depth <= 4
-            if (!isPv && !inCheck && depth <= 4 && _stack[ply].ExcludedMove.IsNull)
+            if (!isPv && !inCheck && depth <= 4 && _stack[ply].ExcludedMove.IsNull &&
+                Math.Abs(beta) < TTEntry.MateBound &&
+                SearchHeuristics.HasNonPawnMaterial(in board, board.SideToMove))
             {
                 int rfpMargin = _engine.RfpMargin * depth;
                 if (improving)
@@ -1228,9 +1287,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
 
-            // 10. Singular Extensions
+            // 10. Singular Extensions (requires matching expert score)
             int singularExtension = 0;
-            if (depth >= 6 && ply > 0 && ttHit && !entry.BestMove.IsNull &&
+            if (depth >= 6 && ply > 0 && ttExpertMatch && !entry.BestMove.IsNull &&
                 entry.Depth >= depth - 3 && entry.Flags != TTFlags.UpperBound &&
                 _stack[ply].ExcludedMove.IsNull)
             {
@@ -1318,6 +1377,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
 
                 Piece movedPiece = board.GetPieceAt(move.From);
+                int captureSee = (move.IsCapture && !move.IsPromotion && movesSearched > 4)
+                    ? StaticExchangeEvaluator.Evaluate(in board, move)
+                    : 1;
                 board.MakeMove(move, out BoardState state);
                 Nodes++;
                 _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
@@ -1364,7 +1426,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         else if (move.IsCapture && !move.IsPromotion && movesSearched > 4)
                         {
                             // Capture LMR: 1-ply reduction for non-winning captures searched late
-                            if (StaticExchangeEvaluator.Evaluate(in board, move) <= 0)
+                            if (captureSee <= 0)
                             {
                                 r = 1;
                             }
@@ -1437,7 +1499,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             // Transposition Table LowerBound store
                             if (_stack[ply].ExcludedMove.IsNull)
                             {
-                                _tt.Store(key, move, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(score, ply), _tt.CurrentAge, TTFlags.LowerBound);
+                                _tt.Store(key, move, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(score, ply), _tt.CurrentAge, TTFlags.LowerBound, _activeExpertId);
                             }
 
                             return score;
@@ -1468,7 +1530,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             {
                 TTFlags flag = (bestScore > alphaOrig) ? TTFlags.Exact : TTFlags.UpperBound;
                 Move storeMove = !bestMove.IsNull ? bestMove : ttMove;
-                _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, ply), _tt.CurrentAge, flag);
+                _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, ply), _tt.CurrentAge, flag, _activeExpertId);
             }
 
             return bestScore;

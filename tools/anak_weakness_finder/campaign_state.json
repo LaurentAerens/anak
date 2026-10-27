@@ -1,0 +1,72 @@
+{
+  "campaign_id": "campaign_20261026_194924",
+  "status": "completed",
+  "current_elo": 2600,
+  "completed_tiers": [
+    {
+      "elo": 1600,
+      "match_id": "tier_sf1600_1793041700",
+      "pgn_file": "C:\\Users\\laurent aerens\\source\\repos\\anak\\tools\\fastchess\\results\\weakness_ladder_sf1600_20261026_194924.pgn",
+      "games": 10000,
+      "score": 0.8581500053405762,
+      "wins": 8461,
+      "losses": 1298,
+      "draws": 241,
+      "perf_percent": 85.81500053405762
+    },
+    {
+      "elo": 1800,
+      "match_id": "tier_sf1800_1793043025",
+      "pgn_file": "C:\\Users\\laurent aerens\\source\\repos\\anak\\tools\\fastchess\\results\\weakness_ladder_sf1800_20261026_200853.pgn",
+      "games": 10000,
+      "score": 0.7599499821662903,
+      "wins": 7372,
+      "losses": 2173,
+      "draws": 455,
+      "perf_percent": 75.99499821662903
+    },
+    {
+      "elo": 2000,
+      "match_id": "tier_sf2000_1793044475",
+      "pgn_file": "C:\\Users\\laurent aerens\\source\\repos\\anak\\tools\\fastchess\\results\\weakness_ladder_sf2000_20261026_203104.pgn",
+      "games": 10000,
+      "score": 0.6340000033378601,
+      "wins": 6026,
+      "losses": 3346,
+      "draws": 628,
+      "perf_percent": 63.40000033378601
+    },
+    {
+      "elo": 2200,
+      "match_id": "tier_sf2200_1793046065",
+      "pgn_file": "C:\\Users\\laurent aerens\\source\\repos\\anak\\tools\\fastchess\\results\\weakness_ladder_sf2200_20261026_205517.pgn",
+      "games": 10000,
+      "score": 0.5079500079154968,
+      "wins": 4661,
+      "losses": 4502,
+      "draws": 837,
+      "perf_percent": 50.79500079154968
+    },
+    {
+      "elo": 2400,
+      "match_id": "tier_sf2400_1793047759",
+      "pgn_file": "C:\\Users\\laurent aerens\\source\\repos\\anak\\tools\\fastchess\\results\\weakness_ladder_sf2400_20261026_212155.pgn",
+      "games": 10000,
+      "score": 0.3693999946117401,
+      "wins": 3176,
+      "losses": 5788,
+      "draws": 1036,
+      "perf_percent": 36.93999946117401
+    }
+  ],
+  "created_at": "2026-10-26 19:49:24",
+  "last_updated": "2026-10-26 23:06:05",
+  "config": {
+    "start_elo": 1600,
+    "step_elo": 200,
+    "games_per_tier": 10000,
+    "stop_threshold": 0.5,
+    "tc": "1+0.01"
+  },
+  "ceiling_elo": 2400
+}
