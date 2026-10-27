@@ -4,6 +4,12 @@ Anak acknowledges and credits the creators, researchers, and open-source chess c
 
 ---
 
+## Author & Maintainer
+
+- **Author**: **Laurent Aerens** (Belgium) — Creator and lead developer of Anak.
+
+---
+
 ## 1. Opening Book: `Performance.bin`
 
 - **Curator / Author**: **Marc Lacrosse** (Belgian FIDE Master and longtime contributor to chess software, Scid, and opening theory).

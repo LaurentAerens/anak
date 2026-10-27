@@ -5,6 +5,7 @@
 [Ll]ogs/
 *.exe
 tools/fastchess/baselines/*/
+tools/fastchess/engine_dev/
 BenchmarkDotNet.Artifacts/
 tools/fathom/
 
@@ -117,6 +118,7 @@ temp/
 *.bak
 *.swp
 *~
+*.duckdb
 
 ## OS-generated files
 .DS_Store

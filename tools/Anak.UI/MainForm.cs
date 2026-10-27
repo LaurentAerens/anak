@@ -839,15 +839,24 @@ public sealed class MainForm : Form
 
         // 2. Score formatting (centipawns e.g. +1.45 or mate distance M3 / -M2)
         string scoreDisplay;
-        if (stats.MateIn != 0)
+        if (SearchScoreFormat.IsForcedWinWithoutMate(stats))
         {
-            scoreDisplay = stats.MateIn > 0 ? $"M{stats.MateIn}" : $"-M{-stats.MateIn}";
+            scoreDisplay = stats.RootScore > 0 ? $"M{SearchScoreFormat.UnknownMateDistance}" : $"-M{SearchScoreFormat.UnknownMateDistance}";
         }
         else
         {
-            double cpVal = stats.ScoreCp / 100.0;
-            string sign = stats.ScoreCp > 0 ? "+" : "";
-            scoreDisplay = $"{sign}{cpVal:0.00} ({stats.ScoreCp:+#;-#;0} cp)";
+            int displayMate = SearchScoreFormat.GetDisplayMateIn(stats);
+            if (displayMate != 0)
+            {
+                scoreDisplay = displayMate > 0 ? $"M{displayMate}" : $"-M{-displayMate}";
+            }
+            else
+            {
+                int scoreCp = SearchScoreFormat.ResolveCentipawns(stats);
+                double cpVal = scoreCp / 100.0;
+                string sign = scoreCp > 0 ? "+" : "";
+                scoreDisplay = $"{sign}{cpVal:0.00} ({scoreCp:+#;-#;0} cp)";
+            }
         }
 
         string cutoffDisplay = stats.BetaCutoffEfficiency.HasValue
@@ -866,8 +875,12 @@ public sealed class MainForm : Form
         }
 
         // 5. Eval bar and evaluation label
-        int whiteScoreCp = _board.SideToMove == ChessColor.White ? stats.ScoreCp : -stats.ScoreCp;
-        int whiteMateIn = _board.SideToMove == ChessColor.White ? stats.MateIn : -stats.MateIn;
+        int stmScoreCp = SearchScoreFormat.ResolveCentipawns(stats);
+        int whiteScoreCp = _board.SideToMove == ChessColor.White ? stmScoreCp : -stmScoreCp;
+        int stmMateIn = SearchScoreFormat.IsForcedWinWithoutMate(stats)
+            ? 0
+            : SearchScoreFormat.GetDisplayMateIn(stats);
+        int whiteMateIn = _board.SideToMove == ChessColor.White ? stmMateIn : -stmMateIn;
         _evalBar.SetScore(whiteScoreCp, whiteMateIn);
         _evalLabel.Text = $"Engine Eval: {scoreDisplay} (White Win%: {(int)(_evalBar.WhiteWinProbability * 100)}%)";
 
