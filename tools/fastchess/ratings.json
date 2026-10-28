@@ -239,6 +239,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.4_20261028_145944.pgn",
       "notes": "Correction History Bound Filtering, Depth Weighting & Scaling (+204.5 Elo over v1.0.4 in 10,000 games with 100% LOS, cutting search tree by -45.9%)"
+    },
+    "v1.0.6": {
+      "version": "v1.0.6",
+      "date": "2026-10-28",
+      "estimated_elo": 2503,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.5 (Known Elo: 2487)",
+      "score": "5235 / 10000",
+      "wins": 4141,
+      "losses": 3671,
+      "draws": 2188,
+      "perf_percent": 52.35,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.5_20261028_220205.pgn",
+      "notes": "Cached capture SEE in MovePicker and shallow SEE pruning (+16.3 Elo over v1.0.5 in 10,000 games with 100% LOS)"
     }
   }
 }

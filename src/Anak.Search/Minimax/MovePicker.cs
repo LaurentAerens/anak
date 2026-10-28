@@ -49,11 +49,22 @@ public ref struct MovePicker
 
     private MoveList _legalMoves;
     private ScoreBuffer _scores;
+    private ScoreBuffer _seeScores;
     private MovePickerStage _stage;
     private bool _capturesScored;
     private bool _quietsScored;
     private bool _movesGenerated;
     private bool _ttMovePicked;
+
+    /// <summary>
+    /// Gets the stage in which the current move was picked.
+    /// </summary>
+    public MovePickerStage CurrentStage { get; private set; }
+
+    /// <summary>
+    /// Gets the Static Exchange Evaluation (SEE) score of the current picked move, if evaluated.
+    /// </summary>
+    public int CurrentSee { get; private set; }
 
     // 256-bit bitmask tracking picked moves
     private ulong _picked0;
@@ -195,6 +206,8 @@ public ref struct MovePicker
                             int ttIdx = FindMove(_ttMove);
                             if (ttIdx >= 0) MarkPicked(ttIdx);
                         }
+                        CurrentStage = MovePickerStage.TtMove;
+                        CurrentSee = int.MinValue;
                         move = _ttMove;
                         return true;
                     }
@@ -211,6 +224,8 @@ public ref struct MovePicker
                     if (bestCapIdx >= 0)
                     {
                         MarkPicked(bestCapIdx);
+                        CurrentStage = MovePickerStage.GoodCaptures;
+                        CurrentSee = _seeScores[bestCapIdx];
                         move = _legalMoves[bestCapIdx];
                         return true;
                     }
@@ -226,6 +241,8 @@ public ref struct MovePicker
                         if (k0Idx >= 0 && !IsPicked(k0Idx))
                         {
                             MarkPicked(k0Idx);
+                            CurrentStage = MovePickerStage.Killer0;
+                            CurrentSee = int.MinValue;
                             move = _killer0;
                             return true;
                         }
@@ -240,6 +257,8 @@ public ref struct MovePicker
                         if (k1Idx >= 0 && !IsPicked(k1Idx))
                         {
                             MarkPicked(k1Idx);
+                            CurrentStage = MovePickerStage.Killer1;
+                            CurrentSee = int.MinValue;
                             move = _killer1;
                             return true;
                         }
@@ -255,6 +274,8 @@ public ref struct MovePicker
                         if (cmIdx >= 0 && !IsPicked(cmIdx))
                         {
                             MarkPicked(cmIdx);
+                            CurrentStage = MovePickerStage.CounterMove;
+                            CurrentSee = int.MinValue;
                             move = _counterMove;
                             return true;
                         }
@@ -266,6 +287,8 @@ public ref struct MovePicker
                     if (bestContIdx >= 0)
                     {
                         MarkPicked(bestContIdx);
+                        CurrentStage = MovePickerStage.ContinuationMoves;
+                        CurrentSee = int.MinValue;
                         move = _legalMoves[bestContIdx];
                         return true;
                     }
@@ -284,6 +307,8 @@ public ref struct MovePicker
                     if (bestQuietIdx >= 0)
                     {
                         MarkPicked(bestQuietIdx);
+                        CurrentStage = MovePickerStage.QuietMoves;
+                        CurrentSee = int.MinValue;
                         move = _legalMoves[bestQuietIdx];
                         return true;
                     }
@@ -296,6 +321,8 @@ public ref struct MovePicker
                     if (bestBadCapIdx >= 0)
                     {
                         MarkPicked(bestBadCapIdx);
+                        CurrentStage = MovePickerStage.BadCaptures;
+                        CurrentSee = _seeScores[bestBadCapIdx];
                         move = _legalMoves[bestBadCapIdx];
                         return true;
                     }
@@ -305,6 +332,8 @@ public ref struct MovePicker
             }
         }
 
+        CurrentStage = MovePickerStage.Done;
+        CurrentSee = int.MinValue;
         move = Move.Null;
         return false;
     }
@@ -336,6 +365,7 @@ public ref struct MovePicker
             if (!m.IsCapture && !m.IsPromotion) continue;
 
             int see = StaticExchangeEvaluator.Evaluate(in _board, m);
+            _seeScores[i] = see;
             if (see >= 0)
             {
                 Piece moved = _board.GetPieceAt(m.From);

@@ -342,6 +342,7 @@ The runner automatically compiles `anak.exe`, matches candidate vs baseline usin
 | [**v1.0.3**](https://github.com/laerens/anak/releases/tag/v1.0.3) | Bypass Micro-NNUE Accumulator Updates in Search | **2274** | Anak v1.0.2 (+4.1 Elo) |
 | [**v1.0.4**](https://github.com/laerens/anak/releases/tag/v1.0.4) | Capture History Malus on Failed Captures | **2282** | Anak v1.0.3 (+8.2 Elo) |
 | [**v1.0.5**](https://github.com/laerens/anak/releases/tag/v1.0.5) | Correction History Bound Filtering & Depth Weighting (-46% nodes) | **2487** | Anak v1.0.4 (+204.5 Elo) |
+| [**v1.0.6**](https://github.com/laerens/anak/releases/tag/v1.0.6) | Cached Capture SEE in MovePicker & Shallow SEE Pruning | **2503** | Anak v1.0.5 (+16.3 Elo) |
 
 See [BENCHMARKS.md](BENCHMARKS.md) and [tools/fastchess/README.md](tools/fastchess/README.md) for complete details.
 

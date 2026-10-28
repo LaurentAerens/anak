@@ -1394,10 +1394,30 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     }
                 }
 
+                // Static Exchange Evaluation (SEE) Pruning
+                if (movesSearched > 0 && !isPv && !inCheck)
+                {
+                    // Bad Captures Pruning: Prune clearly losing exchanges at shallow depths
+                    if (depth <= 5 && move.IsCapture && !move.IsPromotion)
+                    {
+                        if (picker.CurrentSee < -60 * depth)
+                        {
+                            continue;
+                        }
+                    }
+
+                    // Quiet SEE Pruning: Prune quiet moves that blunder pieces onto attacked squares
+                    if (depth <= 4 && isQuiet)
+                    {
+                        int quietSee = StaticExchangeEvaluator.Evaluate(in board, move);
+                        if (quietSee < -35 * depth * depth)
+                        {
+                            continue;
+                        }
+                    }
+                }
+
                 Piece movedPiece = board.GetPieceAt(move.From);
-                int captureSee = (move.IsCapture && !move.IsPromotion && movesSearched > 4)
-                    ? StaticExchangeEvaluator.Evaluate(in board, move)
-                    : 1;
                 board.MakeMove(move, out BoardState state);
                 Nodes++;
                 _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
@@ -1443,8 +1463,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         }
                         else if (move.IsCapture && !move.IsPromotion && movesSearched > 4)
                         {
-                            // Capture LMR: 1-ply reduction for non-winning captures searched late
-                            if (captureSee <= 0)
+                            // Capture LMR: 1-ply reduction for non-winning captures searched late (reusing cached SEE)
+                            if (picker.CurrentSee <= 0)
                             {
                                 r = 1;
                             }

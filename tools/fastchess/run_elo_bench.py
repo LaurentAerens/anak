@@ -262,6 +262,8 @@ def parse_args():
                         help="Quick smoke test: 25 rounds (50 games) at 3+0.05 time control")
     parser.add_argument("--sprt", action="store_true",
                         help="Enable SPRT (Sequential Probability Ratio Test) with bounds [0, 30] Elo for early stopping")
+    parser.add_argument("--early-stop", action="store_true",
+                        help="Abort match early if statistically negligible chance of positive Elo (e.g. upper 95% CI < 0)")
     parser.add_argument("--rebuild", action="store_true",
                         help="Force rebuild of Anak (candidate build) before benchmark (enabled by default)")
     parser.add_argument("--no-build", action="store_true",
@@ -461,6 +463,21 @@ def main():
                 int(m_games.group(3)),
                 int(m_games.group(4)),
             )
+
+            if args.early_stop and elo_match:
+                g = games_match[0]
+                delta_elo, err = elo_match
+                # Stop early if regression is statistically clear
+                # e.g. after >= 500 games, if upper 95% CI is negative (delta_elo + err < 0.0)
+                # or after >= 1000 games, if upper 95% CI < 1.0 Elo
+                if (g >= 500 and (delta_elo + err) < 0.0) or (g >= 1000 and (delta_elo + err) < 1.0):
+                    print(f"\n[!] EARLY STOP: After {g} games, Elo is {delta_elo:+.1f} +/- {err:.1f} (Upper 95% CI: {delta_elo+err:+.1f}).")
+                    print("[!] Negligible chance of positive Elo; terminating match early.\n")
+                    if os.name == "nt":
+                        subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)], capture_output=True)
+                    else:
+                        proc.kill()
+                    break
 
     proc.wait()
 
