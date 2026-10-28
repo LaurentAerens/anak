@@ -346,9 +346,9 @@ public ref struct MovePicker
                 int score = GetMvvLva(in _board, m);
                 if (_captureHistory != null)
                 {
-                    score += _captureHistory.GetScore(moved, m.To, captured);
+                    score += _captureHistory.GetScore(moved, m.To, captured) / 16;
                 }
-                _scores[i] = score;
+                _scores[i] = Math.Max(0, score);
             }
             else
             {

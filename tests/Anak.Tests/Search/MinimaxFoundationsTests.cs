@@ -155,12 +155,13 @@ public class MinimaxFoundationsTests
         ulong pawnKey = CorrectionHistory.ComputePawnKey(in board);
         Assert.True(pawnKey != 0);
 
-        corr.Update(pawnKey, searchScore: 100, staticEval: 20); // diff = 80, delta = 5
+        corr.Update(pawnKey, depth: 8, searchScore: 100, staticEval: 20);
         int correction = corr.GetCorrection(pawnKey);
-        Assert.Equal(5, correction);
+        Assert.True(correction > 0);
+        Assert.True(correction <= CorrectionHistory.MaxCorrection);
 
         int adjusted = corr.GetAdjustedEval(in board, 50);
-        Assert.Equal(55, adjusted);
+        Assert.Equal(50 + correction, adjusted);
     }
 
     [Fact]

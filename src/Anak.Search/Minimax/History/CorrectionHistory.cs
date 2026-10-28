@@ -12,7 +12,8 @@ public sealed class CorrectionHistory
 {
     public const int TableSize = 16384;
     public const int TableMask = 16383;
-    public const int MaxCorrection = 1024;
+    public const int MaxCorrection = 128;
+    public const int ScaleFactor = 128;
 
     private readonly short[] _table = new short[TableSize];
 
@@ -50,12 +51,12 @@ public sealed class CorrectionHistory
     }
 
     /// <summary>
-    /// Gets the evaluation correction for the given pawn key.
+    /// Gets the evaluation correction for the given pawn key (in centipawns, clamped to [-MaxCorrection, MaxCorrection]).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetCorrection(ulong pawnKey)
     {
-        return _table[GetIndex(pawnKey)];
+        return _table[GetIndex(pawnKey)] / ScaleFactor;
     }
 
     /// <summary>
@@ -86,28 +87,45 @@ public sealed class CorrectionHistory
     }
 
     /// <summary>
-    /// Updates the pawn correction history offset at the end of search.
-    /// Formula: CorrHist[PawnKey] += (SearchScore - StaticEval) / 16.
+    /// Updates the pawn correction history offset using exponential moving average weighted by search depth.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Update(ulong pawnKey, int depth, int searchScore, int staticEval)
+    {
+        int diff = Math.Clamp(searchScore - staticEval, -MaxCorrection, MaxCorrection);
+        int target = diff * ScaleFactor;
+        int weight = Math.Clamp(depth * 32, 16, 512);
+
+        int index = GetIndex(pawnKey);
+        int current = _table[index];
+        _table[index] = (short)(current + (target - current) * weight / 2048);
+    }
+
+    /// <summary>
+    /// Updates the pawn correction history offset using board pawn structure weighted by depth.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Update(in Board board, int depth, int searchScore, int staticEval)
+    {
+        Update(ComputePawnKey(in board), depth, searchScore, staticEval);
+    }
+
+    /// <summary>
+    /// Overload for backward compatibility / tests (defaults depth to 1).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Update(ulong pawnKey, int searchScore, int staticEval)
     {
-        int diff = searchScore - staticEval;
-        int delta = diff / 16;
-        if (delta == 0) return;
-
-        int index = GetIndex(pawnKey);
-        int current = _table[index];
-        _table[index] = (short)Math.Clamp(current + delta, -MaxCorrection, MaxCorrection);
+        Update(pawnKey, 1, searchScore, staticEval);
     }
 
     /// <summary>
-    /// Updates the pawn correction history offset using board pawn structure.
+    /// Overload for backward compatibility / tests (defaults depth to 1).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Update(in Board board, int searchScore, int staticEval)
     {
-        Update(ComputePawnKey(in board), searchScore, staticEval);
+        Update(in board, 1, searchScore, staticEval);
     }
 
     /// <summary>

@@ -105,6 +105,10 @@ This document maintains a living backlog of concrete architectural experiments, 
 ### 2. Comprehensive SPSA Re-Tuning Post-Engine Changes
 - **Context:** Multiple foundational search, data structure, and evaluation changes landed in Anak (`v1.0.1`, `v1.0.2`, `v1.0.3`, Syzygy probing, unified TT). Once all structural search features in the active plan are implemented, a comprehensive long-running SPSA re-tune across all pruning thresholds and time management parameters should be executed.
 
+### 3. Dedicated Tactical Move Generator Scoped to Blunder Checking
+- **Context:** An experimental dedicated `GenerateLegalTacticalMoves` (generating only captures and promotions) was evaluated in Quiescence Search (Step 1.9). While it provided +5.4% raw NPS speedup, in general QSearch it altered move ordering ties and yielded -6.4 Elo in match play against v1.0.3 across 1,029 games.
+- **Direction:** Repurpose the dedicated tactical move generator specifically for the root/candidate **Blunder Checker** and shallow tactical watchdog screens. In blunder check routines, the engine only cares about immediate counter-tactics, hanging pieces, and tactical threats. Generating solely tactical moves there eliminates generating quiet non-threats without risking QSearch move-ordering side effects.
+
 ---
 
 ## 🚀 Category 3: Low-Level Hardware Research

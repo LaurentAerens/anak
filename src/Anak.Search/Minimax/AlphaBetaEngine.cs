@@ -941,6 +941,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Span<Move> quietsSearched = stackalloc Move[64];
             Span<Piece> quietsSearchedPiece = stackalloc Piece[64];
             int quietsCount = 0;
+            Span<Move> capturesSearched = stackalloc Move[32];
+            Span<Piece> capturesSearchedPiece = stackalloc Piece[32];
+            Span<Piece> capturesSearchedVictim = stackalloc Piece[32];
+            int capturesCount = 0;
             float rootOpenness = depth >= 3 ? PawnTopology.CalculateOpenness(in board) : 0.5f;
 
             if (Id == 0)
@@ -1031,6 +1035,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     quietsSearchedPiece[quietsCount] = movedPiece;
                     quietsCount++;
                 }
+                else if (move.IsCapture && capturesCount < capturesSearched.Length)
+                {
+                    capturesSearched[capturesCount] = move;
+                    capturesSearchedPiece[capturesCount] = movedPiece;
+                    capturesSearchedVictim[capturesCount] = state.CapturedPiece;
+                    capturesCount++;
+                }
 
                 if (score > bestScore)
                 {
@@ -1049,7 +1060,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             {
                                 FirstMoveCutoffs++;
                             }
-                            UpdateHistoriesOnCutoff(in board, move, movedPiece, depth, quietsSearched[..quietsCount], quietsSearchedPiece[..quietsCount], prev1Piece: Piece.None, prev1To: Square.None, prev2Piece: Piece.None, prev2To: Square.None);
+                            UpdateHistoriesOnCutoff(in board, move, movedPiece, depth,
+                                quietsSearched[..quietsCount], quietsSearchedPiece[..quietsCount],
+                                capturesSearched[..capturesCount], capturesSearchedPiece[..capturesCount], capturesSearchedVictim[..capturesCount],
+                                prev1Piece: Piece.None, prev1To: Square.None, prev2Piece: Piece.None, prev2To: Square.None);
                             break;
                         }
                     }
@@ -1337,6 +1351,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Span<Move> quietsSearched = stackalloc Move[64];
             Span<Piece> quietsSearchedPiece = stackalloc Piece[64];
             int quietsCount = 0;
+            Span<Move> capturesSearched = stackalloc Move[32];
+            Span<Piece> capturesSearchedPiece = stackalloc Piece[32];
+            Span<Piece> capturesSearchedVictim = stackalloc Piece[32];
+            int capturesCount = 0;
             while (picker.Next(out Move move))
             {
                 // Skip singular extension excluded move
@@ -1464,6 +1482,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     quietsSearchedPiece[quietsCount] = movedPiece;
                     quietsCount++;
                 }
+                else if (move.IsCapture && capturesCount < capturesSearched.Length)
+                {
+                    capturesSearched[capturesCount] = move;
+                    capturesSearchedPiece[capturesCount] = movedPiece;
+                    capturesSearchedVictim[capturesCount] = state.CapturedPiece;
+                    capturesCount++;
+                }
 
                 if (score > bestScore)
                 {
@@ -1482,7 +1507,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             {
                                 FirstMoveCutoffs++;
                             }
-                            UpdateHistoriesOnCutoff(in board, move, movedPiece, depth, quietsSearched[..quietsCount], quietsSearchedPiece[..quietsCount], prev1Piece, prev1To, prev2Piece, prev2To);
+                            UpdateHistoriesOnCutoff(in board, move, movedPiece, depth,
+                                quietsSearched[..quietsCount], quietsSearchedPiece[..quietsCount],
+                                capturesSearched[..capturesCount], capturesSearchedPiece[..capturesCount], capturesSearchedVictim[..capturesCount],
+                                prev1Piece, prev1To, prev2Piece, prev2To);
 
                             // Killer move storage in SearchStack
                             if (!move.IsCapture && !move.IsPromotion)
@@ -1490,10 +1518,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                                 _stack[ply].AddKiller(move);
                             }
 
-                            // Correction history update on cutoff
-                            if (!inCheck && staticEval != -Value.InfiniteValue)
+                            // Correction history update on cutoff (LowerBound: score exceeds staticEval)
+                            if (!inCheck && staticEval != -Value.InfiniteValue && score > staticEval && Math.Abs(score) < Value.MateValue - 100)
                             {
-                                _correctionHistory.Update(in board, score, staticEval);
+                                _correctionHistory.Update(in board, depth, score, staticEval);
                             }
 
                             // Transposition Table LowerBound store
@@ -1520,9 +1548,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
 
             // Correction history update on non-cutoff nodes
-            if (!inCheck && staticEval != -Value.InfiniteValue && bestScore > -Value.MateValue + 100 && bestScore < Value.MateValue - 100)
+            // Exact nodes: update in either direction; UpperBound: only update if bestScore < staticEval
+            if (!inCheck && staticEval != -Value.InfiniteValue && Math.Abs(bestScore) < Value.MateValue - 100)
             {
-                _correctionHistory.Update(in board, bestScore, staticEval);
+                if (bestScore > alphaOrig || bestScore < staticEval)
+                {
+                    _correctionHistory.Update(in board, depth, bestScore, staticEval);
+                }
             }
 
             // Transposition Table store (Exact or UpperBound)
@@ -1547,6 +1579,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
             int depth,
             ReadOnlySpan<Move> quietsSearched,
             ReadOnlySpan<Piece> quietsSearchedPiece,
+            ReadOnlySpan<Move> capturesSearched,
+            ReadOnlySpan<Piece> capturesSearchedPiece,
+            ReadOnlySpan<Piece> capturesSearchedVictim,
             Piece prev1Piece,
             Square prev1To,
             Piece prev2Piece,
@@ -1589,6 +1624,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     ? PieceExtensions.Create(board.SideToMove.Opponent(), PieceType.Pawn)
                     : board.GetPieceAt(move.To);
                 _captureHistory.Update(movedPiece, move.To, captured, bonus);
+            }
+
+            // Capture history malus: penalize earlier searched captures that failed to achieve a cutoff
+            for (int i = 0; i < capturesSearched.Length; i++)
+            {
+                Move failed = capturesSearched[i];
+                if (failed != move)
+                {
+                    _captureHistory.Update(capturesSearchedPiece[i], failed.To, capturesSearchedVictim[i], -bonus);
+                }
             }
         }
 

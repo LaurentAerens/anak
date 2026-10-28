@@ -337,6 +337,11 @@ The runner automatically compiles `anak.exe`, matches candidate vs baseline usin
 | [**v0.0.3**](https://github.com/laerens/anak/releases/tag/v0.0.3) | Alpha-Beta (Negamax/PVS) | **1659** | Stockfish 19 (1800 Elo) |
 | [**v0.0.4**](https://github.com/laerens/anak/releases/tag/v0.0.4) | Alpha-Beta + NNUE Retrain + Book + Syzygy + SPSA | **1678** | Anak v0.0.3 (+18.8 Elo) |
 | [**v1.0.0**](https://github.com/laerens/anak/releases/tag/v1.0.0) | Multi-Tier NNUE (6 Experts) + Alpha-Beta PVS + Syzygy + Unified TT | **2261** | Stockfish Ladder / current_dev (+31 Elo) |
+| [**v1.0.1**](https://github.com/laerens/anak/releases/tag/v1.0.1) | 1D Flattened ContinuationHistory Table (+5.8% NPS) | **2264** | Anak v1.0.0 (+3.1 Elo) |
+| [**v1.0.2**](https://github.com/laerens/anak/releases/tag/v1.0.2) | Inline Fixed Mailbox Piece[64] in Board | **2270** | Anak v1.0.1 (+6.3 Elo) |
+| [**v1.0.3**](https://github.com/laerens/anak/releases/tag/v1.0.3) | Bypass Micro-NNUE Accumulator Updates in Search | **2274** | Anak v1.0.2 (+4.1 Elo) |
+| [**v1.0.4**](https://github.com/laerens/anak/releases/tag/v1.0.4) | Capture History Malus on Failed Captures | **2282** | Anak v1.0.3 (+8.2 Elo) |
+| [**v1.0.5**](https://github.com/laerens/anak/releases/tag/v1.0.5) | Correction History Bound Filtering & Depth Weighting (-46% nodes) | **2487** | Anak v1.0.4 (+204.5 Elo) |
 
 See [BENCHMARKS.md](BENCHMARKS.md) and [tools/fastchess/README.md](tools/fastchess/README.md) for complete details.
 
