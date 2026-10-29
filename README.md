@@ -464,6 +464,14 @@ Features:
 
 ---
 
+## Benchmarking & Evaluation Guidelines
+
+Anak follows a disciplined **3-Tier Testing Pyramid** (Sanity Gate &rarr; SPRT Validation &rarr; Moderate Time Control) to validate engine optimizations, balance compute budgets, and eliminate battery/throttling variance via deterministic fixed-node testing.
+
+See the complete guide in **[`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)**.
+
+---
+
 ## Author & Credits
 
 <img align="right" width="160" src="assets/logo.jpg" alt="Anak Chess Engine Logo" />

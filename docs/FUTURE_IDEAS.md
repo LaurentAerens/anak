@@ -109,6 +109,14 @@ This document maintains a living backlog of concrete architectural experiments, 
 - **Context:** An experimental dedicated `GenerateLegalTacticalMoves` (generating only captures and promotions) was evaluated in Quiescence Search (Step 1.9). While it provided +5.4% raw NPS speedup, in general QSearch it altered move ordering ties and yielded -6.4 Elo in match play against v1.0.3 across 1,029 games.
 - **Direction:** Repurpose the dedicated tactical move generator specifically for the root/candidate **Blunder Checker** and shallow tactical watchdog screens. In blunder check routines, the engine only cares about immediate counter-tactics, hanging pieces, and tactical threats. Generating solely tactical moves there eliminates generating quiet non-threats without risking QSearch move-ordering side effects.
 
+### 4. Fail-Soft Quiescence Search with TT Pruning Guards & Stand-Pat Clamping
+- **Context:** An isolated test of fail-soft Quiescence Search (`QuiescenceSearch.Search`) in Step 2.10 scored 117.5 / 250 (-20.9 Elo, 13.9% LOS) vs v1.0.6. The regression occurred because QS is an asymmetric cut-off heuristic: losing captures (`SEE < 0`) and moves failing delta pruning are discarded without search, and quiet moves are completely omitted. When a position fails low in QS, the returned score does not represent the minimax value of the subtree. Storing these incomplete, pruning-skewed floor values into the Transposition Table as `TTFlags.UpperBound` and returning scores below `standPat` leaked false refutations into parent PVS re-search windows and caused search tree instability.
+- **Direction for Future Research:**
+  1. **Selective TT Storing:** Only store `TTFlags.UpperBound` in QS if no candidate tactical moves were discarded by Delta or SEE pruning, preventing hash table pollution from incomplete tactical subtrees.
+  2. **Stand-Pat Floor Clamping:** In QS, because quiet moves are omitted, the player always retains the option to stand pat (play a quiet move instead of a losing capture); thus, `bestScore` should be clamped to `Math.Max(bestScore, standPat)` when not in check to ensure a bad capture never drags the position's evaluation below the quiet positional score.
+  3. **Guarded TT Probing in QS:** In QS leaf nodes, do not take `TTFlags.UpperBound` cutoffs if `standPat < alpha` or if the TT entry originated from a depth-0 pruned QS node.
+  4. **PVS Re-Search Boundaries:** Ensure `AlphaBeta` depth 1 null-window searches properly handle fail-soft QS boundaries without triggering spurious full-window re-searches on delta-pruned leaves.
+
 ---
 
 ## 🚀 Category 3: Low-Level Hardware Research

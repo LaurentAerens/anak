@@ -263,7 +263,7 @@ def parse_args():
     parser.add_argument("--sprt", action="store_true",
                         help="Enable SPRT (Sequential Probability Ratio Test) with bounds [0, 30] Elo for early stopping")
     parser.add_argument("--early-stop", action="store_true",
-                        help="Abort match early if statistically negligible chance of positive Elo (e.g. upper 95% CI < 0)")
+                        help="Abort match early if statistically negligible chance of positive Elo (e.g. upper 95%% CI < 0)")
     parser.add_argument("--rebuild", action="store_true",
                         help="Force rebuild of Anak (candidate build) before benchmark (enabled by default)")
     parser.add_argument("--no-build", action="store_true",

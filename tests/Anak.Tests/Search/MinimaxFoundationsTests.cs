@@ -165,6 +165,23 @@ public class MinimaxFoundationsTests
     }
 
     [Fact]
+    public void CorrectionHistory_ColorIndependentAdjustments()
+    {
+        var corr = new CorrectionHistory();
+        Board whiteBoard = Fen.Parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        Board blackBoard = Fen.Parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
+
+        corr.Update(in whiteBoard, depth: 8, searchScore: 100, staticEval: 20);
+        corr.Update(in blackBoard, depth: 8, searchScore: 20, staticEval: 100);
+
+        int whiteCorr = corr.GetCorrection(in whiteBoard);
+        int blackCorr = corr.GetCorrection(in blackBoard);
+
+        Assert.True(whiteCorr > 0);
+        Assert.True(blackCorr < 0);
+    }
+
+    [Fact]
     public void MovePicker_OrdersStagesProperly()
     {
         Board board = Fen.Parse("r1bqkbnr/ppp2ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 4");
