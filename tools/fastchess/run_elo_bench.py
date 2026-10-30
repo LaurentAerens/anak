@@ -260,8 +260,8 @@ def parse_args():
                         help="Search threads per engine (default: 1)")
     parser.add_argument("--quick", action="store_true",
                         help="Quick smoke test: 25 rounds (50 games) at 3+0.05 time control")
-    parser.add_argument("--sprt", action="store_true",
-                        help="Enable SPRT (Sequential Probability Ratio Test) with bounds [0, 30] Elo for early stopping")
+    parser.add_argument("--sprt", nargs="*", default=None, metavar=("ELO0", "ELO1"),
+                        help="Enable SPRT (Sequential Probability Ratio Test) with bounds [elo0, elo1] (default: 0.0 3.0)")
     parser.add_argument("--early-stop", action="store_true",
                         help="Abort match early if statistically negligible chance of positive Elo (e.g. upper 95%% CI < 0)")
     parser.add_argument("--rebuild", action="store_true",
@@ -426,8 +426,10 @@ def main():
         f"file={pgn_path}",
     ]
 
-    if args.sprt:
-        cmd.extend(["-sprt", "elo0=0", "elo1=30", "alpha=0.05", "beta=0.05"])
+    if args.sprt is not None:
+        elo0 = args.sprt[0] if len(args.sprt) > 0 else "0.0"
+        elo1 = args.sprt[1] if len(args.sprt) > 1 else "3.0"
+        cmd.extend(["-sprt", f"elo0={elo0}", f"elo1={elo1}", "alpha=0.05", "beta=0.05"])
 
     print("\n[+] Launching fast-chess match ...")
     print(f"[+] PGN output will be saved to: {pgn_output}\n")
