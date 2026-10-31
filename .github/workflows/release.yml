@@ -190,7 +190,13 @@ jobs:
 
           # Archive bundle based on platform format (.zip for Windows, .tar.gz for Linux/macOS)
           if [ "${{ matrix.archive }}" = "zip" ]; then
-            zip -r "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
+            if command -v 7z >/dev/null 2>&1; then
+              7z a -tzip "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
+            elif command -v zip >/dev/null 2>&1; then
+              zip -r "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
+            else
+              python -m zipfile -c "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
+            fi
           else
             tar -czvf "asset/${{ matrix.name }}.tar.gz" "${BUNDLE_DIR}"
           fi
