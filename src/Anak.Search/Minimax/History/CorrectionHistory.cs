@@ -15,7 +15,6 @@ public sealed class CorrectionHistory
     public const int TotalTableSize = TableSizePerColor * 2;
     public const int MaxCorrection = 128;
     public const int ScaleFactor = 128;
-    public static int WeightDivisor { get; set; } = 2048;
 
     private readonly short[] _table = new short[TotalTableSize];
 
@@ -127,7 +126,7 @@ public sealed class CorrectionHistory
 
         int index = GetIndex(side, pawnKey);
         int current = _table[index];
-        _table[index] = (short)(current + (target - current) * weight / WeightDivisor);
+        _table[index] = (short)(current + (target - current) * weight / 2048);
     }
 
     /// <summary>

@@ -26,29 +26,40 @@ This file defines the mandatory operational constraints, benchmarking standards,
 
 ## 2. Benchmarking & Elo Evaluation Protocol
 
-To balance **consistency, compute budget, and real-life playing strength**, optimization candidates follow specialized validation tracks depending on the nature of the change:
+To balance **consistency, compute budget, and real-life playing strength**, all optimization candidates must adhere to the **3-Tier Testing Pyramid**.
 
-### Streamlined Single-Run Validation (Search & Positional Features)
-Instead of waiting through separate 250-game gate matches followed by 10,000-game matches, validation uses **Early-Stopping SPRT**:
-```bash
-python tools/fastchess/run_elo_bench.py --baseline <active_baseline> --sprt 0.0 3.0 --max-games 8000 --tc 1+0.01 --concurrency 8 --early-stop
-```
-- **Severe Regression / Broken Logic:** The `--early-stop` guard checks confidence intervals continuously and terminates failed candidates early (typically in $400 - 600$ games).
-- **Early Winner Acceptance:** SPRT confirms statistically significant $+3.0\text{ Elo}$ improvements with $95\%$ confidence early (typically in $1,500 - 2,500$ games).
-- **Aborts Flop Features:** Neutral/flat candidates stop before wasting hours of compute.
+### Tier 1: Quick Sanity Gate (250 Games)
+- **Time Control:** `1+0.01` or `nodes 50000`
+- **Purpose:** Fast filter to catch broken logic, tactical blunders, or heavy regressions in under 4 minutes.
+- **Decision Rules:**
+  - **Hard Regression:** Score $< 47.0\%$ ($< -20\text{ Elo}$, LOS $< 15\%$) &rarr; **Reject & Revert immediately**.
+  - **Neutral / Flat:** Score $47.0\% - 52.0\%$ (within $\pm 15\text{ Elo}$) &rarr; **Do NOT auto-reject**. Review domain category:
+    - If Category A (tactical/speed): May abort if no speedup detected.
+    - If Category B (positional/eval/depth): Graduate to Tier 2 SPRT or Tier 3 MTC.
+  - **Positive:** Score $> 52.0\%$ &rarr; **Graduate to Tier 2 Validation**.
+
+### Tier 2: Validation via SPRT (Sequential Probability Ratio Test)
+- **Engine Command:**
+  ```bash
+  python tools/fastchess/run_elo_bench.py --baseline <active_baseline> --sprt 0.0 3.0 --max-games 8000 --tc 1+0.01 --concurrency 8
+  ```
+- **Stopping Conditions:**
+  - **Pass (H1 accepted):** Candidate is statistically proven $+3.0\text{ Elo}$ better with $95\%$ confidence. Match terminates early (typically in $1,500 - 2,500$ games). **Accept feature.**
+  - **Fail (H0 accepted):** Candidate fails to beat baseline. Match terminates early ($800 - 1,500$ games). **Reject & revert.**
+  - Cuts compute time and battery usage by **60–70%** compared to blind 10,000-game matches.
+
+### Tier 3: Moderate Time Control (MTC) Gate for Deep/Positional Features
+- **Scope:** Reserved for Category B features (pawn/correction history, repetition logic, singular extensions, endgame tablebases) that require moderate search depth ($\text{depth} \ge 12$).
+- **Time Control:** `3+0.03` or `5+0.05` (500–1,000 games) or fixed nodes (`nodes 100000`).
 
 ---
 
-## 3. Pure NPS / Speedup Validation Protocol (Category A)
+## 3. Feature Categorization Guide
 
-For code changes targeting **pure speedup with identical search logic** (e.g., bit manipulation, data structure flattening, inlining, SIMD vectorization, cache locality, memory layout):
-
-1. **Unit Test Gate:** 100% of unit tests pass (`dotnet test -c Release`).
-2. **Fixed-Node Determinism Check:** Verify across standard benchmark positions that fixed-node searches produce **100% identical best moves and node counts** to the baseline:
-   - Must match the exact node count of the baseline on canonical positions (`anak bench <depth>`).
-   - Confirms that the change did not accidentally alter move ordering, pruning logic, or evaluation semantics.
-3. **NPS Throughput Gate:** Run benchmark harness (`anak bench 12`) to verify statistically significant NPS speedup and **0 GC allocations** across Gen 0, Gen 1, and Gen 2.
-4. **Fast-Track Acceptance:** Pure NPS improvements that maintain 100% deterministic search trees and yield demonstrable NPS speedup without modifying search semantics are accepted directly or verified via a short fast confirmation run without requiring full 8,000-game match cycles.
+- **Category A (Speed & Move Ordering):** Mailbox arrays, bitboard chains, flattened history tables, shallow SEE pruning, move picker sort order.
+  - *Primary Validator:* Tier 1 Sanity &rarr; Tier 2 STC SPRT.
+- **Category B (Positional & Search Depth):** Correction history, repetition detection, singular extensions, endgame tablebases.
+  - *Primary Validator:* Tier 1 Sanity &rarr; Tier 3 MTC (deeper search) or Tier 2 SPRT.
 
 ---
 

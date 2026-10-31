@@ -175,10 +175,6 @@ public sealed class UciEngineAdapter
         _options.RfpImprovingMultiplier.ValueChanged += val => _alphaBetaEngine.RfpImprovingMultiplier = val;
         _options.SingularMargin.ValueChanged += val => _alphaBetaEngine.SingularMargin = val;
         _options.QsDeltaMargin.ValueChanged += val => _alphaBetaEngine.QsDeltaMargin = val;
-        _options.HistoryBonusScale.ValueChanged += val => HistoryTable.BonusScale = val;
-        _options.HistoryMaxBonus.ValueChanged += val => HistoryTable.MaxBonus = val;
-        _options.HistoryMaxMalus.ValueChanged += val => HistoryTable.MaxMalus = val;
-        _options.CorrHistDivisor.ValueChanged += val => CorrectionHistory.WeightDivisor = val;
         _options.MicroMaxShare.ValueChanged += val => _alphaBetaEngine.MicroMaxShare = val;
         _options.MicroMinTime.ValueChanged += val => _alphaBetaEngine.MicroMinTime = val;
         _options.MicroDepthGate.ValueChanged += val => _alphaBetaEngine.MicroDepthGate = val;

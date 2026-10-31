@@ -29,10 +29,6 @@ public static class SearchHeuristics
     public const int TunedRfpImprovingMultiplier = 111; // default: 115
     public const int TunedSingularMargin = 6;           // default: 6
     public const int TunedQsDeltaMargin = 188;          // default: 188
-    public const int TunedHistoryBonusScale = 16;       // default: 16 (1.0x factor: (depth * depth * scale) / 16)
-    public const int TunedHistoryMaxBonus = 2000;       // default: 2000
-    public const int TunedHistoryMaxMalus = 2000;       // default: 2000
-    public const int TunedCorrHistDivisor = 2048;       // default: 2048
 
     /// <summary>
     /// Pre-computed LMR reduction table: [depth, moveIndex].

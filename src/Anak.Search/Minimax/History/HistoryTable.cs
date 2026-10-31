@@ -57,26 +57,13 @@ public sealed class HistoryTable
         Update(side, move.From, move.To, bonus);
     }
 
-    public static int BonusScale { get; set; } = 16;
-    public static int MaxBonus { get; set; } = 2000;
-    public static int MaxMalus { get; set; } = 2000;
-
     /// <summary>
     /// Computes history bonus based on search depth.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int CalculateBonus(int depth)
     {
-        return Math.Min((depth * depth * BonusScale) / 16, MaxBonus);
-    }
-
-    /// <summary>
-    /// Computes capped history malus for failed quiet moves.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int CalculateMalus(int depth)
-    {
-        return Math.Min(CalculateBonus(depth), MaxMalus);
+        return Math.Min(depth * depth, 2000);
     }
 
     /// <summary>

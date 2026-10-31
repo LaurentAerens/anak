@@ -5,8 +5,7 @@ See full specifications in [`AGENTS.md`](file:///c:/Users/laerens/source/repos/P
 ## Quick Summary for Agents
 1. **NO state-modifying Git operations** (`commit`, `checkout`, `switch`, `push`, `branch`, `reset`, `restore`, `stash`) without explicit user permission.
 2. **Always run unit tests** (`dotnet test -c Release`) and ensure 100% passing tests before completing any task.
-3. **Pure NPS / Speedup Changes (Category A):** Validate with unit tests + identical node count and identical move determinism on benchmark positions (`anak bench`) + 0 GC allocations, enabling fast-track verification without 8k-game matches.
-4. **Search / Positional Changes (Category B):** Use streamlined direct match validation with `--early-stop` / SPRT against the active baseline:
-   - Early stop terminates regressions/flops quickly (~400–600 games).
-   - SPRT terminates winners early ($1,500 - 2,500$ games).
-   - Eliminates redundant intermediate 250-game gate delays.
+3. **Follow the 3-Tier Testing Pyramid** for engine changes:
+   - **Tier 1 (250 games):** Quick sanity check. Auto-revert only on hard regression ($< 47\%$). Neutral ($48\%-52\%$) is not auto-rejected.
+   - **Tier 2 (SPRT [0, 3]):** Fast validation up to 8,000 games that stops early as soon as statistical significance is reached ($1,500-2,500$ games on winners).
+   - **Tier 3 (MTC / Fixed Nodes):** For positional/eval/depth features, test at moderate time control (`3+0.03` or `nodes 50000`).
