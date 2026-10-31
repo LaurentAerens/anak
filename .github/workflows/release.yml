@@ -114,7 +114,7 @@ jobs:
             bin: anak
             archive: tar.gz
           # Linux ARM64 NativeAOT
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             rid: linux-arm64
             profile: linux-arm64
             name: anak-linux-arm64
@@ -137,6 +137,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang zlib1g-dev
+          if [ "${{ matrix.rid }}" = "linux-arm64" ] && [ "$(uname -m)" != "aarch64" ]; then
+            sudo apt-get install -y binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu || true
+          fi
 
       - name: Publish NativeAOT executable
         shell: bash
