@@ -434,7 +434,8 @@ public struct Board : IEquatable<Board>
         ZobristKey = state.ZobristKey;
     }
 
-    public bool IsThreefoldRepetition()
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly bool IsThreefoldRepetition()
     {
         int count = 0;
         int start = Math.Max(0, (_gamePly - 1) - HalfmoveClock);
@@ -446,6 +447,40 @@ public struct Board : IEquatable<Board>
                 if (count >= 2) return true;
             }
         }
+        return false;
+    }
+
+    /// <summary>
+    /// Checks for a repetition draw in search.
+    /// Within the active search tree (i >= rootIndex), a 2-fold repetition (1 prior occurrence)
+    /// is an immediate draw because the move cycle can be repeated indefinitely.
+    /// For occurrences predating the search root (i < rootIndex), 2 prior occurrences
+    /// (3-fold repetition total) are required to avoid false draw declarations on game history.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly bool IsRepetition(int searchPly)
+    {
+        int count = 0;
+        int start = Math.Max(0, (_gamePly - 1) - HalfmoveClock);
+        int rootIndex = (_gamePly - 1) - searchPly;
+
+        for (int i = _gamePly - 3; i >= start; i -= 2)
+        {
+            if (_history[i] == ZobristKey)
+            {
+                if (i >= rootIndex)
+                {
+                    return true;
+                }
+
+                count++;
+                if (count >= 2)
+                {
+                    return true;
+                }
+            }
+        }
+
         return false;
     }
 

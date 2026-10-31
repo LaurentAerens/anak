@@ -34,6 +34,78 @@ public class RepetitionRuleTests
     }
 
     [Fact]
+    public void IsRepetition_WithinSearchTree_TriggersDrawOnTwoFold()
+    {
+        var board = Fen.Parse(Fen.StartPosition);
+
+        // Simulate root search position at searchPly = 0
+        // In search tree:
+        // 1. Nf3 (ply 1)
+        board.MakeMove(new Move(Square.G1, Square.F3), out _);
+        // 1... Nf6 (ply 2)
+        board.MakeMove(new Move(Square.G8, Square.F6), out _);
+        // 2. Ng1 (ply 3)
+        board.MakeMove(new Move(Square.F3, Square.G1), out _);
+        // 2... Ng8 (ply 4) - returns to Startpos!
+        board.MakeMove(new Move(Square.F6, Square.G8), out _);
+
+        // Threefold repetition is NOT reached yet (only 2nd occurrence)
+        Assert.False(board.IsThreefoldRepetition());
+
+        // But within search tree (searchPly = 4), 2-fold repetition must trigger draw!
+        Assert.True(board.IsRepetition(searchPly: 4), "Search tree repetition must trigger draw on 2nd occurrence!");
+    }
+
+    [Fact]
+    public void IsRepetition_PreRootSingleOccurrence_DoesNotTriggerDrawInSearch()
+    {
+        var board = Fen.Parse(Fen.StartPosition);
+
+        // Pre-root game moves:
+        // 1. Nf3 Nf6 (ply 1, 2)
+        board.MakeMove(new Move(Square.G1, Square.F3), out _);
+        board.MakeMove(new Move(Square.G8, Square.F6), out _);
+
+        // Root position reached (after 1... Nf6)
+        // Now in search at searchPly = 1: White retreats 2. Ng1
+        board.MakeMove(new Move(Square.F3, Square.G1), out _);
+        // In search at searchPly = 2: Black retreats 2... Ng8 (returns to Startpos)
+        board.MakeMove(new Move(Square.F6, Square.G8), out _);
+
+        // Startpos only occurred once pre-root (at ply 0) and once in search (total = 2 occurrences)
+        // This must NOT trigger a draw because neither player can claim a draw yet under FIDE rules.
+        Assert.False(board.IsRepetition(searchPly: 2), "Single pre-root occurrence + 1 in search must not trigger draw!");
+        Assert.False(board.IsThreefoldRepetition());
+    }
+
+    [Fact]
+    public void IsRepetition_PreRootTwoOccurrences_TriggersDrawInSearch()
+    {
+        var board = Fen.Parse(Fen.StartPosition);
+
+        // Pre-root game moves:
+        // 1. Nf3 Nf6
+        board.MakeMove(new Move(Square.G1, Square.F3), out _);
+        board.MakeMove(new Move(Square.G8, Square.F6), out _);
+        // 2. Ng1 Ng8 (Startpos occurred 2nd time in game!)
+        board.MakeMove(new Move(Square.F3, Square.G1), out _);
+        board.MakeMove(new Move(Square.F6, Square.G8), out _);
+        // 3. Nf3 Nf6 (Root position reached)
+        board.MakeMove(new Move(Square.G1, Square.F3), out _);
+        board.MakeMove(new Move(Square.G8, Square.F6), out _);
+
+        // In search from root:
+        // 4. Ng1 (searchPly = 1)
+        board.MakeMove(new Move(Square.F3, Square.G1), out _);
+        // 4... Ng8 (searchPly = 2) - returns to Startpos (3rd occurrence total!)
+        board.MakeMove(new Move(Square.F6, Square.G8), out _);
+
+        // Since Startpos occurred twice before root, reaching it in search is the 3rd occurrence total:
+        Assert.True(board.IsRepetition(searchPly: 2), "3rd occurrence of pre-root position in search must trigger draw!");
+        Assert.True(board.IsThreefoldRepetition());
+    }
+
+    [Fact]
     public void ThreefoldRepetition_TransposedMoveOrders_Detected()
     {
         var board = Fen.Parse(Fen.StartPosition);

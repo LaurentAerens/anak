@@ -51,7 +51,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private int _rfpImprovingMultiplier = SearchHeuristics.TunedRfpImprovingMultiplier;
     private int _singularMargin = SearchHeuristics.TunedSingularMargin;
     private int _qsDeltaMargin = SearchHeuristics.TunedQsDeltaMargin;
-    private readonly int[,] _lmrTable = new int[MaxSearchDepth, 128];
+    private readonly int[] _lmrTable = new int[MaxSearchDepth * 128];
     private NnueExpertType? _lastRootExpert;
 
     public TranspositionTable TranspositionTable => _tt;
@@ -188,7 +188,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
     {
         int d = Math.Clamp(depth, 0, MaxSearchDepth - 1);
         int m = Math.Clamp(moveIndex, 0, 127);
-        return _lmrTable[d, m];
+        return _lmrTable[(d << 7) | m];
     }
 
     private void InitLmrTable()
@@ -200,7 +200,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             for (int moves = 1; moves < 128; moves++)
             {
                 double reduction = baseVal + (Math.Log(depth) * Math.Log(moves) / divVal);
-                _lmrTable[depth, moves] = (int)reduction;
+                _lmrTable[(depth << 7) | moves] = (int)reduction;
             }
         }
     }
@@ -423,7 +423,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly CaptureHistory _captureHistory;
         private readonly ContinuationHistory _continuationHistory;
         private readonly CorrectionHistory _correctionHistory;
-        private readonly Move[,] _counterMoves;
+        private readonly Move[] _counterMoves;
         private readonly List<RootMoveCandidate> _rootCandidates = [];
 
         public SearchWorker(int id, AlphaBetaEngine engine, IEvaluator evaluator, TranspositionTable tt)
@@ -451,7 +451,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             _captureHistory = new CaptureHistory();
             _continuationHistory = new ContinuationHistory();
             _correctionHistory = new CorrectionHistory();
-            _counterMoves = new Move[13, 64];
+            _counterMoves = new Move[16 * 64];
             _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval, engine.IsTimeUp);
             _qsearch.DeltaSafetyMargin = engine.QsDeltaMargin;
         }
@@ -541,7 +541,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 if (currentDepth > 1 && _engine._timeManager.HasTimeLimit)
                 {
                     long targetTime = GetTargetSearchTime(bestScore, _engine._timeManager.SoftLimitMs, currentDepth, expectedDepth);
-                    if (currentElapsed >= targetTime)
+                    if (currentElapsed >= targetTime || currentElapsed + (iterDuration * 2) >= _engine._timeManager.HardLimitMs)
                     {
                         break;
                     }
@@ -1153,10 +1153,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             alpha = alphaM;
             beta = betaM;
 
-            // 3. Draw Detection (Threefold repetition and Fifty-move rule)
+            // 3. Draw Detection (Repetition, Fifty-move rule, Insufficient material)
             if (ply > 0)
             {
-                if (board.IsFiftyMoveRule() || board.IsThreefoldRepetition() || board.HasInsufficientMaterial())
+                if (board.IsFiftyMoveRule() || board.IsRepetition(ply) || board.HasInsufficientMaterial())
                 {
                     return 0;
                 }
@@ -1327,7 +1327,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Square prev2To = ply >= 2 && !_stack[ply - 2].CurrentMove.IsNull ? _stack[ply - 2].CurrentMove.To : Square.None;
 
             Move counterMove = (prev1Piece != Piece.None && prev1To != Square.None)
-                ? _counterMoves[ContinuationHistory.PieceToIndex(prev1Piece), (int)prev1To]
+                ? _counterMoves[(ContinuationHistory.PieceToIndex(prev1Piece) << 6) | (int)prev1To]
                 : Move.Null;
 
             var picker = new MovePicker(
@@ -1621,7 +1621,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 // 3. Countermove table
                 if (prev1Piece != Piece.None && prev1To != Square.None)
                 {
-                    _counterMoves[ContinuationHistory.PieceToIndex(prev1Piece), (int)prev1To] = move;
+                    _counterMoves[(ContinuationHistory.PieceToIndex(prev1Piece) << 6) | (int)prev1To] = move;
                 }
 
                 // 4. Malus for quiet moves that failed to cause a cutoff
@@ -1663,21 +1663,24 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private List<Move> ExtractPv(in Board rootBoard, Move bestMove)
         {
             var pv = new List<Move>(MaxSearchDepth);
-            if (!bestMove.IsNull)
+            if (bestMove.IsNull)
             {
-                pv.Add(bestMove);
+                return pv;
             }
+
+            pv.Add(bestMove);
 
             Board pvBoard = rootBoard;
             Span<ulong> visitedKeys = stackalloc ulong[MaxSearchDepth];
             int visitedCount = 0;
             visitedKeys[visitedCount++] = rootBoard.ZobristKey;
 
-            if (!bestMove.IsNull)
+            pvBoard.MakeMove(bestMove, out _);
+            if (pvBoard.IsFiftyMoveRule() || pvBoard.IsThreefoldRepetition())
             {
-                pvBoard.MakeMove(bestMove, out _);
-                visitedKeys[visitedCount++] = pvBoard.ZobristKey;
+                return pv;
             }
+            visitedKeys[visitedCount++] = pvBoard.ZobristKey;
 
             for (int i = 1; i < MaxSearchDepth; i++)
             {
@@ -1707,7 +1710,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 pvBoard.MakeMove(m, out _);
 
                 // Stop on repetition or 50-move rule
-                if (pvBoard.IsFiftyMoveRule() || visitedKeys[..visitedCount].Contains(pvBoard.ZobristKey))
+                if (pvBoard.IsFiftyMoveRule() || pvBoard.IsThreefoldRepetition() || visitedKeys[..visitedCount].Contains(pvBoard.ZobristKey))
                 {
                     break;
                 }

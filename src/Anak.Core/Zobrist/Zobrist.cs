@@ -1,10 +1,11 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Anak.Core;
 
 public static class Zobrist
 {
-    public static readonly ulong[,] PieceSquare = new ulong[15, 64];
+    public static readonly PieceSquareTable PieceSquare = new();
     public static readonly ulong BlackToMove;
     public static readonly ulong[] Castling = new ulong[16];
     public static readonly ulong[] EpFile = new ulong[8];
@@ -73,5 +74,24 @@ public static class Zobrist
         }
 
         return key;
+    }
+}
+
+/// <summary>
+/// Flattened 1D lookup table for piece-square Zobrist hash keys,
+/// eliminating multidimensional bounds checks and array overhead.
+/// </summary>
+public readonly struct PieceSquareTable
+{
+    private readonly ulong[] _data = new ulong[16 * 64];
+
+    public PieceSquareTable() { }
+
+    public ulong this[int piece, int sq]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_data), (nint)((piece << 6) | sq));
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        set => Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_data), (nint)((piece << 6) | sq)) = value;
     }
 }

@@ -87,6 +87,28 @@ public sealed class TranspositionTable
         Array.Clear(_clusters);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private ref TTCluster GetCluster(ulong key)
+    {
+        ulong index = key & _mask;
+        return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_clusters), (nint)index);
+    }
+
+    /// <summary>
+    /// Prefetches the 64-byte TT cluster for the given Zobrist key into CPU L1/L2 cache
+    /// to eliminate memory latency before probing.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public unsafe void Prefetch(ulong key)
+    {
+        if (System.Runtime.Intrinsics.X86.Sse.IsSupported)
+        {
+            ulong index = key & _mask;
+            ref TTCluster cluster = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_clusters), (nint)index);
+            System.Runtime.Intrinsics.X86.Sse.Prefetch0(Unsafe.AsPointer(ref cluster));
+        }
+    }
+
     /// <summary>
     /// Probes the Transposition Table for an entry matching the given 64-bit Zobrist key.
     /// </summary>
@@ -96,8 +118,7 @@ public sealed class TranspositionTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGet(ulong key, out TTEntry entry)
     {
-        ulong index = key & _mask;
-        ref TTCluster cluster = ref _clusters[index];
+        ref TTCluster cluster = ref GetCluster(key);
 
         if (cluster.Entry0.Key == key && cluster.Entry0.IsValid)
         {
@@ -121,8 +142,7 @@ public sealed class TranspositionTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Store(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0)
     {
-        ulong index = key & _mask;
-        ref TTCluster cluster = ref _clusters[index];
+        ref TTCluster cluster = ref GetCluster(key);
 
         // 1. If key matches either entry in the cluster, update in-place
         if (cluster.Entry0.Key == key)
@@ -222,8 +242,7 @@ public sealed class TranspositionTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Store(ulong key, Move bestMove, uint visits, float value, float prior, byte age, TTFlags flags = TTFlags.Exact)
     {
-        ulong index = key & _mask;
-        ref TTCluster cluster = ref _clusters[index];
+        ref TTCluster cluster = ref GetCluster(key);
 
         // DAG Transposition Reuse: Check if either entry matches the key
         if (cluster.Entry0.Key == key)

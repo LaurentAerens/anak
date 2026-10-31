@@ -48,33 +48,69 @@ jobs:
           path: diagnostics/
 
   build:
-    name: Build (${{ matrix.rid }})
-    runs-on: ubuntu-latest
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - rid: linux-x64
-            ext: ''
-            bin: anak
-            archive: tar.gz
-          - rid: linux-arm64
-            ext: ''
-            bin: anak
-            archive: tar.gz
-          - rid: win-x64
+          # Windows x64 NativeAOT
+          - os: windows-latest
+            rid: win-x64
+            profile: win-x64-avx512
+            name: anak-windows-x64-avx512
             ext: '.exe'
             bin: anak.exe
             archive: zip
-          - rid: win-arm64
+          - os: windows-latest
+            rid: win-x64
+            profile: win-x64-avx2
+            name: anak-windows-x64-avx2
             ext: '.exe'
             bin: anak.exe
             archive: zip
-          - rid: osx-x64
+          - os: windows-latest
+            rid: win-x64
+            profile: win-x64-generic
+            name: anak-windows-x64-generic
+            ext: '.exe'
+            bin: anak.exe
+            archive: zip
+          # Linux x64 NativeAOT
+          - os: ubuntu-latest
+            rid: linux-x64
+            profile: linux-x64-avx512
+            name: anak-linux-x64-avx512
             ext: ''
             bin: anak
             archive: tar.gz
-          - rid: osx-arm64
+          - os: ubuntu-latest
+            rid: linux-x64
+            profile: linux-x64-avx2
+            name: anak-linux-x64-avx2
+            ext: ''
+            bin: anak
+            archive: tar.gz
+          - os: ubuntu-latest
+            rid: linux-x64
+            profile: linux-x64-generic
+            name: anak-linux-x64-generic
+            ext: ''
+            bin: anak
+            archive: tar.gz
+          # macOS Apple Silicon NativeAOT
+          - os: macos-latest
+            rid: osx-arm64
+            profile: osx-arm64
+            name: anak-macos-arm64
+            ext: ''
+            bin: anak
+            archive: tar.gz
+          # Linux ARM64 NativeAOT
+          - os: ubuntu-latest
+            rid: linux-arm64
+            profile: linux-arm64
+            name: anak-linux-arm64
             ext: ''
             bin: anak
             archive: tar.gz
@@ -89,24 +125,30 @@ jobs:
           dotnet-version: '11.0.x'
           dotnet-quality: 'preview'
 
-      - name: Publish single-file self-contained executable
+      - name: Install Linux NativeAOT prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Publish NativeAOT executable
+        shell: bash
         run: |
           dotnet publish src/Anak.Protocol/Anak.Protocol.csproj \
             -c Release \
-            -r ${{ matrix.rid }} \
-            --self-contained \
-            -p:PublishSingleFile=true \
+            -p:PublishProfile=${{ matrix.profile }} \
             -o publish/
 
       - name: Package binary, bundle companion assets, and compute SHA-256
+        shell: bash
         run: |
           mkdir -p asset
-          TARGET_NAME="anak-${{ matrix.rid }}${{ matrix.ext }}"
+          TARGET_NAME="${{ matrix.name }}${{ matrix.ext }}"
           cp "publish/${{ matrix.bin }}" "asset/${TARGET_NAME}"
           chmod +x "asset/${TARGET_NAME}"
 
           # Stage bundle directory
-          BUNDLE_DIR="anak-${{ matrix.rid }}"
+          BUNDLE_DIR="${{ matrix.name }}"
           mkdir -p "${BUNDLE_DIR}"
           cp "publish/${{ matrix.bin }}" "${BUNDLE_DIR}/${{ matrix.bin }}"
           chmod +x "${BUNDLE_DIR}/${{ matrix.bin }}"
@@ -138,9 +180,9 @@ jobs:
 
           # Archive bundle based on platform format (.zip for Windows, .tar.gz for Linux/macOS)
           if [ "${{ matrix.archive }}" = "zip" ]; then
-            zip -r "asset/anak-${{ matrix.rid }}.zip" "${BUNDLE_DIR}"
+            zip -r "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
           else
-            tar -czvf "asset/anak-${{ matrix.rid }}.tar.gz" "${BUNDLE_DIR}"
+            tar -czvf "asset/${{ matrix.name }}.tar.gz" "${BUNDLE_DIR}"
           fi
 
           # Compute SHA-256 checksums for each release asset
@@ -154,7 +196,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: asset-${{ matrix.rid }}
+          name: asset-${{ matrix.name }}
           path: asset/
 
   publish-release:

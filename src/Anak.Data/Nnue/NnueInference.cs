@@ -9,6 +9,7 @@ namespace Anak.Data.Nnue;
 /// Ultra-fast zero-allocation SIMD inference kernels with AVX-512, AVX-512 VNNI, AVX2 VNNI,
 /// and AVX2 hardware acceleration for Standard and Micro NNUE models.
 /// </summary>
+[SkipLocalsInit]
 public static unsafe class NnueInference
 {
     /// <summary>

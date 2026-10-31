@@ -105,7 +105,7 @@ def get_available_baselines() -> list[str]:
     return baselines
 
 
-def archive_baseline(version_tag: str, elo: int = None, margin: int = None, opponent: str = None, notes: str = ""):
+def archive_baseline(version_tag: str, elo: int = None, margin: int = None, opponent: str = None, notes: str = "", profile: str = None):
     target_dir = BASELINES_DIR / version_tag
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -116,9 +116,13 @@ def archive_baseline(version_tag: str, elo: int = None, margin: int = None, oppo
         str(REPO_ROOT / "src" / "Anak.Protocol" / "Anak.Protocol.csproj"),
         "-c",
         "Release",
+    ]
+    if profile:
+        cmd.append(f"-p:PublishProfile={profile}")
+    cmd.extend([
         "-o",
         str(target_dir),
-    ]
+    ])
     res = subprocess.run(cmd, cwd=str(REPO_ROOT))
     if res.returncode != 0:
         raise RuntimeError("Failed to build and archive baseline Anak binary.")
@@ -216,20 +220,24 @@ def ensure_stockfish():
         raise RuntimeError("Please install Stockfish on non-Windows platforms or place stockfish binary in tools/fastchess/bin/")
 
 
-def ensure_anak(skip_build: bool = False):
+def ensure_anak(skip_build: bool = False, profile: str = None):
     if skip_build and ANAK_EXE.exists():
         return
 
-    print("[+] Building and publishing Anak in Release configuration ...")
+    print(f"[+] Building and publishing Anak in Release configuration{(f' (profile: {profile})') if profile else ''} ...")
     cmd = [
         "dotnet",
         "publish",
         str(REPO_ROOT / "src" / "Anak.Protocol" / "Anak.Protocol.csproj"),
         "-c",
         "Release",
+    ]
+    if profile:
+        cmd.append(f"-p:PublishProfile={profile}")
+    cmd.extend([
         "-o",
         str(ANAK_PUBLISH_DIR),
-    ]
+    ])
     res = subprocess.run(cmd, cwd=str(REPO_ROOT))
     if res.returncode != 0:
         raise RuntimeError("Failed to build Anak. Please ensure .NET SDK is installed.")
@@ -274,6 +282,8 @@ def parse_args():
                         help="Record benchmark results into ratings.json & BENCHMARKS.md under the given version tag")
     parser.add_argument("--notes", type=str, default="",
                         help="Optional notes when archiving or recording a version")
+    parser.add_argument("--profile", type=str, default=None,
+                        help="Publish profile to use when building Anak (e.g. win-x64-avx512, win-x64-avx2, win-x64-generic)")
     return parser.parse_args()
 
 
@@ -282,7 +292,7 @@ def main():
 
     # Handle --archive-baseline mode
     if args.archive_baseline:
-        archive_baseline(args.archive_baseline, elo=args.elo if "--elo" in sys.argv else None, notes=args.notes)
+        archive_baseline(args.archive_baseline, elo=args.elo if "--elo" in sys.argv else None, notes=args.notes, profile=args.profile)
         return
 
     available_baselines = get_available_baselines()
@@ -347,7 +357,7 @@ def main():
     print("=" * 70)
 
     # Ensure required binaries
-    ensure_anak(skip_build=args.no_build)
+    ensure_anak(skip_build=args.no_build, profile=args.profile)
     ensure_fastchess()
     if args.opponent == "stockfish":
         ensure_stockfish()

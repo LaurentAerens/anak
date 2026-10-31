@@ -7,6 +7,16 @@
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(PublishAot)' == 'true'">
+    <OptimizationPreference>Speed</OptimizationPreference>
+    <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
+    <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
+    <StackTraceSupport>false</StackTraceSupport>
+    <EventSourceSupport>false</EventSourceSupport>
+    <EnableUnsafeBinaryFormatterSerialization>false</EnableUnsafeBinaryFormatterSerialization>
+    <MetadataUpdateSupport>false</MetadataUpdateSupport>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Anak.Core\Anak.Core.csproj" />
     <ProjectReference Include="..\Anak.Search\Anak.Search.csproj" />

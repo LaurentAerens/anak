@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Anak.Core;
 
@@ -47,8 +48,8 @@ public static class Bitboard
     public static readonly ulong[] KnightAttacks = new ulong[64];
     public static readonly ulong[] KingAttacks = new ulong[64];
 
-    public static readonly ulong[,] Between = new ulong[64, 64];
-    public static readonly ulong[,] Line = new ulong[64, 64];
+    public static readonly SquarePairTable Between = new();
+    public static readonly SquarePairTable Line = new();
 
     static Bitboard()
     {
@@ -251,4 +252,23 @@ public static class Bitboard
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong BlackPawnWestAttacks(ulong pawns) => (pawns & ~FileA) >> 9;
+}
+
+/// <summary>
+/// Flattened 1D lookup table for square-pair relations (Between, Line),
+/// eliminating multidimensional bounds checks and array overhead.
+/// </summary>
+public readonly struct SquarePairTable
+{
+    private readonly ulong[] _data = new ulong[64 * 64];
+
+    public SquarePairTable() { }
+
+    public ulong this[int sq1, int sq2]
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_data), (nint)((sq1 << 6) | sq2));
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        set => Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_data), (nint)((sq1 << 6) | sq2)) = value;
+    }
 }

@@ -5,13 +5,20 @@ namespace Anak.Search;
 
 /// <summary>
 /// Capture history table tracking fail-high rates of captures.
-/// Dimensions: [13 piece types, 64 to-squares, 13 victim types].
+/// Flattened 1D array of [16 piece types x 64 squares x 16 victim types] = 16384 ints.
+/// Indexed via ((piece << 10) | (to << 4) | victim) for zero-multiplication,
+/// single-instruction addressing and eliminated multidimensional bounds checks.
 /// Updates use gravity-based damping to bound scores within [-16384, 16384].
 /// </summary>
 public sealed class CaptureHistory
 {
     public const int MaxHistory = 16384;
-    private readonly int[,,] _table = new int[13, 64, 13];
+    private const int TableSize = 16 * 64 * 16;
+    private readonly int[] _table = new int[TableSize];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetIndex(int pieceIndex, Square to, int victimIndex) =>
+        (pieceIndex << 10) | ((int)to << 4) | victimIndex;
 
     /// <summary>
     /// Maps a <see cref="Piece"/> enum to dense index [0..12].
@@ -42,7 +49,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = PieceToIndex(victim);
-        return _table[p, (byte)to, v];
+        return _table[GetIndex(p, to, v)];
     }
 
     /// <summary>
@@ -53,7 +60,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = TypeToIndex(victimType);
-        return _table[p, (byte)to, v];
+        return _table[GetIndex(p, to, v)];
     }
 
     /// <summary>
@@ -64,7 +71,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = PieceToIndex(victim);
-        ref int val = ref _table[p, (byte)to, v];
+        ref int val = ref _table[GetIndex(p, to, v)];
         val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
     }
 
@@ -76,7 +83,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = TypeToIndex(victimType);
-        ref int val = ref _table[p, (byte)to, v];
+        ref int val = ref _table[GetIndex(p, to, v)];
         val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
     }
 

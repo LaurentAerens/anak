@@ -269,6 +269,36 @@
       "tc": "3+0.03",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.6_20261030_092404.pgn",
       "notes": "Correction history side-to-move partitioning [SideToMove, PawnKey] (+1.1 Elo over v1.0.6 in 4,000 games at 3+0.03)"
+    },
+    "v1.0.8": {
+      "version": "v1.0.8",
+      "date": "2026-10-30",
+      "estimated_elo": 2519,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.7 (Known Elo: 2504)",
+      "score": "3492.5 / 6696",
+      "wins": 2731,
+      "losses": 2442,
+      "draws": 1523,
+      "perf_percent": 52.16,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.7_20261030_114244.pgn",
+      "notes": "v1.0.8: NativeAOT & CPU targeting (AVX-512/AVX2/Generic), SkipLocalsInit (+65% NPS)"
+    },
+    "v1.0.9": {
+      "version": "v1.0.9",
+      "date": "2026-10-31",
+      "estimated_elo": 2523,
+      "elo_margin": 4,
+      "baseline_opponent": "Anak v1.0.8 (Known Elo: 2519)",
+      "score": "4027.0 / 7966",
+      "wins": 3286,
+      "losses": 3198,
+      "draws": 1482,
+      "perf_percent": 50.55,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.8_20261031_121345.pgn",
+      "notes": "In-tree 2-fold repetition detection (IsRepetition) & TimeManager low-time cushion (+3.8 Elo over v1.0.8 in 7,966 games)"
     }
   }
 }

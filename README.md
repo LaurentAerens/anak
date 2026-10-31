@@ -128,6 +128,28 @@ Anak deploys a multi-tier neural network architecture composed of **4 specialize
 
 ---
 
+## Releases & CPU Architecture Selection Guide
+
+Precompiled native single-file binaries are available on the [Releases](https://github.com/laerens/anak/releases) page for Windows, Linux, and macOS. To ensure maximum speed and compatibility, Anak is published in 3 specialized microarchitecture tiers for x86-64, as well as native ARM64 for Apple Silicon and Linux ARM servers.
+
+### Which Binary Should You Download?
+
+| Binary Asset | Architecture Target | Recommended Hardware |
+|---|---|---|
+| **`anak-*-x64-avx512.*`** | `x86-64-v4` (AVX-512) | **Maximum Speed**: AMD Ryzen 7000 / 8000 / 9000 (Zen 4, Zen 5), Intel 11th Gen Core (Rocket Lake / Tiger Lake), and Intel Xeon Scalable (Skylake-X, Ice Lake, Sapphire Rapids). |
+| **`anak-*-x64-avx2.*`** | `x86-64-v3` (AVX2 + BMI2) | **Recommended for Most PCs**: AMD Ryzen 1000–5000 (Zen 1–3), Intel Core 4th Gen through 10th Gen (Haswell through Comet Lake), and Intel Core 12th/13th/14th Gen Hybrid CPUs (Alder Lake, Raptor Lake). |
+| **`anak-*-x64-generic.*`** | `x86-64-v2` (SSE4.2 + POPCNT) | **Universal Fallback**: Older Intel/AMD PCs (Core 2, Nehalem, Westmere), budget Celeron/Pentium laptops, and virtual machines without AVX2 instruction passthrough. |
+| **`anak-macos-arm64.*`** | ARM64 (NEON) | **Apple Silicon Macs**: Apple M1, M2, M3, M4 (Air, Pro, Max, Ultra). |
+| **`anak-linux-arm64.*`** | ARM64 (NEON) | **ARM Linux**: Raspberry Pi 4/5, AWS Graviton 2/3/4, Ampere Altra servers. |
+
+> [!TIP]
+> **How to check your CPU capabilities:**
+> - **Windows (PowerShell)**: Run `Get-CimInstance Win32_Processor | Select-Object Name` to identify your processor generation.
+> - **Linux**: Run `lscpu | grep Flags` and check for the presence of `avx512f` or `avx2`.
+> - If in doubt, **`avx2`** works on almost all computers manufactured after 2013!
+
+---
+
 ## Building & Running
 
 ### Prerequisites
@@ -138,6 +160,17 @@ Anak deploys a multi-tier neural network architecture composed of **4 specialize
 ```bash
 # Build the entire solution in Release mode
 dotnet build Anak.sln -c Release
+
+# Publish NativeAOT standalone binary using architecture-specific profile:
+# Windows:
+dotnet publish src/Anak.Protocol -p:PublishProfile=win-x64-avx512
+dotnet publish src/Anak.Protocol -p:PublishProfile=win-x64-avx2
+dotnet publish src/Anak.Protocol -p:PublishProfile=win-x64-generic
+
+# Linux:
+dotnet publish src/Anak.Protocol -p:PublishProfile=linux-x64-avx512
+dotnet publish src/Anak.Protocol -p:PublishProfile=linux-x64-avx2
+dotnet publish src/Anak.Protocol -p:PublishProfile=linux-x64-generic
 ```
 
 ### Run Tests
@@ -344,6 +377,8 @@ The runner automatically compiles `anak.exe`, matches candidate vs baseline usin
 | [**v1.0.5**](https://github.com/laerens/anak/releases/tag/v1.0.5) | Correction History Bound Filtering & Depth Weighting (-46% nodes) | **2487** | Anak v1.0.4 (+204.5 Elo) |
 | [**v1.0.6**](https://github.com/laerens/anak/releases/tag/v1.0.6) | Cached Capture SEE in MovePicker & Shallow SEE Pruning | **2503** | Anak v1.0.5 (+16.3 Elo) |
 | [**v1.0.7**](https://github.com/laerens/anak/releases/tag/v1.0.7) | Correction History Side-to-Move Partitioning `[STM, PawnKey]` | **2504** | Anak v1.0.6 (+1.1 Elo) |
+| [**v1.0.8**](https://github.com/laerens/anak/releases/tag/v1.0.8) | NativeAOT & CPU targeting (AVX-512/AVX2/Generic), SkipLocalsInit | **2519** | Anak v1.0.7 (+15.0 Elo) |
+| [**v1.0.9**](https://github.com/laerens/anak/releases/tag/v1.0.9) | In-Tree 2-Fold Repetition Detection (`IsRepetition`) & TimeManager Safety | **2523** | Anak v1.0.8 (+3.8 Elo) |
 
 See [BENCHMARKS.md](BENCHMARKS.md) and [tools/fastchess/README.md](tools/fastchess/README.md) for complete details.
 

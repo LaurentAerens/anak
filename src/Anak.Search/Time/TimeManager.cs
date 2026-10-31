@@ -18,8 +18,8 @@ public sealed class TimeManager
     private Move _lastBestMove = Move.Null;
     private int _stableMoveDepths;
 
-    public const int CheckInterval = 1024;
-    public const int SafetyLagMs = 30;
+    public const int CheckInterval = 512;
+    public const int SafetyLagMs = 40;
 
     public ulong CheckMask { get; private set; } = 1023;
     public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
@@ -156,17 +156,21 @@ public sealed class TimeManager
 
         _hasTimeLimit = true;
 
-        int safetyLag = remainingTime < 500 ? Math.Clamp(remainingTime / 4, 15, 30) : SafetyLagMs;
+        int safetyLag = remainingTime < 500 ? Math.Clamp(remainingTime / 5, 25, 45) : SafetyLagMs;
 
-        // Emergency low-time handling (< 100ms)
-        if (remainingTime < 100)
+        // Emergency low-time handling (< 150ms)
+        if (remainingTime < 150)
         {
-            long maxLow = Math.Max(5, remainingTime - 15);
+            long overhead = Math.Clamp(remainingTime / 3, 25, 45);
+            long maxLow = Math.Max(5, remainingTime - overhead);
             _hardLimitMs = Math.Clamp(remainingTime / 2, 5, maxLow);
-            _softLimitMs = _hardLimitMs;
+            // Crucial: soft limit must NEVER equal hard limit!
+            // Give soft limit 50% of hard limit so iterative deepening NEVER launches an iteration
+            // when dangerously close to the hard limit.
+            _softLimitMs = Math.Max(5, (long)(_hardLimitMs * 0.5f));
             _baseSoftLimitMs = _softLimitMs;
             _baseHardLimitMs = _hardLimitMs;
-            CheckMask = 63;
+            CheckMask = 31;
             return;
         }
 
@@ -199,15 +203,15 @@ public sealed class TimeManager
 
         if (_hardLimitMs < 100 || remainingTime < 500)
         {
-            CheckMask = 63; // Check every 64 nodes in critical time
+            CheckMask = 31; // Check every 32 nodes in critical time
         }
         else if (_hardLimitMs < 250 || remainingTime < 1500)
         {
-            CheckMask = 127; // Check every 128 nodes in low time
+            CheckMask = 63; // Check every 64 nodes in low time
         }
         else
         {
-            CheckMask = 1023; // Check every 1024 nodes normally
+            CheckMask = 511; // Check every 512 nodes normally
         }
     }
 

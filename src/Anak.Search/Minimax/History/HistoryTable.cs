@@ -5,13 +5,19 @@ namespace Anak.Search;
 
 /// <summary>
 /// Butterfly history table tracking move success frequencies across all depths.
-/// Dimensions: [2 colors, 64 from-squares, 64 to-squares].
+/// Flattened 1D array indexed by ((side << 12) | (from << 6) | to) for zero-multiplication,
+/// single-instruction addressing and eliminated multidimensional bounds checks.
 /// Updates use gravity-based damping to bound scores within [-16384, 16384].
 /// </summary>
 public sealed class HistoryTable
 {
     public const int MaxHistory = 16384;
-    private readonly int[,,] _table = new int[2, 64, 64];
+    private const int TableSize = 2 * 64 * 64;
+    private readonly int[] _table = new int[TableSize];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetIndex(Color side, Square from, Square to) =>
+        ((int)side << 12) | ((int)from << 6) | (int)to;
 
     /// <summary>
     /// Gets the butterfly history score for a given side, from-square, and to-square.
@@ -19,7 +25,7 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetScore(Color side, Square from, Square to)
     {
-        return _table[(byte)side, (byte)from, (byte)to];
+        return _table[GetIndex(side, from, to)];
     }
 
     /// <summary>
@@ -28,7 +34,7 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetScore(Color side, Move move)
     {
-        return _table[(byte)side, (byte)move.From, (byte)move.To];
+        return _table[GetIndex(side, move.From, move.To)];
     }
 
     /// <summary>
@@ -38,7 +44,7 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Update(Color side, Square from, Square to, int bonus)
     {
-        ref int val = ref _table[(byte)side, (byte)from, (byte)to];
+        ref int val = ref _table[GetIndex(side, from, to)];
         val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
     }
 
