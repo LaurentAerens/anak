@@ -288,6 +288,10 @@ public sealed class UciOptionRegistry
     public SpinOption RfpImprovingMultiplier { get; }
     public SpinOption SingularMargin { get; }
     public SpinOption QsDeltaMargin { get; }
+    public SpinOption HistoryBonusScale { get; }
+    public SpinOption HistoryMaxBonus { get; }
+    public SpinOption HistoryMaxMalus { get; }
+    public SpinOption CorrHistDivisor { get; }
     public SpinOption MicroMaxShare { get; }
     public SpinOption MicroMinTime { get; }
     public SpinOption MicroDepthGate { get; }
@@ -326,6 +330,10 @@ public sealed class UciOptionRegistry
         RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 111, min: 100, max: 250);
         SingularMargin = new SpinOption("SingularMargin", defaultValue: 6, min: 1, max: 8);
         QsDeltaMargin = new SpinOption("QsDeltaMargin", defaultValue: 188, min: 50, max: 500);
+        HistoryBonusScale = new SpinOption("HistoryBonusScale", defaultValue: 16, min: 1, max: 64);
+        HistoryMaxBonus = new SpinOption("HistoryMaxBonus", defaultValue: 2000, min: 200, max: 5000);
+        HistoryMaxMalus = new SpinOption("HistoryMaxMalus", defaultValue: 2000, min: 200, max: 5000);
+        CorrHistDivisor = new SpinOption("CorrHistDivisor", defaultValue: 2048, min: 256, max: 8192);
         MicroMaxShare = new SpinOption("MicroMaxShare", defaultValue: 6, min: 1, max: 20);
         MicroMinTime = new SpinOption("MicroMinTime", defaultValue: 25, min: 10, max: 60);
         MicroDepthGate = new SpinOption("MicroDepthGate", defaultValue: 85, min: 50, max: 100);
@@ -364,6 +372,10 @@ public sealed class UciOptionRegistry
         Register(RfpImprovingMultiplier);
         Register(SingularMargin);
         Register(QsDeltaMargin);
+        Register(HistoryBonusScale);
+        Register(HistoryMaxBonus);
+        Register(HistoryMaxMalus);
+        Register(CorrHistDivisor);
         Register(MicroMaxShare);
         Register(MicroMinTime);
         Register(MicroDepthGate);

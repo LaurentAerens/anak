@@ -16,49 +16,25 @@ To solve this, Anak uses a **3-Tier Testing Pyramid** combined with **Feature Ca
 
 ---
 
-## 🏛️ The 3-Tier Testing Pyramid
+## 🏛️ The Benchmarking & Validation Protocol
 
-```mermaid
-flowchart TD
-    Candidate["New Engine Feature / Bugfix"] --> UnitTests["Unit Tests (dotnet test -c Release)"]
-    UnitTests -->|100% Pass| Tier1["Tier 1: Sanity Gate (250 Games @ 1+0.01)"]
-    
-    Tier1 -->|Score < 47.0% / Hard Regression| Revert["❌ Auto-Revert Immediately"]
-    Tier1 -->|Score 47.0% - 52.0% / Neutral| Review["🔍 Review Category (A vs B)"]
-    Tier1 -->|Score > 52.0% / Positive| Tier2["Tier 2: Validation via SPRT [0, 3] (STC)"]
-    
-    Review -->|Category A: Speedup without NPS gain| Revert
-    Review -->|Category B: Positional / Eval Feature| Tier3["Tier 3: Moderate Depth / Fixed-Nodes (MTC)"]
-    
-    Tier2 -->|SPRT Passed / H1 Accepted| Accept["✅ Accept & Release"]
-    Tier2 -->|SPRT Failed / H0 Accepted| Revert
-    Tier3 -->|Positive at depth >= 12| Accept
-```
+### 1. Pure NPS & Speedup Changes (Category A: Code Speed)
+For refactoring, bitboards, memory layouts, SIMD vectorization, and caching optimizations intended purely to accelerate NPS without altering search decisions:
+1. **Unit Test Pass:** 100% unit tests pass (`dotnet test -c Release`).
+2. **Fixed-Node Determinism Check:** Search the 6 canonical benchmark positions at fixed depth (`anak bench 10`). Node counts and best moves must be **100% identical** to baseline.
+3. **NPS Throughput & Memory Check:** Must show clear NPS speedup with **0 GC collections** (Gen 0, 1, and 2).
+4. **Fast-Track Acceptance:** Pure NPS improvements that maintain 100% deterministic search trees and yield demonstrable NPS speedup without modifying search semantics are accepted directly or verified via a short fast confirmation run without requiring full 8,000-game match cycles.
 
-### 1. Tier 1: Quick Sanity Gate (250 Games)
-- **Time Control:** `1+0.01` or `nodes 50000`
-- **Execution Time:** ~3.5 to 4 minutes on 8 cores.
-- **Purpose:** Rapid filter to detect broken logic, tactical blunders, search blowups, or game-losing bugs before investing heavy compute.
-- **Decision Rules:**
-  - **Hard Regression ($< 47.0\%$, $<-20\text{ Elo}$, LOS $< 15\%$):** **Reject and revert immediately.**
-  - **Neutral / Flat ($47.0\% - 52.0\%$):** **Do NOT auto-reject.** In 250 games, the $95\%$ confidence interval is $\pm 40\text{ Elo}$. A score of $49.8\%$ is statistically neutral, not proven bad. Check the feature category:
-    - *Category A (tactical/speed):* If NPS didn't increase, abort.
-    - *Category B (positional/depth):* Graduate to Tier 2 SPRT or Tier 3 MTC.
-  - **Positive ($> 52.0\%$):** Advance to Tier 2.
-
-### 2. Tier 2: Validation via SPRT (Sequential Probability Ratio Test)
-- **Engine Command:**
+### 2. Search & Evaluation Changes (Category B: Heuristics & Tree Pruning)
+For pruning changes, extensions, history tables, and evaluation adjustments:
+- Launch directly into **SPRT validation with early stopping**:
   ```bash
-  python tools/fastchess/run_elo_bench.py --baseline <active_baseline> --sprt 0.0 3.0 --max-games 8000 --tc 1+0.01 --concurrency 8
+  python tools/fastchess/run_elo_bench.py --baseline <active_baseline> --sprt 0.0 3.0 --max-games 8000 --tc 1+0.01 --concurrency 8 --early-stop
   ```
-- **Why SPRT instead of blind 10,000 games?**
-  - **Early Winner Acceptance:** If a candidate provides a solid $+15\text{ Elo}$ boost, SPRT reaches statistical certainty ($95\%$ confidence) in **1,500 to 2,500 games** and stops automatically.
-  - **Early Loser Rejection:** If a candidate is negative, SPRT detects the failure and terminates in **800 to 1,200 games**.
-  - **Compute Savings:** Across 10 development iterations, SPRT cuts total compute time and battery consumption by **60% to 70%** compared to forcing a full 10,000 games every run.
-
-### 3. Tier 3: Moderate Time Control (MTC) & Fixed-Node Gate
-- **Scope:** Reserved for features whose impact only expresses at depth $\ge 12$ (correction history, singular extensions, 2-ply/4-ply continuation history, endgame tablebases).
-- **Time Control:** `3+0.03` or `5+0.05` (500–1,000 games) or fixed nodes (`nodes 100000`).
+- **Why no separate 250-game gate?** A separate 250-game gate has high variance ($\pm 40\text{ Elo}$) and requires stopping and restarting from 0 games. The `--early-stop` continuous monitor already catches severe regressions in ~400–600 games without throwing away positive progress on winning features.
+- **Early Termination:**
+  - Losers/regressions abort in 400–1,000 games.
+  - Winners accept via SPRT in 1,500–2,500 games.
 
 ---
 

@@ -46,31 +46,31 @@ class SpsaParam:
         return int(round(self.current))
 
 
-# Target Tunable Parameters for Anak Search Heuristics (Tuned values from Step 3.4)
+# Target Tunable Parameters for Anak Search Heuristics (Defaults matching active v1.0.9 baseline)
 DEFAULT_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
         name="LmrBase",
-        default=80.0,
-        min_val=30.0,
+        default=83.0,
+        min_val=40.0,
         max_val=160.0,
-        c=6.0,
-        a=150.0,
+        c=4.0,
+        a=100.0,
     ),
     SpsaParam(
         name="LmrDivision",
-        default=229.0,
+        default=224.0,
         min_val=120.0,
         max_val=400.0,
-        c=12.0,
-        a=300.0,
+        c=8.0,
+        a=200.0,
     ),
     SpsaParam(
         name="RfpMargin",
-        default=72.0,
+        default=77.0,
         min_val=30.0,
         max_val=150.0,
-        c=6.0,
-        a=150.0,
+        c=4.0,
+        a=100.0,
     ),
     SpsaParam(
         name="NmpBase",
@@ -82,51 +82,51 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="AspirationDelta",
-        default=27.0,
+        default=20.0,
         min_val=10.0,
-        max_val=60.0,
-        c=3.0,
-        a=75.0,
+        max_val=50.0,
+        c=2.0,
+        a=40.0,
     ),
     SpsaParam(
         name="ConthistReward",
-        default=2598.0,
+        default=2611.0,
         min_val=1000.0,
         max_val=5000.0,
-        c=250.0,
-        a=50000.0,
+        c=150.0,
+        a=30000.0,
     ),
     SpsaParam(
         name="ConthistPenalty",
-        default=3839.0,
+        default=3805.0,
         min_val=1500.0,
         max_val=7000.0,
-        c=300.0,
-        a=60000.0,
-    ),
-    SpsaParam(
-        name="HistoryThreshold",
-        default=2101.0,
-        min_val=800.0,
-        max_val=4000.0,
         c=200.0,
         a=40000.0,
     ),
     SpsaParam(
+        name="HistoryThreshold",
+        default=2130.0,
+        min_val=800.0,
+        max_val=4000.0,
+        c=120.0,
+        a=25000.0,
+    ),
+    SpsaParam(
         name="ScoreDropThreshold",
-        default=45.0,
+        default=46.0,
         min_val=15.0,
         max_val=120.0,
-        c=6.0,
-        a=150.0,
+        c=4.0,
+        a=100.0,
     ),
     SpsaParam(
         name="RfpImprovingMultiplier",
-        default=115.0,
+        default=111.0,
         min_val=100.0,
         max_val=200.0,
-        c=8.0,
-        a=200.0,
+        c=5.0,
+        a=120.0,
     ),
     SpsaParam(
         name="SingularMargin",
@@ -141,8 +141,60 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         default=188.0,
         min_val=80.0,
         max_val=400.0,
-        c=15.0,
-        a=350.0,
+        c=12.0,
+        a=250.0,
+    ),
+]
+
+# High-impact Core Search Heuristics (Focus on strongest tree pruning & reduction leverage)
+CORE_PARAMETERS: List[SpsaParam] = [
+    SpsaParam(
+        name="LmrBase",
+        default=83.0,
+        min_val=40.0,
+        max_val=150.0,
+        c=3.0,
+        a=60.0,
+    ),
+    SpsaParam(
+        name="LmrDivision",
+        default=224.0,
+        min_val=140.0,
+        max_val=350.0,
+        c=6.0,
+        a=120.0,
+    ),
+    SpsaParam(
+        name="RfpMargin",
+        default=77.0,
+        min_val=40.0,
+        max_val=140.0,
+        c=3.0,
+        a=60.0,
+    ),
+    SpsaParam(
+        name="RfpImprovingMultiplier",
+        default=111.0,
+        min_val=100.0,
+        max_val=180.0,
+        c=4.0,
+        a=80.0,
+    ),
+    SpsaParam(
+        name="AspirationDelta",
+        default=20.0,
+        min_val=10.0,
+        max_val=45.0,
+        c=2.0,
+        a=35.0,
+    ),
+    SpsaParam(
+        name="HistoryThreshold",
+        default=2130.0,
+        min_val=1000.0,
+        max_val=3500.0,
+        c=120.0,
+        a=15000.0,
     ),
 ]
 
@@ -226,16 +278,15 @@ WEAKNESS_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
-# Batch B, C, D Hidden Parameters Suite
-BATCH_BCD_PARAMETERS: List[SpsaParam] = [
-    # Batch B: History Dynamics & Pawn Correction
+# Batch B: History Dynamics & Pawn Correction
+BATCH_B_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
         name="HistoryBonusScale",
-        default=1.0,
-        min_val=1.0,
-        max_val=32.0,
+        default=16.0,
+        min_val=4.0,
+        max_val=48.0,
         c=2.0,
-        a=50.0,
+        a=30.0,
     ),
     SpsaParam(
         name="HistoryMaxBonus",
@@ -243,16 +294,28 @@ BATCH_BCD_PARAMETERS: List[SpsaParam] = [
         min_val=500.0,
         max_val=4000.0,
         c=150.0,
-        a=30000.0,
+        a=25000.0,
+    ),
+    SpsaParam(
+        name="HistoryMaxMalus",
+        default=2000.0,
+        min_val=400.0,
+        max_val=3000.0,
+        c=150.0,
+        a=25000.0,
     ),
     SpsaParam(
         name="CorrHistDivisor",
-        default=16.0,
-        min_val=4.0,
-        max_val=64.0,
-        c=3.0,
-        a=70.0,
+        default=2048.0,
+        min_val=512.0,
+        max_val=8192.0,
+        c=128.0,
+        a=15000.0,
     ),
+]
+
+# Batch B, C, D Hidden Parameters Suite
+BATCH_BCD_PARAMETERS: List[SpsaParam] = BATCH_B_PARAMETERS + [
 
     # Batch C: Dynamic Time Management
     SpsaParam(
@@ -412,6 +475,8 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
         lines.append(f"public const int TunedHistoryBonusScale = {int(round(params['HistoryBonusScale']))};")
     if "HistoryMaxBonus" in params:
         lines.append(f"public const int TunedHistoryMaxBonus = {int(round(params['HistoryMaxBonus']))};")
+    if "HistoryMaxMalus" in params:
+        lines.append(f"public const int TunedHistoryMaxMalus = {int(round(params['HistoryMaxMalus']))};")
     if "CorrHistDivisor" in params:
         lines.append(f"public const int TunedCorrHistDivisor = {int(round(params['CorrHistDivisor']))};")
 
@@ -479,6 +544,9 @@ class SpsaTuner:
         alpha: float = 0.602,
         gamma: float = 0.101,
         extra_options: Optional[Dict[str, object]] = None,
+        early_stop: bool = False,
+        patience: int = 40,
+        min_steps: int = 80,
     ):
         self.params: Dict[str, SpsaParam] = {p.name: p for p in params}
         self.max_steps = max_steps
@@ -498,6 +566,9 @@ class SpsaTuner:
         self.alpha = alpha
         self.gamma = gamma
         self.A = max(5.0, 0.1 * max_steps)
+        self.early_stop = early_stop
+        self.patience = patience
+        self.min_steps = min_steps
 
         self.current_step = 0
         self.history: List[dict] = []
@@ -825,6 +896,24 @@ class SpsaTuner:
             param_updates = " | ".join(f"{k}: {v:5.1f} ({int(round(v))})" for k, v in rec['updated_params'].items())
             print(f"       -> Values: {param_updates}")
 
+            # Early Stopping Check (Plateau / Convergence Detection)
+            if self.early_stop and self.current_step >= self.min_steps and len(self.history) >= self.patience:
+                recent_history = self.history[-self.patience:]
+                converged = True
+                for name, p in self.params.items():
+                    vals = [h["updated_params"][name] for h in recent_history if name in h["updated_params"]]
+                    if not vals:
+                        continue
+                    val_range = max(vals) - min(vals)
+                    tol = max(0.6, 0.015 * (p.max_val - p.min_val))
+                    if val_range > tol:
+                        converged = False
+                        break
+
+                if converged:
+                    print(f"\n[+] Early stopping triggered at step {self.current_step}: all parameters have stabilized within tolerance over the last {self.patience} steps ({self.patience * self.games_per_step} games).")
+                    break
+
         total_elapsed = time.time() - start_time
         print("\n" + "=" * 75)
         print("                 SPSA TUNING SESSION COMPLETED")
@@ -855,9 +944,12 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["bcd", "all", "search", "micro", "weakness"], default="bcd",
-                        help="Parameter batch to tune ('bcd' for 13 new hidden constants, 'all' for all 25 parameters, 'search' for 12 search heuristics, 'micro' for 5 dynamic Micro budget parameters, 'weakness' for remediation parameters)")
+    parser.add_argument("--batch", type=str, choices=["core", "b", "search", "bcd", "all", "micro", "weakness"], default="core",
+                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for 3 history/pawn correction dynamics, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
+    parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
+    parser.add_argument("--patience", type=int, default=40, help="Steps without parameter drift required for early stopping (default: 40)")
+    parser.add_argument("--min-steps", type=int, default=80, help="Minimum steps before early stopping is eligible (default: 80)")
     parser.add_argument("--output", type=str, default=None, help="Path to spsa_progress.json output")
     return parser.parse_args()
 
@@ -871,7 +963,11 @@ def main():
     openings_path = Path(args.openings) if args.openings else default_openings
     progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / "spsa_progress.json")
 
-    if args.batch == "bcd":
+    if args.batch == "core":
+        param_set = CORE_PARAMETERS
+    elif args.batch == "b":
+        param_set = BATCH_B_PARAMETERS
+    elif args.batch == "bcd":
         param_set = BATCH_BCD_PARAMETERS
     elif args.batch == "search":
         param_set = DEFAULT_PARAMETERS
@@ -895,6 +991,9 @@ def main():
         openings_path=openings_path,
         progress_file=progress_file,
         dry_run=args.dry_run,
+        early_stop=args.early_stop,
+        patience=args.patience,
+        min_steps=args.min_steps,
     )
 
     if args.resume:
