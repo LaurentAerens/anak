@@ -1608,6 +1608,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Square prev2To)
         {
             int bonus = HistoryTable.CalculateBonus(depth);
+            int malus = HistoryTable.CalculateMalus(depth);
 
             if (!move.IsCapture && !move.IsPromotion)
             {
@@ -1624,16 +1625,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     _counterMoves[(ContinuationHistory.PieceToIndex(prev1Piece) << 6) | (int)prev1To] = move;
                 }
 
-                // 4. Malus for quiet moves that failed to cause a cutoff
+                // 4. Malus for quiet moves that failed to cause a cutoff (with history malus capping)
                 for (int i = 0; i < quietsSearched.Length; i++)
                 {
                     Move failed = quietsSearched[i];
                     if (failed != move)
                     {
                         Piece failedPiece = quietsSearchedPiece[i];
-                        _history.Update(board.SideToMove, failed, -bonus);
-                        _continuationHistory.Update1Ply(prev1Piece, prev1To, failedPiece, failed.To, -bonus);
-                        _continuationHistory.Update2Ply(prev2Piece, prev2To, failedPiece, failed.To, -bonus);
+                        _history.Update(board.SideToMove, failed, -malus);
+                        _continuationHistory.Update1Ply(prev1Piece, prev1To, failedPiece, failed.To, -malus);
+                        _continuationHistory.Update2Ply(prev2Piece, prev2To, failedPiece, failed.To, -malus);
                     }
                 }
             }

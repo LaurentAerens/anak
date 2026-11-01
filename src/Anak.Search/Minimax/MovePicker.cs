@@ -9,6 +9,12 @@ public struct ScoreBuffer
     private int _element0;
 }
 
+[InlineArray(128)]
+public struct IndexBuffer128
+{
+    private byte _element0;
+}
+
 public enum MovePickerStage : byte
 {
     TtMove = 0,
@@ -50,6 +56,12 @@ public ref struct MovePicker
     private MoveList _legalMoves;
     private ScoreBuffer _scores;
     private ScoreBuffer _seeScores;
+    private IndexBuffer128 _goodCaptureIndices;
+    private int _goodCaptureCount;
+    private IndexBuffer128 _badCaptureIndices;
+    private int _badCaptureCount;
+    private IndexBuffer128 _quietIndices;
+    private int _quietCount;
     private MovePickerStage _stage;
     private bool _capturesScored;
     private bool _quietsScored;
@@ -104,6 +116,13 @@ public ref struct MovePicker
         _ttMovePicked = false;
 
         _scores = default;
+        _seeScores = default;
+        _goodCaptureIndices = default;
+        _goodCaptureCount = 0;
+        _badCaptureIndices = default;
+        _badCaptureCount = 0;
+        _quietIndices = default;
+        _quietCount = 0;
         _stage = MovePickerStage.TtMove;
         _capturesScored = false;
         _quietsScored = false;
@@ -359,6 +378,8 @@ public ref struct MovePicker
 
     private void ScoreCaptures()
     {
+        _goodCaptureCount = 0;
+        _badCaptureCount = 0;
         for (int i = 0; i < _legalMoves.Count; i++)
         {
             Move m = _legalMoves[i];
@@ -379,11 +400,13 @@ public ref struct MovePicker
                     score += _captureHistory.GetScore(moved, m.To, captured) / 16;
                 }
                 _scores[i] = Math.Max(0, score);
+                _goodCaptureIndices[_goodCaptureCount++] = (byte)i;
             }
             else
             {
                 // Bad capture: negative score offset
                 _scores[i] = -1_000_000 + see;
+                _badCaptureIndices[_badCaptureCount++] = (byte)i;
             }
         }
     }
@@ -394,11 +417,10 @@ public ref struct MovePicker
         int bestIdx = -1;
         int bestScore = -1;
 
-        for (int i = 0; i < _legalMoves.Count; i++)
+        for (int j = 0; j < _goodCaptureCount; j++)
         {
+            int i = _goodCaptureIndices[j];
             if (IsPicked(i)) continue;
-            Move m = _legalMoves[i];
-            if (!m.IsCapture && !m.IsPromotion) continue;
 
             int score = _scores[i];
             if (score >= 0 && score > bestScore)
@@ -439,6 +461,7 @@ public ref struct MovePicker
 
     private void ScoreQuiets()
     {
+        _quietCount = 0;
         Color side = _board.SideToMove;
         for (int i = 0; i < _legalMoves.Count; i++)
         {
@@ -448,6 +471,7 @@ public ref struct MovePicker
 
             int score = _history?.GetScore(side, m) ?? 0;
             _scores[i] = score;
+            _quietIndices[_quietCount++] = (byte)i;
         }
     }
 
@@ -457,11 +481,10 @@ public ref struct MovePicker
         int bestIdx = -1;
         int bestScore = int.MinValue;
 
-        for (int i = 0; i < _legalMoves.Count; i++)
+        for (int j = 0; j < _quietCount; j++)
         {
+            int i = _quietIndices[j];
             if (IsPicked(i)) continue;
-            Move m = _legalMoves[i];
-            if (m.IsCapture || m.IsPromotion) continue;
 
             int score = _scores[i];
             if (score > bestScore)
@@ -480,11 +503,10 @@ public ref struct MovePicker
         int bestIdx = -1;
         int bestScore = int.MinValue;
 
-        for (int i = 0; i < _legalMoves.Count; i++)
+        for (int j = 0; j < _badCaptureCount; j++)
         {
+            int i = _badCaptureIndices[j];
             if (IsPicked(i)) continue;
-            Move m = _legalMoves[i];
-            if (!m.IsCapture && !m.IsPromotion) continue;
 
             int score = _scores[i];
             if (score > bestScore)

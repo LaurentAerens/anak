@@ -299,6 +299,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.8_20261031_121345.pgn",
       "notes": "In-tree 2-fold repetition detection (IsRepetition) & TimeManager low-time cushion (+3.8 Elo over v1.0.8 in 7,966 games)"
+    },
+    "v1.0.10": {
+      "version": "v1.0.10",
+      "date": "2026-11-01",
+      "estimated_elo": 2543,
+      "elo_margin": 8,
+      "baseline_opponent": "Anak v1.0.9 (Known Elo: 2523)",
+      "score": "2729.0 / 5160",
+      "wins": 2090,
+      "losses": 1792,
+      "draws": 1278,
+      "perf_percent": 52.89,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.9_20261101_000450.pgn",
+      "notes": "MovePicker staged index buffers (+21% NPS) and History Malus Capping (+20.1 Elo over v1.0.9 in 5,160 games, SPRT H1 accepted)"
     }
   }
 }
