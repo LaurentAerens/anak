@@ -314,6 +314,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.9_20261101_000450.pgn",
       "notes": "MovePicker staged index buffers (+21% NPS) and History Malus Capping (+20.1 Elo over v1.0.9 in 5,160 games, SPRT H1 accepted)"
+    },
+    "v1.0.11": {
+      "version": "v1.0.11",
+      "date": "2026-11-01",
+      "estimated_elo": 2557,
+      "elo_margin": 7,
+      "baseline_opponent": "Anak v1.0.10 (Known Elo: 2543)",
+      "score": "3962.5 / 7610",
+      "wins": 3093,
+      "losses": 2778,
+      "draws": 1739,
+      "perf_percent": 52.07,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.10_20261101_205331.pgn",
+      "notes": "Root LMR check-evasion bugfix and 2-ply continuation history in LMR (+14.4 Elo over v1.0.10 in 7,610 games, SPRT H1 accepted)"
     }
   }
 }

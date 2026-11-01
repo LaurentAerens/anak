@@ -972,7 +972,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 {
                     // LMR / null-window search
                     int r = 0;
-                    if (depth >= 3 && movesSearched > 1 && !move.IsCapture && !move.IsPromotion)
+                    if (depth >= 3 && movesSearched > 1 && !move.IsCapture && !move.IsPromotion && !_stack[0].InCheck)
                     {
                         r = _engine.GetLmrReduction(depth, movesSearched);
                         r = SearchHeuristics.AdjustLmrForTopology(r, rootOpenness, isPv: true, isTactical: false, inCheck: false);
@@ -1456,8 +1456,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             else if (hist > _engine.HistoryThreshold) r--;
 
                             int conthist1 = _continuationHistory.Get1PlyScore(prev1Piece, prev1To, movedPiece, move.To);
-                            if (conthist1 > _engine.ConthistReward) r--;
-                            else if (conthist1 < -_engine.ConthistPenalty) r++;
+                            int conthist2 = _continuationHistory.Get2PlyScore(prev2Piece, prev2To, movedPiece, move.To);
+                            int conthist = prev2Piece != Piece.None ? (conthist1 + conthist2) / 2 : conthist1;
+                            if (conthist > _engine.ConthistReward) r--;
+                            else if (conthist < -_engine.ConthistPenalty) r++;
 
                             r = Math.Clamp(r, 0, depth - 2);
                         }
