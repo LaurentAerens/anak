@@ -1,7 +1,7 @@
 # Anak Benchmarking, Elo Evaluation & Testing Guide
 
 > **Target Audience:** Engine developers, contributors, and maintainers.  
-> **Related Files:** [`AGENTS.md`](../AGENTS.md) (strict AI rules), [`docs/v1.0.x-improvement-plan.md`](v1.0.x-improvement-plan.md) (current experiment log).
+> **Related Files:** [`AGENTS.md`](../AGENTS.md) (strict AI rules), [`RELEASE_NOTES.md`](../RELEASE_NOTES.md) (release history), [`docs/CPW_TECHNIQUES_TRACKER.md`](CPW_TECHNIQUES_TRACKER.md) (active optimization tracker), [`docs/FAILED_IDEAS.md`](FAILED_IDEAS.md) (rejected experiments).
 
 ---
 
