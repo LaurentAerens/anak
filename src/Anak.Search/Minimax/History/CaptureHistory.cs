@@ -26,9 +26,8 @@ public sealed class CaptureHistory
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int PieceToIndex(Piece piece)
     {
-        byte p = (byte)piece;
-        if (p == 0) return 0;
-        return p < 8 ? p : (p >= 9 && p <= 14 ? p - 2 : 0);
+        int p = (int)piece;
+        return ((uint)((p & 7) - 1) < 6u && (uint)p <= 14u) ? p - ((p >> 3) << 1) : 0;
     }
 
     /// <summary>
@@ -38,7 +37,7 @@ public sealed class CaptureHistory
     public static int TypeToIndex(PieceType type)
     {
         int t = (int)type;
-        return (t >= 0 && t <= 6) ? t : 0;
+        return (uint)t <= 6u ? t : 0;
     }
 
     /// <summary>
@@ -72,7 +71,7 @@ public sealed class CaptureHistory
         int p = PieceToIndex(piece);
         int v = PieceToIndex(victim);
         ref int val = ref _table[GetIndex(p, to, v)];
-        val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
+        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 
     /// <summary>
@@ -84,7 +83,7 @@ public sealed class CaptureHistory
         int p = PieceToIndex(piece);
         int v = TypeToIndex(victimType);
         ref int val = ref _table[GetIndex(p, to, v)];
-        val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
+        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 
     /// <summary>

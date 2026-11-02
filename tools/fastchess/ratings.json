@@ -329,6 +329,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.10_20261101_205331.pgn",
       "notes": "Root LMR check-evasion bugfix and 2-ply continuation history in LMR (+14.4 Elo over v1.0.10 in 7,610 games, SPRT H1 accepted)"
+    },
+    "v1.0.12": {
+      "version": "v1.0.12",
+      "date": "2026-11-02",
+      "estimated_elo": 2557,
+      "elo_margin": null,
+      "baseline_opponent": "Anak v1.0.11 (Known Elo: 2557)",
+      "score": "-",
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "perf_percent": 50.0,
+      "tc": "bench 11",
+      "pgn": "-",
+      "notes": "Math, bitwise, and SIMD simplifications (+121.3% NPS / 2.21x throughput from 166k to 368k nps; 100% deterministic search equivalence verified across 64 positions, 0 node difference)"
     }
   }
 }

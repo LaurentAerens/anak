@@ -296,10 +296,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             short* nextW = wPtr + nextOffset;
             short* nextB = bPtr + nextOffset;
 
-            CopyAccumulator(curW, nextW, dim);
-            CopyAccumulator(curB, nextB, dim);
-
-            NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, nextW, nextB, in boardAfter);
+            NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, curW, curB, nextW, nextB, in boardAfter);
         }
 
         _stackDepth++;

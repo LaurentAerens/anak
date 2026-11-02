@@ -37,6 +37,19 @@ public struct Board : IEquatable<Board>
     public ushort HalfmoveClock;
     public ushort FullmoveNumber;
     public ulong ZobristKey;
+    public ulong PawnKey;
+
+    private static ReadOnlySpan<byte> CastlingMask =>
+    [
+        0x0D, 0x0F, 0x0F, 0x0F, 0x0C, 0x0F, 0x0F, 0x0E, // Rank 1: A1(~WQ), E1(~W), H1(~WK)
+        0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+        0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+        0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+        0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+        0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+        0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F,
+        0x07, 0x0F, 0x0F, 0x0F, 0x03, 0x0F, 0x0F, 0x0B  // Rank 8: A8(~BQ), E8(~B), H8(~BK)
+    ];
 
     // Repetition history
     private RepetitionTable _history;
@@ -222,20 +235,28 @@ public struct Board : IEquatable<Board>
             capturedPiece = GetPieceAt(to);
         }
 
-        state = new BoardState(Castling, EpSquare, HalfmoveClock, capturedPiece, ZobristKey);
+        state = new BoardState(Castling, EpSquare, HalfmoveClock, capturedPiece, ZobristKey, PawnKey);
 
         // 1. Remove captured piece if any
         if (capturedPiece != Piece.None)
         {
-            RemovePiece(capSq, them, capturedPiece.Type());
-            ZobristKey ^= Zobrist.PieceSquare[(int)capturedPiece, (int)capSq];
+            PieceType capType = capturedPiece.Type();
+            RemovePiece(capSq, them, capType);
+            ulong capZobrist = Zobrist.PieceSquare[(int)capturedPiece, (int)capSq];
+            ZobristKey ^= capZobrist;
+            if (capType == PieceType.Pawn)
+            {
+                PawnKey ^= capZobrist;
+            }
         }
 
         // 2. Move or promote the piece
         if (move.IsPromotion)
         {
             RemovePiece(from, us, PieceType.Pawn);
-            ZobristKey ^= Zobrist.PieceSquare[(int)movedPiece, (int)from];
+            ulong fromZobrist = Zobrist.PieceSquare[(int)movedPiece, (int)from];
+            ZobristKey ^= fromZobrist;
+            PawnKey ^= fromZobrist;
 
             PieceType promoType = move.PromotionPieceType;
             AddPiece(to, us, promoType);
@@ -245,8 +266,12 @@ public struct Board : IEquatable<Board>
         else
         {
             MovePiece(from, to, us, movedType);
-            ZobristKey ^= Zobrist.PieceSquare[(int)movedPiece, (int)from];
-            ZobristKey ^= Zobrist.PieceSquare[(int)movedPiece, (int)to];
+            ulong moveZobrist = Zobrist.PieceSquare[(int)movedPiece, (int)from] ^ Zobrist.PieceSquare[(int)movedPiece, (int)to];
+            ZobristKey ^= moveZobrist;
+            if (movedType == PieceType.Pawn)
+            {
+                PawnKey ^= moveZobrist;
+            }
         }
 
         // 3. Castling rook move
@@ -269,39 +294,22 @@ public struct Board : IEquatable<Board>
             ZobristKey ^= Zobrist.PieceSquare[(int)rookPiece, (int)rTo];
         }
 
-        // 4. Update castling rights
+        // 4. Update castling rights branchlessly via 64-square mask table
         ZobristKey ^= Zobrist.Castling[(int)Castling];
-        if (movedType == PieceType.King)
-        {
-            Castling &= us == Color.White ? ~CastlingRights.White : ~CastlingRights.Black;
-        }
-        else if (movedType == PieceType.Rook)
-        {
-            if (from == Square.A1) Castling &= ~CastlingRights.WhiteQueenside;
-            else if (from == Square.H1) Castling &= ~CastlingRights.WhiteKingside;
-            else if (from == Square.A8) Castling &= ~CastlingRights.BlackQueenside;
-            else if (from == Square.H8) Castling &= ~CastlingRights.BlackKingside;
-        }
-
-        // If a rook was captured in its original corner, lose castling rights
-        if (to == Square.A1) Castling &= ~CastlingRights.WhiteQueenside;
-        else if (to == Square.H1) Castling &= ~CastlingRights.WhiteKingside;
-        else if (to == Square.A8) Castling &= ~CastlingRights.BlackQueenside;
-        else if (to == Square.H8) Castling &= ~CastlingRights.BlackKingside;
-
+        Castling &= (CastlingRights)(CastlingMask[(int)from] & CastlingMask[(int)to]);
         ZobristKey ^= Zobrist.Castling[(int)Castling];
 
         // 5. Update en passant square
         if (EpSquare != Square.None)
         {
-            ZobristKey ^= Zobrist.EpFile[(int)EpSquare.File()];
+            ZobristKey ^= Zobrist.EpFile[(int)EpSquare & 7];
             EpSquare = Square.None;
         }
 
         if (type == MoveType.DoublePawnPush)
         {
-            EpSquare = (Square)(((int)from + (int)to) / 2);
-            ZobristKey ^= Zobrist.EpFile[(int)EpSquare.File()];
+            EpSquare = (Square)((int)from ^ 24);
+            ZobristKey ^= Zobrist.EpFile[(int)from & 7];
         }
 
         // 6. Update clocks
@@ -396,15 +404,16 @@ public struct Board : IEquatable<Board>
         EpSquare = state.EpSquare;
         HalfmoveClock = state.HalfmoveClock;
         ZobristKey = state.ZobristKey;
+        PawnKey = state.PawnKey;
     }
 
     public bool MakeNullMove(out BoardState state)
     {
-        state = new BoardState(Castling, EpSquare, HalfmoveClock, Piece.None, ZobristKey);
+        state = new BoardState(Castling, EpSquare, HalfmoveClock, Piece.None, ZobristKey, PawnKey);
 
         if (EpSquare != Square.None)
         {
-            ZobristKey ^= Zobrist.EpFile[(int)EpSquare.File()];
+            ZobristKey ^= Zobrist.EpFile[(int)EpSquare & 7];
             EpSquare = Square.None;
         }
 
@@ -432,6 +441,7 @@ public struct Board : IEquatable<Board>
         EpSquare = state.EpSquare;
         HalfmoveClock = state.HalfmoveClock;
         ZobristKey = state.ZobristKey;
+        PawnKey = state.PawnKey;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -784,15 +794,45 @@ public struct Board : IEquatable<Board>
                 return false;
         }
 
-        // King safety: make move and verify king is not in check
-        ref Board mutableBoard = ref Unsafe.AsRef(in this);
-        if (!mutableBoard.MakeMove(move, out BoardState state))
+        // King safety: verify our king is not left in check on post-move bitboards without mutating Board
+        Square kingSq;
+        if (pt == PieceType.King)
         {
-            return false;
+            kingSq = to;
         }
-        bool legal = !mutableBoard.IsInCheck(mutableBoard.SideToMove.Opponent());
-        mutableBoard.UnmakeMove(move, in state);
-        return legal;
+        else
+        {
+            ulong kingBb = Kings & ourPieces;
+            if (kingBb == 0) return true;
+            kingSq = Bitboard.Lsb(kingBb);
+        }
+
+        ulong fromBit = 1UL << (int)from;
+        ulong occAfter;
+        ulong enemyAfter;
+
+        if (move.Type == MoveType.EnPassant)
+        {
+            int capSq = us == Color.White ? (int)to - 8 : (int)to + 8;
+            ulong capBit = 1UL << capSq;
+            occAfter = (occupied ^ fromBit ^ capBit) | toBit;
+            enemyAfter = enemyPieces ^ capBit;
+        }
+        else
+        {
+            occAfter = (occupied ^ fromBit) | toBit;
+            enemyAfter = enemyPieces & ~toBit;
+        }
+
+        int k = (byte)kingSq;
+        ulong pawnAttacks = us == Color.White ? Bitboard.WhitePawnAttacks[k] : Bitboard.BlackPawnAttacks[k];
+        if ((pawnAttacks & Pawns & enemyAfter) != 0) return false;
+        if ((Bitboard.KnightAttacks[k] & Knights & enemyAfter) != 0) return false;
+        if ((Bitboard.KingAttacks[k] & Kings & enemyAfter) != 0) return false;
+        if ((MagicBitboards.GetBishopAttacks(kingSq, occAfter) & (Bishops | Queens) & enemyAfter) != 0) return false;
+        if ((MagicBitboards.GetRookAttacks(kingSq, occAfter) & (Rooks | Queens) & enemyAfter) != 0) return false;
+
+        return true;
     }
 
     public void PushHistory(ulong key)

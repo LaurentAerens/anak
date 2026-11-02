@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace Anak.Core;
 
+[SkipLocalsInit]
 public static class MoveGenerator
 {
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -53,12 +54,13 @@ public static class MoveGenerator
             }
         }
 
-        int numCheckers = Bitboard.PopCount(checkers);
-        if (numCheckers >= 2)
+        if ((checkers & (checkers - 1)) != 0)
         {
-            // In double check, only king moves can escape check
+            // In double check (2 or more bits set), only king moves can escape check
             return;
         }
+
+        int numCheckers = checkers != 0 ? 1 : 0;
 
         // 3. Setup Target Mask for remaining pieces
         ulong targetMask;
@@ -84,32 +86,18 @@ public static class MoveGenerator
         ulong pinnedPieces = 0UL;
         Span<ulong> pinRays = stackalloc ulong[64];
 
-        // Bishop / Queen pinners
-        ulong bPinners = MagicBitboards.GetBishopAttacks(kingSq, enemyPieces) & (board.Bishops | board.Queens) & enemyPieces;
-        while (bPinners != 0)
-        {
-            Square pinnerSq = Bitboard.PopLsb(ref bPinners);
-            ulong between = Bitboard.Between[(int)kingSq, (int)pinnerSq];
-            ulong blockers = between & occupied;
-            if (Bitboard.PopCount(blockers) == 1 && (blockers & ourPieces) != 0)
-            {
-                Square pinnedSq = Bitboard.Lsb(blockers);
-                pinnedPieces |= 1UL << (int)pinnedSq;
-                pinRays[(int)pinnedSq] = Bitboard.Line[(int)kingSq, (int)pinnerSq];
-            }
-        }
+        ulong pinners =
+            ((MagicBitboards.GetBishopAttacks(kingSq, enemyPieces) & (board.Bishops | board.Queens)) |
+             (MagicBitboards.GetRookAttacks(kingSq, enemyPieces) & (board.Rooks | board.Queens))) & enemyPieces;
 
-        // Rook / Queen pinners
-        ulong rPinners = MagicBitboards.GetRookAttacks(kingSq, enemyPieces) & (board.Rooks | board.Queens) & enemyPieces;
-        while (rPinners != 0)
+        while (pinners != 0)
         {
-            Square pinnerSq = Bitboard.PopLsb(ref rPinners);
-            ulong between = Bitboard.Between[(int)kingSq, (int)pinnerSq];
-            ulong blockers = between & occupied;
-            if (Bitboard.PopCount(blockers) == 1 && (blockers & ourPieces) != 0)
+            Square pinnerSq = Bitboard.PopLsb(ref pinners);
+            ulong blockers = Bitboard.Between[(int)kingSq, (int)pinnerSq] & occupied;
+            if (blockers != 0 && (blockers & (blockers - 1)) == 0 && (blockers & ourPieces) != 0)
             {
                 Square pinnedSq = Bitboard.Lsb(blockers);
-                pinnedPieces |= 1UL << (int)pinnedSq;
+                pinnedPieces |= blockers;
                 pinRays[(int)pinnedSq] = Bitboard.Line[(int)kingSq, (int)pinnerSq];
             }
         }

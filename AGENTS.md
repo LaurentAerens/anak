@@ -16,6 +16,11 @@ This file defines the mandatory operational constraints, benchmarking standards,
   - `git merge` / `git rebase`
   - `git reset` / `git restore`
   - `git stash`
+- **Release Procedure Exception:** When the user explicitly requests a release (e.g., "release", "make a release", "create a release tag"), the agent is permitted to execute the standard release pipeline:
+  1. Stage release changes (`git add ...`)
+  2. Commit release (`git commit -m "release(vX.Y.Z): ..."`)
+  3. Create annotated tag (`git tag -a vX.Y.Z -m "..."`)
+  4. Push to remote with tags (`git push origin main --tags`)
 - Read-only queries (`git status`, `git diff`, `git log`) are permitted at any time.
 
 ### Automated Testing
@@ -27,6 +32,10 @@ This file defines the mandatory operational constraints, benchmarking standards,
 ## 2. Benchmarking & Elo Evaluation Protocol
 
 To balance **consistency, compute budget, and real-life playing strength**, all optimization candidates must adhere to the **3-Tier Testing Pyramid**.
+
+### Release Policy (Major.Minor.Patch)
+- **Patch releases (`x.y.Z`):** CCRL / SPRT ratings are **recommended** but **not required** (e.g. for pure NPS throughput, bug fixes, zero-regression refactoring, or math simplifications where 100% equivalence is verified).
+- **Major (`X.y.z`) and Minor (`x.Y.z`) releases:** CCRL / SPRT ratings are **mandatory**.
 
 ### Tier 1: Quick Sanity Gate (250 Games)
 - **Time Control:** `1+0.01` or `nodes 50000`

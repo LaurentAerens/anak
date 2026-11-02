@@ -27,6 +27,7 @@ namespace Anak.Search;
 /// - Dynamic time management via TimeManager and cancellation token polling
 /// - Lock-free Lazy SMP multi-threaded search sharing the Transposition Table
 /// </summary>
+[SkipLocalsInit]
 public sealed class AlphaBetaEngine : ISearchEngine
 {
     public const int MaxSearchDepth = 128;
@@ -1269,7 +1270,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
 
-            float openness = (depth >= 2 && !inCheck) ? PawnTopology.CalculateOpenness(in board) : 0.5f;
+            float openness = -1.0f;
 
             // 7. Adaptive Null Move Pruning (NMP)
             if (!isPv && !inCheck && depth >= 2 && eval >= beta &&
@@ -1277,6 +1278,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 (ply >= 1 && _stack[ply - 1].CurrentMove != Move.Null) &&
                 SearchHeuristics.HasNonPawnMaterial(in board, board.SideToMove))
             {
+                openness = PawnTopology.CalculateOpenness(in board);
                 int r = SearchHeuristics.GetNmpReduction(depth, eval, beta, openness, _engine.NmpBase);
                 int nullDepth = depth - 1 - r;
 
@@ -1409,12 +1411,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     // Quiet SEE Pruning: Prune quiet moves that blunder pieces onto attacked squares
                     if (depth <= 4 && isQuiet)
                     {
-                        int quietSee = StaticExchangeEvaluator.Evaluate(in board, move);
-                        if (quietSee < -35 * depth * depth)
+                        if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -35 * depth * depth))
                         {
                             continue;
                         }
                     }
+                }
+
+                if (openness < 0.0f && depth >= 3 && movesSearched > (isPv ? 2 : 1) && !inCheck && isQuiet)
+                {
+                    openness = PawnTopology.CalculateOpenness(in board);
                 }
 
                 Piece movedPiece = board.GetPieceAt(move.From);

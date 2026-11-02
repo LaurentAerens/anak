@@ -38,27 +38,14 @@ public sealed class CorrectionHistory
     }
 
     /// <summary>
-    /// Computes the 64-bit Zobrist key of the pawn structure on the board.
+    /// Computes or retrieves the 64-bit Zobrist key of the pawn structure on the board in O(1) when incrementally maintained.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong ComputePawnKey(in Board board)
     {
-        ulong key = 0UL;
-        ulong wp = board.Pawns & board.White;
-        while (wp != 0)
-        {
-            Square sq = Bitboard.PopLsb(ref wp);
-            key ^= Zobrist.PieceSquare[(int)Piece.WhitePawn, (int)sq];
-        }
-
-        ulong bp = board.Pawns & board.Black;
-        while (bp != 0)
-        {
-            Square sq = Bitboard.PopLsb(ref bp);
-            key ^= Zobrist.PieceSquare[(int)Piece.BlackPawn, (int)sq];
-        }
-
-        return key;
+        return (board.PawnKey != 0UL || board.Pawns == 0UL)
+            ? board.PawnKey
+            : Zobrist.ComputePawnKey(in board);
     }
 
     /// <summary>

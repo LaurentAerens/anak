@@ -10,6 +10,7 @@ namespace Anak.Data.Nnue;
 /// Dual-perspective King-Bucketed HalfKP accumulator management for NNUE inference.
 /// Incremental updates during move execution and fast full refresh on king-bucket transitions.
 /// </summary>
+[SkipLocalsInit]
 public static unsafe class NnueAccumulator
 {
     /// <summary>
@@ -20,10 +21,7 @@ public static unsafe class NnueAccumulator
     {
         int sq = (int)square;
         int file = sq & 7;
-        int rank = sq >> 3;
-        int foldedFile = file >= 4 ? 7 - file : file; // 0..3
-        int rankGroup = rank >> 1;                     // 0..3 (ranks 0-1 -> 0, 2-3 -> 1, 4-5 -> 2, 6-7 -> 3)
-        return (rankGroup << 2) | foldedFile;          // 0..15
+        return ((sq >> 2) & 12) | ((file ^ -(file >> 2)) & 3);
     }
 
     /// <summary>
@@ -56,9 +54,7 @@ public static unsafe class NnueAccumulator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int GetWhiteFeatureIndex(PieceType pieceType, Color color, Square square)
     {
-        int pIdx = (int)pieceType - 1; // Pawn=0, Knight=1, Bishop=2, Rook=3, Queen=4, King=5
-        int cIdx = (int)color;         // White=0, Black=1
-        return ((cIdx * 6) + pIdx) * 64 + (int)square;
+        return ((((int)color * 6) + (int)pieceType - 1) << 6) | (int)square;
     }
 
     /// <summary>
@@ -67,10 +63,7 @@ public static unsafe class NnueAccumulator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int GetBlackFeatureIndex(PieceType pieceType, Color color, Square square)
     {
-        int pIdx = (int)pieceType - 1;
-        int cIdx = 1 - (int)color; // Invert color
-        int mirroredSquare = (int)square ^ 56; // Mirror rank (rank 0 <-> rank 7)
-        return ((cIdx * 6) + pIdx) * 64 + mirroredSquare;
+        return ((((1 ^ (int)color) * 6) + (int)pieceType - 1) << 6) | ((int)square ^ 56);
     }
 
     /// <summary>
@@ -183,7 +176,7 @@ public static unsafe class NnueAccumulator
 
     /// <summary>
     /// Adds a feature to an accumulator: acc[i] += weights[featureIdx * dim + i].
-    /// Vectorized with SIMD instructions.
+    /// Vectorized with AVX2 (32 shorts/iter) and Vector128 SIMD instructions.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void AddFeature(int featureIdx, sbyte* weights, short* acc, int dim)
@@ -191,7 +184,18 @@ public static unsafe class NnueAccumulator
         sbyte* wPtr = weights + (featureIdx * dim);
 
         int i = 0;
-        if (Vector128.IsHardwareAccelerated && dim >= 16)
+        if (Avx2.IsSupported && dim >= 32)
+        {
+            for (; i <= dim - 32; i += 32)
+            {
+                Vector256<short> w0 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i));
+                Vector256<short> w1 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i + 16));
+
+                (Vector256.Load(acc + i) + w0).Store(acc + i);
+                (Vector256.Load(acc + i + 16) + w1).Store(acc + i + 16);
+            }
+        }
+        else if (Vector128.IsHardwareAccelerated && dim >= 16)
         {
             for (; i <= dim - 16; i += 16)
             {
@@ -222,7 +226,18 @@ public static unsafe class NnueAccumulator
         sbyte* wPtr = weights + (featureIdx * dim);
 
         int i = 0;
-        if (Vector128.IsHardwareAccelerated && dim >= 16)
+        if (Avx2.IsSupported && dim >= 32)
+        {
+            for (; i <= dim - 32; i += 32)
+            {
+                Vector256<short> w0 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i));
+                Vector256<short> w1 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i + 16));
+
+                (Vector256.Load(acc + i) - w0).Store(acc + i);
+                (Vector256.Load(acc + i + 16) - w1).Store(acc + i + 16);
+            }
+        }
+        else if (Vector128.IsHardwareAccelerated && dim >= 16)
         {
             for (; i <= dim - 16; i += 16)
             {
@@ -245,9 +260,75 @@ public static unsafe class NnueAccumulator
     }
 
     /// <summary>
-    /// Incrementally updates White and Black accumulators for a move.
+    /// Fused single-pass accumulator update for quiet moves: dst[i] = src[i] - weights[subIdx] + weights[addIdx].
+    /// Avoids a separate memory copy and reduces memory round-trips from 3 passes to 1.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void SubAddFeature(int subIdx, int addIdx, sbyte* weights, short* srcAcc, short* dstAcc, int dim)
+    {
+        sbyte* wSub = weights + (subIdx * dim);
+        sbyte* wAdd = weights + (addIdx * dim);
+
+        int i = 0;
+        if (Avx2.IsSupported && dim >= 32)
+        {
+            for (; i <= dim - 32; i += 32)
+            {
+                Vector256<short> s0 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub + i));
+                Vector256<short> s1 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub + i + 16));
+                Vector256<short> a0 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd + i));
+                Vector256<short> a1 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd + i + 16));
+
+                (Vector256.Load(srcAcc + i) - s0 + a0).Store(dstAcc + i);
+                (Vector256.Load(srcAcc + i + 16) - s1 + a1).Store(dstAcc + i + 16);
+            }
+        }
+
+        for (; i < dim; i++)
+        {
+            dstAcc[i] = (short)(srcAcc[i] - wSub[i] + wAdd[i]);
+        }
+    }
+
+    /// <summary>
+    /// Fused single-pass accumulator update for capture moves: dst[i] = src[i] - weights[sub1Idx] - weights[sub2Idx] + weights[addIdx].
+    /// Avoids a separate memory copy and reduces memory round-trips from 4 passes to 1.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void SubSubAddFeature(int sub1Idx, int sub2Idx, int addIdx, sbyte* weights, short* srcAcc, short* dstAcc, int dim)
+    {
+        sbyte* wSub1 = weights + (sub1Idx * dim);
+        sbyte* wSub2 = weights + (sub2Idx * dim);
+        sbyte* wAdd = weights + (addIdx * dim);
+
+        int i = 0;
+        if (Avx2.IsSupported && dim >= 32)
+        {
+            for (; i <= dim - 32; i += 32)
+            {
+                Vector256<short> s10 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub1 + i));
+                Vector256<short> s11 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub1 + i + 16));
+                Vector256<short> s20 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub2 + i));
+                Vector256<short> s21 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub2 + i + 16));
+                Vector256<short> a0 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd + i));
+                Vector256<short> a1 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd + i + 16));
+
+                (Vector256.Load(srcAcc + i) - s10 - s20 + a0).Store(dstAcc + i);
+                (Vector256.Load(srcAcc + i + 16) - s11 - s21 + a1).Store(dstAcc + i + 16);
+            }
+        }
+
+        for (; i < dim; i++)
+        {
+            dstAcc[i] = (short)(srcAcc[i] - wSub1[i] - wSub2[i] + wAdd[i]);
+        }
+    }
+
+    /// <summary>
+    /// Incrementally updates White and Black accumulators in-place for a move.
     /// Handles king-bucket refresh when a king crosses bucket boundaries.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static void UpdateMove(
         Move move,
         Piece movedPiece,
@@ -255,6 +336,25 @@ public static unsafe class NnueAccumulator
         NnueWeights weights,
         short* whiteAcc,
         short* blackAcc,
+        in Board boardAfter)
+    {
+        UpdateMove(move, movedPiece, capturedPiece, weights, whiteAcc, blackAcc, whiteAcc, blackAcc, in boardAfter);
+    }
+
+    /// <summary>
+    /// Incrementally updates White and Black accumulators from <paramref name="srcWhiteAcc"/>/<paramref name="srcBlackAcc"/>
+    /// into <paramref name="dstWhiteAcc"/>/<paramref name="dstBlackAcc"/> in a single fused pass.
+    /// Handles king-bucket refresh when a king crosses bucket boundaries.
+    /// </summary>
+    public static void UpdateMove(
+        Move move,
+        Piece movedPiece,
+        Piece capturedPiece,
+        NnueWeights weights,
+        short* srcWhiteAcc,
+        short* srcBlackAcc,
+        short* dstWhiteAcc,
+        short* dstBlackAcc,
         in Board boardAfter)
     {
         int dim = weights.HiddenDim;
@@ -269,8 +369,9 @@ public static unsafe class NnueAccumulator
             sbyte* ftWeights = weights.FeatureWeights;
             int wFrom = GetWhiteFeatureIndex(movedType, us, from);
             int bFrom = GetBlackFeatureIndex(movedType, us, from);
-            SubFeature(wFrom, ftWeights, whiteAcc, dim);
-            SubFeature(bFrom, ftWeights, blackAcc, dim);
+            PieceType addedType = move.IsPromotion ? move.PromotionPieceType : movedType;
+            int wTo = GetWhiteFeatureIndex(addedType, us, to);
+            int bTo = GetBlackFeatureIndex(addedType, us, to);
 
             if (capturedPiece != Piece.None)
             {
@@ -280,15 +381,14 @@ public static unsafe class NnueAccumulator
                 PieceType capType = capturedPiece.Type();
                 int wCap = GetWhiteFeatureIndex(capType, them, capSq);
                 int bCap = GetBlackFeatureIndex(capType, them, capSq);
-                SubFeature(wCap, ftWeights, whiteAcc, dim);
-                SubFeature(bCap, ftWeights, blackAcc, dim);
+                SubSubAddFeature(wFrom, wCap, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubSubAddFeature(bFrom, bCap, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
             }
-
-            PieceType addedType = move.IsPromotion ? move.PromotionPieceType : movedType;
-            int wTo = GetWhiteFeatureIndex(addedType, us, to);
-            int bTo = GetBlackFeatureIndex(addedType, us, to);
-            AddFeature(wTo, ftWeights, whiteAcc, dim);
-            AddFeature(bTo, ftWeights, blackAcc, dim);
+            else
+            {
+                SubAddFeature(wFrom, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubAddFeature(bFrom, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
+            }
 
             if (move.IsCastling)
             {
@@ -309,10 +409,8 @@ public static unsafe class NnueAccumulator
                 int wRTo = GetWhiteFeatureIndex(PieceType.Rook, us, rTo);
                 int bRTo = GetBlackFeatureIndex(PieceType.Rook, us, rTo);
 
-                SubFeature(wRFrom, ftWeights, whiteAcc, dim);
-                SubFeature(bRFrom, ftWeights, blackAcc, dim);
-                AddFeature(wRTo, ftWeights, whiteAcc, dim);
-                AddFeature(bRTo, ftWeights, blackAcc, dim);
+                SubAddFeature(wRFrom, wRTo, ftWeights, dstWhiteAcc, dstWhiteAcc, dim);
+                SubAddFeature(bRFrom, bRTo, ftWeights, dstBlackAcc, dstBlackAcc, dim);
             }
             return;
         }
@@ -330,18 +428,19 @@ public static unsafe class NnueAccumulator
                 int oldBucket = GetKingBucket(from);
                 int newBucket = GetKingBucket(to);
 
-                // Black's king didn't move -> incremental update for Black
+                // Black's king didn't move -> single-pass incremental update for Black
                 int bFrom = GetBlackFeatureIndex(movedType, us, from);
-                SubFeature(bFrom, bWeights, blackAcc, dim);
+                int bTo = GetBlackFeatureIndex(movedType, us, to);
 
                 if (capturedPiece != Piece.None)
                 {
                     int bCap = GetBlackFeatureIndex(capturedPiece.Type(), them, to);
-                    SubFeature(bCap, bWeights, blackAcc, dim);
+                    SubSubAddFeature(bFrom, bCap, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
                 }
-
-                int bTo = GetBlackFeatureIndex(movedType, us, to);
-                AddFeature(bTo, bWeights, blackAcc, dim);
+                else
+                {
+                    SubAddFeature(bFrom, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
+                }
 
                 if (move.IsCastling)
                 {
@@ -349,26 +448,27 @@ public static unsafe class NnueAccumulator
                     Square rTo = to > from ? Square.F1 : Square.D1;
                     int bRFrom = GetBlackFeatureIndex(PieceType.Rook, us, rFrom);
                     int bRTo = GetBlackFeatureIndex(PieceType.Rook, us, rTo);
-                    SubFeature(bRFrom, bWeights, blackAcc, dim);
-                    AddFeature(bRTo, bWeights, blackAcc, dim);
+                    SubAddFeature(bRFrom, bRTo, bWeights, dstBlackAcc, dstBlackAcc, dim);
                 }
 
                 // White king moved: check bucket change
                 if (oldBucket != newBucket || move.IsCastling)
                 {
-                    RefreshWhite(in boardAfter, weights, whiteAcc);
+                    RefreshWhite(in boardAfter, weights, dstWhiteAcc);
                 }
                 else
                 {
                     int wFrom = GetWhiteFeatureIndex(movedType, us, from);
-                    SubFeature(wFrom, wWeights, whiteAcc, dim);
+                    int wTo = GetWhiteFeatureIndex(movedType, us, to);
                     if (capturedPiece != Piece.None)
                     {
                         int wCap = GetWhiteFeatureIndex(capturedPiece.Type(), them, to);
-                        SubFeature(wCap, wWeights, whiteAcc, dim);
+                        SubSubAddFeature(wFrom, wCap, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
                     }
-                    int wTo = GetWhiteFeatureIndex(movedType, us, to);
-                    AddFeature(wTo, wWeights, whiteAcc, dim);
+                    else
+                    {
+                        SubAddFeature(wFrom, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                    }
                 }
             }
             else // us == Color.Black
@@ -376,18 +476,19 @@ public static unsafe class NnueAccumulator
                 int oldBucket = GetKingBucket((Square)((int)from ^ 56));
                 int newBucket = GetKingBucket((Square)((int)to ^ 56));
 
-                // White's king didn't move -> incremental update for White
+                // White's king didn't move -> single-pass incremental update for White
                 int wFrom = GetWhiteFeatureIndex(movedType, us, from);
-                SubFeature(wFrom, wWeights, whiteAcc, dim);
+                int wTo = GetWhiteFeatureIndex(movedType, us, to);
 
                 if (capturedPiece != Piece.None)
                 {
                     int wCap = GetWhiteFeatureIndex(capturedPiece.Type(), them, to);
-                    SubFeature(wCap, wWeights, whiteAcc, dim);
+                    SubSubAddFeature(wFrom, wCap, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
                 }
-
-                int wTo = GetWhiteFeatureIndex(movedType, us, to);
-                AddFeature(wTo, wWeights, whiteAcc, dim);
+                else
+                {
+                    SubAddFeature(wFrom, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                }
 
                 if (move.IsCastling)
                 {
@@ -395,36 +496,38 @@ public static unsafe class NnueAccumulator
                     Square rTo = to > from ? Square.F8 : Square.D8;
                     int wRFrom = GetWhiteFeatureIndex(PieceType.Rook, us, rFrom);
                     int wRTo = GetWhiteFeatureIndex(PieceType.Rook, us, rTo);
-                    SubFeature(wRFrom, wWeights, whiteAcc, dim);
-                    AddFeature(wRTo, wWeights, whiteAcc, dim);
+                    SubAddFeature(wRFrom, wRTo, wWeights, dstWhiteAcc, dstWhiteAcc, dim);
                 }
 
                 // Black king moved: check bucket change
                 if (oldBucket != newBucket || move.IsCastling)
                 {
-                    RefreshBlack(in boardAfter, weights, blackAcc);
+                    RefreshBlack(in boardAfter, weights, dstBlackAcc);
                 }
                 else
                 {
                     int bFrom = GetBlackFeatureIndex(movedType, us, from);
-                    SubFeature(bFrom, bWeights, blackAcc, dim);
+                    int bTo = GetBlackFeatureIndex(movedType, us, to);
                     if (capturedPiece != Piece.None)
                     {
                         int bCap = GetBlackFeatureIndex(capturedPiece.Type(), them, to);
-                        SubFeature(bCap, bWeights, blackAcc, dim);
+                        SubSubAddFeature(bFrom, bCap, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
                     }
-                    int bTo = GetBlackFeatureIndex(movedType, us, to);
-                    AddFeature(bTo, bWeights, blackAcc, dim);
+                    else
+                    {
+                        SubAddFeature(bFrom, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
+                    }
                 }
             }
         }
         else
         {
-            // Non-king moves: pure fast SIMD incremental update for both perspectives
+            // Non-king moves: single-pass fused SIMD incremental update for both perspectives
             int wFrom = GetWhiteFeatureIndex(movedType, us, from);
             int bFrom = GetBlackFeatureIndex(movedType, us, from);
-            SubFeature(wFrom, wWeights, whiteAcc, dim);
-            SubFeature(bFrom, bWeights, blackAcc, dim);
+            PieceType addedType = move.IsPromotion ? move.PromotionPieceType : movedType;
+            int wTo = GetWhiteFeatureIndex(addedType, us, to);
+            int bTo = GetBlackFeatureIndex(addedType, us, to);
 
             if (capturedPiece != Piece.None)
             {
@@ -434,15 +537,14 @@ public static unsafe class NnueAccumulator
                 PieceType capType = capturedPiece.Type();
                 int wCap = GetWhiteFeatureIndex(capType, them, capSq);
                 int bCap = GetBlackFeatureIndex(capType, them, capSq);
-                SubFeature(wCap, wWeights, whiteAcc, dim);
-                SubFeature(bCap, bWeights, blackAcc, dim);
+                SubSubAddFeature(wFrom, wCap, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubSubAddFeature(bFrom, bCap, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
             }
-
-            PieceType addedType = move.IsPromotion ? move.PromotionPieceType : movedType;
-            int wTo = GetWhiteFeatureIndex(addedType, us, to);
-            int bTo = GetBlackFeatureIndex(addedType, us, to);
-            AddFeature(wTo, wWeights, whiteAcc, dim);
-            AddFeature(bTo, bWeights, blackAcc, dim);
+            else
+            {
+                SubAddFeature(wFrom, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubAddFeature(bFrom, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
+            }
         }
     }
 }

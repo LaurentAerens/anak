@@ -29,9 +29,8 @@ public sealed class ContinuationHistory
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int PieceToIndex(Piece piece)
     {
-        byte p = (byte)piece;
-        if (p == 0) return 0;
-        return p < 8 ? p : (p >= 9 && p <= 14 ? p - 2 : 0);
+        int p = (int)piece;
+        return ((uint)((p & 7) - 1) < 6u && (uint)p <= 14u) ? p - ((p >> 3) << 1) : 0;
     }
 
     /// <summary>
@@ -79,7 +78,7 @@ public sealed class ContinuationHistory
 
         int idx = GetIndex(prevPiece, prevTo, currPiece, currTo);
         ref int val = ref _table1Ply[idx];
-        val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
+        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 
     /// <summary>
@@ -93,7 +92,7 @@ public sealed class ContinuationHistory
 
         int idx = GetIndex(prevPiece, prevTo, currPiece, currTo);
         ref int val = ref _table2Ply[idx];
-        val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
+        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 
     /// <summary>

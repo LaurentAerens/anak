@@ -133,6 +133,7 @@ public static class Fen
         }
 
         board.ZobristKey = Zobrist.ComputeKey(in board);
+        board.PawnKey = Zobrist.ComputePawnKey(in board);
         board.PushHistory(board.ZobristKey);
 
         return board;

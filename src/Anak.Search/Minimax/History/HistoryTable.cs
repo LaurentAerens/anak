@@ -45,7 +45,7 @@ public sealed class HistoryTable
     public void Update(Color side, Square from, Square to, int bonus)
     {
         ref int val = ref _table[GetIndex(side, from, to)];
-        val += bonus - (int)((long)val * Math.Abs(bonus) / MaxHistory);
+        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 
     /// <summary>

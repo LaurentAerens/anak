@@ -13,6 +13,7 @@ namespace Anak.Search;
 /// - MVV-LVA move ordering
 /// - Transposition Table probing and recording
 /// </summary>
+[SkipLocalsInit]
 public sealed class QuiescenceSearch
 {
     private readonly IEvaluator _evaluator;
@@ -117,7 +118,8 @@ public sealed class QuiescenceSearch
         }
 
         // 4. Generate legal moves
-        MoveList moves = new MoveList();
+        Unsafe.SkipInit(out MoveList moves);
+        moves.Clear();
         MoveGenerator.GenerateLegalMoves(in board, ref moves);
 
         if (moves.Count == 0)
@@ -126,17 +128,15 @@ public sealed class QuiescenceSearch
             return inCheck ? -(Value.MateValue - ply) : 0;
         }
 
-        // 5. Filter and score candidate moves
-        ScoreBuffer scores = default;
-        for (int i = 0; i < moves.Count; i++)
-        {
-            scores[i] = int.MinValue;
-        }
+        // 5. Filter and score candidate moves into compact arrays
+        Unsafe.SkipInit(out IndexBuffer128 candidateIndices);
+        Unsafe.SkipInit(out ScoreBuffer candidateScores);
         int candidateCount = 0;
 
         for (int i = 0; i < moves.Count; i++)
         {
             Move m = moves[i];
+            int moveScore;
 
             if (!inCheck)
             {
@@ -163,14 +163,16 @@ public sealed class QuiescenceSearch
                 int see = StaticExchangeEvaluator.Evaluate(in board, m);
                 if (see < 0) continue;
 
-                scores[i] = MovePicker.GetMvvLva(in board, m) + see;
+                moveScore = MovePicker.GetMvvLva(in board, m) + see;
             }
             else
             {
                 // In check: search all legal evasions, prioritizing captures
-                scores[i] = m.IsCapture ? MovePicker.GetMvvLva(in board, m) + 10000 : 0;
+                moveScore = m.IsCapture ? MovePicker.GetMvvLva(in board, m) + 10000 : 0;
             }
 
+            candidateIndices[candidateCount] = (byte)i;
+            candidateScores[candidateCount] = moveScore;
             candidateCount++;
         }
 
@@ -179,33 +181,31 @@ public sealed class QuiescenceSearch
             return standPat != -Value.InfiniteValue ? standPat : alpha;
         }
 
-        // 6. Search candidates in MVV-LVA order using selection sort
-        for (int step = 0; step < moves.Count; step++)
+        // 6. Search candidates in MVV-LVA order using compact selection sort
+        for (int step = 0; step < candidateCount; step++)
         {
-            int bestIdx = -1;
+            int bestSlot = -1;
             int bestScore = int.MinValue;
 
-            for (int i = 0; i < moves.Count; i++)
+            for (int i = 0; i < candidateCount; i++)
             {
-                if (scores[i] == int.MinValue) continue;
-                if (!inCheck && !moves[i].IsCapture && !moves[i].IsPromotion) continue;
-
-                if (scores[i] > bestScore)
+                int sc = candidateScores[i];
+                if (sc > bestScore)
                 {
-                    bestScore = scores[i];
-                    bestIdx = i;
+                    bestScore = sc;
+                    bestSlot = i;
                 }
             }
 
-            if (bestIdx < 0 || bestScore == int.MinValue) break;
+            if (bestSlot < 0 || bestScore == int.MinValue) break;
 
             if ((++_qsNodes & 63) == 0 && _isTimeUp != null && _isTimeUp())
             {
                 break;
             }
 
-            Move move = moves[bestIdx];
-            scores[bestIdx] = int.MinValue; // Mark as picked
+            Move move = moves[candidateIndices[bestSlot]];
+            candidateScores[bestSlot] = int.MinValue; // Mark as picked
 
             Piece movedPiece = board.GetPieceAt(move.From);
             board.MakeMove(move, out BoardState state);

@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 
 namespace Anak.Core;
 
@@ -8,6 +9,7 @@ namespace Anak.Core;
 /// Determines the static material outcome (gain/loss in centipawns) of a sequence of captures on a target square.
 /// Used to heavily penalize losing captures in MCTS policy priors and accurately resolve leaf captures.
 /// </summary>
+[SkipLocalsInit]
 public static class StaticExchangeEvaluator
 {
     private static readonly int[] _pieceValues =
@@ -22,23 +24,49 @@ public static class StaticExchangeEvaluator
     ];
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetPieceValue(PieceType pt) => pt switch
-    {
-        PieceType.Pawn => 100,
-        PieceType.Knight => 320,
-        PieceType.Bishop => 330,
-        PieceType.Rook => 500,
-        PieceType.Queen => 900,
-        PieceType.King => 20000,
-        _ => 0
-    };
+    public static int GetPieceValue(PieceType pt) =>
+        (uint)pt <= 6 ? Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_pieceValues), (int)pt) : 0;
 
     /// <summary>
     /// Returns true if the static exchange evaluation of <paramref name="move"/> is greater than or equal to <paramref name="threshold"/>.
+    /// Uses fast early-exit bounds before computing the full x-ray exchange sequence.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool HasPositiveOrEqualSee(in Board board, Move move, int threshold = 0)
     {
+        Square from = move.From;
+        Square to = move.To;
+        Piece movedPiece = board.GetPieceAt(from);
+        if (movedPiece == Piece.None) return 0 >= threshold;
+
+        PieceType attackerType = movedPiece.Type();
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+
+        Piece capturedPiece = move.Type == MoveType.EnPassant
+            ? PieceExtensions.Create(them, PieceType.Pawn)
+            : board.GetPieceAt(to);
+
+        int victimVal = capturedPiece != Piece.None ? GetPieceValue(capturedPiece.Type()) : 0;
+        if (move.IsPromotion)
+        {
+            victimVal += GetPieceValue(move.PromotionPieceType) - 100;
+        }
+
+        // Fast early exit 1: if even capturing the target for free fails to reach threshold, return false
+        int swap = victimVal - threshold;
+        if (swap < 0)
+        {
+            return false;
+        }
+
+        // Fast early exit 2: if even losing our moving piece for nothing still meets threshold, return true
+        swap -= GetPieceValue(attackerType);
+        if (swap >= 0)
+        {
+            return true;
+        }
+
         return Evaluate(in board, move) >= threshold;
     }
 

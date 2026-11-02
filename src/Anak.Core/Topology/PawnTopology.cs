@@ -24,6 +24,56 @@ public enum NnueExpertType : byte
 public static class PawnTopology
 {
     /// <summary>
+    /// Computes an exact integer openness percentage between 0 (completely locked) and 100 (wide open).
+    /// Eliminates floating-point operations and file-by-file loops via vertical bit-collapse.
+    /// </summary>
+    /// <param name="board">The chess board state.</param>
+    /// <returns>An integer between 0 and 100.</returns>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int CalculateOpennessPercent(in Board board)
+    {
+        ulong whitePawns = board.White & board.Pawns;
+        ulong blackPawns = board.Black & board.Pawns;
+        ulong allPawns = whitePawns | blackPawns;
+        int totalPawns = BitOperations.PopCount(allPawns);
+
+        // 1. Locked pawns (rams): White pawn directly blocked head-to-head by Black pawn
+        ulong lockedRams = whitePawns & (blackPawns >> 8);
+        int lockedCount = BitOperations.PopCount(lockedRams);
+
+        // 2. Open and Semi-open files via 3-step SWAR vertical rank-OR collapse
+        ulong wFold = whitePawns | (whitePawns >> 32);
+        wFold |= wFold >> 16;
+        uint wFiles = (uint)(wFold | (wFold >> 8)) & 0xFFu;
+
+        ulong bFold = blackPawns | (blackPawns >> 32);
+        bFold |= bFold >> 16;
+        uint bFiles = (uint)(bFold | (bFold >> 8)) & 0xFFu;
+
+        int openFiles = 8 - BitOperations.PopCount(wFiles | bFiles);
+        int semiOpenFiles = BitOperations.PopCount(wFiles ^ bFiles);
+
+        // 3. Pawn tension (pawns in mutual attack contact)
+        ulong whiteAttacks = ((whitePawns << 7) & ~Bitboard.FileH) | ((whitePawns << 9) & ~Bitboard.FileA);
+        int tensionCount = BitOperations.PopCount(whiteAttacks & blackPawns);
+
+        // 4. Center pawn liquidation (c, d, e, f files)
+        const ulong centerFiles = Bitboard.FileC | Bitboard.FileD | Bitboard.FileE | Bitboard.FileF;
+        int centerPawns = BitOperations.PopCount(allPawns & centerFiles);
+
+        // Constant fold: 35 + (8 * 3) + (16 * 2) = 91
+        int opennessPct = 91
+            + (openFiles * 12)
+            + (semiOpenFiles * 5)
+            - (lockedCount * 10)
+            + (tensionCount * 4)
+            - (centerPawns * 3)
+            - (totalPawns * 2);
+
+        return Math.Clamp(opennessPct, 0, 100);
+    }
+
+    /// <summary>
     /// Computes a continuous openness score between 0.0 (completely locked) and 1.0 (wide open).
     /// </summary>
     /// <param name="board">The chess board state.</param>
@@ -40,24 +90,17 @@ public static class PawnTopology
         ulong lockedRams = whitePawns & (blackPawns >> 8);
         int lockedCount = BitOperations.PopCount(lockedRams);
 
-        // 2. Open and Semi-open files
-        int openFiles = 0;
-        int semiOpenFiles = 0;
-        for (int f = 0; f < 8; f++)
-        {
-            ulong fileMask = Bitboard.FileMasks[f];
-            bool hasWhite = (whitePawns & fileMask) != 0;
-            bool hasBlack = (blackPawns & fileMask) != 0;
+        // 2. Open and Semi-open files via 3-step SWAR vertical rank-OR collapse
+        ulong wFold = whitePawns | (whitePawns >> 32);
+        wFold |= wFold >> 16;
+        uint wFiles = (uint)(wFold | (wFold >> 8)) & 0xFFu;
 
-            if (!hasWhite && !hasBlack)
-            {
-                openFiles++;
-            }
-            else if (!hasWhite || !hasBlack)
-            {
-                semiOpenFiles++;
-            }
-        }
+        ulong bFold = blackPawns | (blackPawns >> 32);
+        bFold |= bFold >> 16;
+        uint bFiles = (uint)(bFold | (bFold >> 8)) & 0xFFu;
+
+        int openFiles = 8 - BitOperations.PopCount(wFiles | bFiles);
+        int semiOpenFiles = BitOperations.PopCount(wFiles ^ bFiles);
 
         // 3. Pawn tension (pawns in mutual attack contact)
         ulong whiteAttacks = ((whitePawns << 7) & ~Bitboard.FileH) | ((whitePawns << 9) & ~Bitboard.FileA);
@@ -67,12 +110,6 @@ public static class PawnTopology
         const ulong centerFiles = Bitboard.FileC | Bitboard.FileD | Bitboard.FileE | Bitboard.FileF;
         int centerPawns = BitOperations.PopCount(allPawns & centerFiles);
 
-        // Openness metric calculation:
-        // - Starting position: 16 pawns, 0 open files, 0 semi-open files, 8 center pawns, 0 locked rams -> ~0.35 (Closed)
-        // - More open files & semi-open files increase openness
-        // - Locked rams strongly decrease openness
-        // - Center pawn disappearance increases openness
-        // - Tension increases volatility and openness
         float openness = 0.35f
             + (openFiles * 0.12f)
             + (semiOpenFiles * 0.05f)

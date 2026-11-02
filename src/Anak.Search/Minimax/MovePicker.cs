@@ -15,6 +15,12 @@ public struct IndexBuffer128
     private byte _element0;
 }
 
+[InlineArray(4)]
+public struct PickedBitmask
+{
+    private ulong _element0;
+}
+
 public enum MovePickerStage : byte
 {
     TtMove = 0,
@@ -38,6 +44,7 @@ public enum MovePickerStage : byte
 /// 5. Quiet moves (sorted by Butterfly History)
 /// 6. Bad Captures (SEE < 0)
 /// </summary>
+[SkipLocalsInit]
 public ref struct MovePicker
 {
     private readonly ref readonly Board _board;
@@ -64,6 +71,7 @@ public ref struct MovePicker
     private int _quietCount;
     private MovePickerStage _stage;
     private bool _capturesScored;
+    private bool _contScored;
     private bool _quietsScored;
     private bool _movesGenerated;
     private bool _ttMovePicked;
@@ -79,10 +87,7 @@ public ref struct MovePicker
     public int CurrentSee { get; private set; }
 
     // 256-bit bitmask tracking picked moves
-    private ulong _picked0;
-    private ulong _picked1;
-    private ulong _picked2;
-    private ulong _picked3;
+    private PickedBitmask _picked;
 
     public MovePicker(
         in Board board,
@@ -111,25 +116,26 @@ public ref struct MovePicker
         _prev2Piece = prev2Piece;
         _prev2To = prev2To;
 
-        _legalMoves = default;
+        Unsafe.SkipInit(out _legalMoves);
+        _legalMoves.Clear();
         _movesGenerated = false;
         _ttMovePicked = false;
 
-        _scores = default;
-        _seeScores = default;
-        _goodCaptureIndices = default;
+        Unsafe.SkipInit(out _scores);
+        Unsafe.SkipInit(out _seeScores);
+        Unsafe.SkipInit(out _goodCaptureIndices);
         _goodCaptureCount = 0;
-        _badCaptureIndices = default;
+        Unsafe.SkipInit(out _badCaptureIndices);
         _badCaptureCount = 0;
-        _quietIndices = default;
+        Unsafe.SkipInit(out _quietIndices);
         _quietCount = 0;
         _stage = MovePickerStage.TtMove;
         _capturesScored = false;
+        _contScored = false;
         _quietsScored = false;
-        _picked0 = 0;
-        _picked1 = 0;
-        _picked2 = 0;
-        _picked3 = 0;
+        _picked = default;
+        CurrentStage = MovePickerStage.TtMove;
+        CurrentSee = int.MinValue;
     }
 
     public MovePicker(
@@ -158,7 +164,7 @@ public ref struct MovePicker
     {
         if (_movesGenerated) return;
         _movesGenerated = true;
-        _legalMoves = new MoveList();
+        _legalMoves.Clear();
         MoveGenerator.GenerateLegalMoves(in _board, ref _legalMoves);
 
         if (_ttMovePicked && !_ttMove.IsNull)
@@ -175,28 +181,16 @@ public ref struct MovePicker
     private readonly bool IsPicked(int index)
     {
         int word = index >> 6;
-        ulong bit = 1UL << (index & 63);
-        return word switch
-        {
-            0 => (_picked0 & bit) != 0,
-            1 => (_picked1 & bit) != 0,
-            2 => (_picked2 & bit) != 0,
-            3 => (_picked3 & bit) != 0,
-            _ => true
-        };
+        return (uint)word < 4u ? (_picked[word] & (1UL << (index & 63))) != 0 : true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void MarkPicked(int index)
     {
         int word = index >> 6;
-        ulong bit = 1UL << (index & 63);
-        switch (word)
+        if ((uint)word < 4u)
         {
-            case 0: _picked0 |= bit; break;
-            case 1: _picked1 |= bit; break;
-            case 2: _picked2 |= bit; break;
-            case 3: _picked3 |= bit; break;
+            _picked[word] |= 1UL << (index & 63);
         }
     }
 
@@ -434,21 +428,42 @@ public ref struct MovePicker
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private readonly int PickBestContinuationMove()
+    private int PickBestContinuationMove()
     {
-        if (_continuationHistory == null) return -1;
+        if (_continuationHistory == null || (_prev1Piece == Piece.None && _prev2Piece == Piece.None))
+        {
+            return -1;
+        }
+
+        if (!_contScored)
+        {
+            _contScored = true;
+            _quietCount = 0;
+            for (int i = 0; i < _legalMoves.Count; i++)
+            {
+                if (IsPicked(i)) continue;
+                Move m = _legalMoves[i];
+                if (m.IsCapture || m.IsPromotion) continue;
+
+                Piece moved = _board.GetPieceAt(m.From);
+                int contScore = _continuationHistory.GetScore(_prev1Piece, _prev1To, _prev2Piece, _prev2To, moved, m.To);
+                if (contScore > 0)
+                {
+                    _scores[i] = contScore;
+                    _quietIndices[_quietCount++] = (byte)i;
+                }
+            }
+        }
 
         int bestIdx = -1;
         int bestScore = 0; // Only positive continuation scores
 
-        for (int i = 0; i < _legalMoves.Count; i++)
+        for (int j = 0; j < _quietCount; j++)
         {
+            int i = _quietIndices[j];
             if (IsPicked(i)) continue;
-            Move m = _legalMoves[i];
-            if (m.IsCapture || m.IsPromotion) continue;
 
-            Piece moved = _board.GetPieceAt(m.From);
-            int contScore = _continuationHistory.GetScore(_prev1Piece, _prev1To, _prev2Piece, _prev2To, moved, m.To);
+            int contScore = _scores[i];
             if (contScore > bestScore)
             {
                 bestScore = contScore;
