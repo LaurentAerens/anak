@@ -26,6 +26,7 @@ public sealed class QuiescenceSearch
     public const int MaxQsDepth = 128;
     public const int DeltaMargin = 900;
     public int DeltaSafetyMargin { get; set; } = SearchHeuristics.TunedQsDeltaMargin;
+    public bool EnableQsChecks { get; set; } = true;
 
     /// <summary>
     /// ID of the active NNUE expert network for TT isolation and tagging.
@@ -49,7 +50,7 @@ public sealed class QuiescenceSearch
     /// <summary>
     /// Searches captures and promotions until a quiet position is reached.
     /// </summary>
-    public int Search(ref Board board, int alpha, int beta, int ply = 0)
+    public int Search(ref Board board, int alpha, int beta, int ply = 0, int qsDepth = 0)
     {
         if (_isTimeUp != null && _isTimeUp())
         {
@@ -140,30 +141,42 @@ public sealed class QuiescenceSearch
 
             if (!inCheck)
             {
-                // Only search captures and promotions in QS
-                if (!m.IsCapture && !m.IsPromotion) continue;
-
-                // Move-level Delta Pruning
-                if (!m.IsPromotion)
+                if (!m.IsCapture && !m.IsPromotion)
                 {
-                    Piece captured = m.Type == MoveType.EnPassant
-                        ? PieceExtensions.Create(board.SideToMove.Opponent(), PieceType.Pawn)
-                        : board.GetPieceAt(m.To);
-                    int victimVal = captured != Piece.None
-                        ? StaticExchangeEvaluator.GetPieceValue(captured.Type())
-                        : 0;
+                    // Checks in Quiescence Search: only at QS root (qsDepth == 0) with non-negative SEE
+                    if (!EnableQsChecks || qsDepth > 0) continue;
 
-                    if (standPat + victimVal + DeltaSafetyMargin < alpha)
-                    {
-                        continue;
-                    }
+                    if (!GivesCheck(ref board, m)) continue;
+
+                    int see = StaticExchangeEvaluator.Evaluate(in board, m);
+                    if (see < 0) continue;
+
+                    moveScore = 1000 + see;
                 }
+                else
+                {
+                    // Move-level Delta Pruning
+                    if (!m.IsPromotion)
+                    {
+                        Piece captured = m.Type == MoveType.EnPassant
+                            ? PieceExtensions.Create(board.SideToMove.Opponent(), PieceType.Pawn)
+                            : board.GetPieceAt(m.To);
+                        int victimVal = captured != Piece.None
+                            ? StaticExchangeEvaluator.GetPieceValue(captured.Type())
+                            : 0;
 
-                // SEE pruning: discard losing captures in quiescence
-                int see = StaticExchangeEvaluator.Evaluate(in board, m);
-                if (see < 0) continue;
+                        if (standPat + victimVal + DeltaSafetyMargin < alpha)
+                        {
+                            continue;
+                        }
+                    }
 
-                moveScore = MovePicker.GetMvvLva(in board, m) + see;
+                    // SEE pruning: discard losing captures in quiescence
+                    int see = StaticExchangeEvaluator.Evaluate(in board, m);
+                    if (see < 0) continue;
+
+                    moveScore = MovePicker.GetMvvLva(in board, m) + see;
+                }
             }
             else
             {
@@ -211,7 +224,7 @@ public sealed class QuiescenceSearch
             board.MakeMove(move, out BoardState state);
             _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
 
-            int score = -Search(ref board, -beta, -alpha, ply + 1);
+            int score = -Search(ref board, -beta, -alpha, ply + 1, qsDepth + 1);
 
             board.UnmakeMove(move, in state);
             _incEval?.RollbackTo(ply);
@@ -232,5 +245,14 @@ public sealed class QuiescenceSearch
         TTFlags flag = (alpha > originalAlpha) ? TTFlags.Exact : TTFlags.UpperBound;
         _tt?.Store(key, bestMove, 0, TTEntry.ScoreToTt(alpha, ply), _tt?.CurrentAge ?? 1, flag, ActiveExpertId);
         return alpha;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool GivesCheck(ref Board board, Move m)
+    {
+        board.MakeMove(m, out BoardState state);
+        bool check = board.IsInCheck();
+        board.UnmakeMove(m, in state);
+        return check;
     }
 }

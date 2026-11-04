@@ -61,6 +61,23 @@ public sealed class AlphaBetaEngine : ISearchEngine
     public ITablebaseProber? Tablebase { get; set; }
     public int LastScoreCp { get; internal set; }
 
+    private bool _enableQsChecks = true;
+    public bool EnableQsChecks
+    {
+        get => _enableQsChecks;
+        set
+        {
+            _enableQsChecks = value;
+            if (_workers != null)
+            {
+                for (int i = 0; i < _workers.Length; i++)
+                {
+                    _workers[i]._qsearch.EnableQsChecks = value;
+                }
+            }
+        }
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsTimeUp() => _stopped || _timeManager.IsHardTimeUp();
 
@@ -411,7 +428,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly IEvaluator _evaluator;
         private readonly IIncrementalEvaluator? _incEval;
         private readonly TranspositionTable _tt;
-        private readonly QuiescenceSearch _qsearch;
+        internal readonly QuiescenceSearch _qsearch;
         private byte _activeExpertId;
 
         public ulong Nodes;
@@ -455,6 +472,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             _counterMoves = new Move[16 * 64];
             _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval, engine.IsTimeUp);
             _qsearch.DeltaSafetyMargin = engine.QsDeltaMargin;
+            _qsearch.EnableQsChecks = engine.EnableQsChecks;
         }
 
         public void SetQsDeltaMargin(int margin)

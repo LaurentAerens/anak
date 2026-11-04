@@ -344,6 +344,14 @@
       "tc": "bench 11",
       "pgn": "-",
       "notes": "Math, bitwise, and SIMD simplifications (+121.3% NPS / 2.21x throughput from 166k to 368k nps; 100% deterministic search equivalence verified across 64 positions, 0 node difference)"
+    },
+    "v1.0.13": {
+      "version": "v1.0.13",
+      "date": "2026-11-04",
+      "estimated_elo": 2572,
+      "elo_margin": null,
+      "baseline_opponent": "Baseline",
+      "notes": "Checks in Quiescence Search (+15.1 Elo)"
     }
   }
 }

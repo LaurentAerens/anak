@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.12` (Estimated Rating: **2557+ Elo**)  
+> **Current Active Version:** `v1.0.13` (Estimated Rating: **2572 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,19 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.13` (2026-11-04) — Checks in Quiescence Search (+15.1 Elo)
+- **Category:** Search / Quiescence Optimization (Patch Release)
+- **Baseline Opponent:** Anak v1.0.12 (Known Elo: 2557)
+- **Match Result:** 3,134.0 / 6,008 (52.16%) vs v1.0.12 @ 1+0.01 (2,416 W / 2,156 L / 1,436 D)
+- **Elo Delta:** **+15.1 &plusmn; 7.2 Elo** (LOS: **>99.9%**, Pairs Ratio: 1.23)
+- **Estimated Elo:** **2572 &plusmn; 7**
+- **Highlights:**
+  - **Tactical Check Resolution at Leaf Nodes:** Generates and evaluates quiet giving-checks exclusively at the QS root (`qsDepth == 0`), preventing horizon-effect blunders on tactical check lines without suffering qsearch tree explosion.
+  - **SEE Gating:** All quiet checks are filtered with non-negative Static Exchange Evaluation (`see >= 0`), immediately discarding sacrificing or losing checks.
+  - **Tree Size Reduction:** Resolving tactical checks at the QS root cut main-tree bench nodes by **62.5%** on complex tactical suites while improving clock stability (4 timeouts vs 9 for baseline).
+
+---
 
 ### `v1.0.12` (2026-11-02) — Math, Bitwise & SIMD Simplification (+121% NPS)
 - **Category:** Pure Throughput Optimization (Patch Release)

@@ -169,7 +169,8 @@ public class MathSimplificationEquivalenceTests
             // Fresh engine for 100% deterministic single-thread depth 6 search
             var engine = new AlphaBetaEngine(UciEngineAdapter.CreateEvaluator(), defaultHashMb: 16)
             {
-                Threads = 1
+                Threads = 1,
+                EnableQsChecks = false
             };
             var limits = new SearchLimits { Depth = 6 };
             ulong nodes = 0;

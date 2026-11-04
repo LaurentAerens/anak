@@ -144,6 +144,14 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
         c=12.0,
         a=250.0,
     ),
+    SpsaParam(
+        name="HistoryPruningThreshold",
+        default=4000.0,
+        min_val=1000.0,
+        max_val=8000.0,
+        c=300.0,
+        a=800000.0,
+    ),
 ]
 
 # High-impact Core Search Heuristics (Focus on strongest tree pruning & reduction leverage)
@@ -402,6 +410,18 @@ BATCH_BCD_PARAMETERS: List[SpsaParam] = BATCH_B_PARAMETERS + [
     ),
 ]
 
+# History-Directed Late Move Pruning Parameter
+HISTORY_PRUNING_PARAMETERS: List[SpsaParam] = [
+    SpsaParam(
+        name="HistoryPruningThreshold",
+        default=4000.0,
+        min_val=1000.0,
+        max_val=8000.0,
+        c=300.0,
+        a=800000.0,
+    ),
+]
+
 
 def find_default_paths() -> Tuple[Path, Path, Path]:
     """Auto-detects repository root and default binaries."""
@@ -503,6 +523,8 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
         lines.append(f"public const int TunedLmpMultiplier = {int(round(params['LmpMultiplier']))};")
     if "IirMinDepth" in params:
         lines.append(f"public const int TunedIirMinDepth = {int(round(params['IirMinDepth']))};")
+    if "HistoryPruningThreshold" in params:
+        lines.append(f"public const int TunedHistoryPruningThreshold = {int(round(params['HistoryPruningThreshold']))};")
 
     # Weakness Remediation Parameters
     if "WatchdogCollapseThreshold" in params:
@@ -944,8 +966,9 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["core", "b", "search", "bcd", "all", "micro", "weakness"], default="core",
-                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for 3 history/pawn correction dynamics, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation)")
+    parser.add_argument("--batch", type=str, choices=["core", "b", "search", "bcd", "all", "micro", "weakness", "history_pruning"], default="core",
+                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for 3 history/pawn correction dynamics, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation, 'history_pruning' for HistoryPruningThreshold)")
+    parser.add_argument("--param", type=str, default=None, help="Tune a single parameter by name (e.g. --param HistoryPruningThreshold)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
     parser.add_argument("--patience", type=int, default=40, help="Steps without parameter drift required for early stopping (default: 40)")
@@ -963,7 +986,14 @@ def main():
     openings_path = Path(args.openings) if args.openings else default_openings
     progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / "spsa_progress.json")
 
-    if args.batch == "core":
+    if args.param:
+        all_known = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS + WEAKNESS_PARAMETERS + HISTORY_PRUNING_PARAMETERS
+        matched = [p for p in all_known if p.name.lower() == args.param.lower()]
+        if not matched:
+            print(f"[!] Error: Parameter '{args.param}' not recognized.")
+            sys.exit(1)
+        param_set = [matched[0]]
+    elif args.batch == "core":
         param_set = CORE_PARAMETERS
     elif args.batch == "b":
         param_set = BATCH_B_PARAMETERS
@@ -975,6 +1005,8 @@ def main():
         param_set = MICRO_PARAMETERS
     elif args.batch == "weakness":
         param_set = WEAKNESS_PARAMETERS
+    elif args.batch == "history_pruning":
+        param_set = HISTORY_PRUNING_PARAMETERS
     else:
         param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS + WEAKNESS_PARAMETERS
 
