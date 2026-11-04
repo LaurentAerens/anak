@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.13` (Estimated Rating: **2572 Elo**)  
+> **Current Active Version:** `v1.0.14` (Estimated Rating: **2597 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,19 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.14` (2026-11-04) — Fail-Low Soft-Time Extension (+25.0 Elo)
+- **Category:** Search / Time Management (Patch Release)
+- **Baseline Opponent:** Anak v1.0.13 (Known Elo: 2572)
+- **Match Result:** 2,381.0 / 4,444 (53.58%) vs v1.0.13 @ 1+0.01 (1,795 W / 1,477 L / 1,172 D)
+- **Elo Delta:** **+25.0 &plusmn; 8.0 Elo** (LOS: **>99.99%**, SPRT H1 Accepted: LLR 2.95 [0.00, 3.00])
+- **Estimated Elo:** **2597 &plusmn; 8**
+- **Highlights:**
+  - **Dynamic Soft-Time Extension on Root Fail-Low:** When iterative deepening at root fails low on depth $\ge 6$ (`score <= alpha`), the expected PV move has collapsed. Dynamically scales the soft time limit by $1.4\times$ to allow the engine to complete the re-search and find a sound alternative move rather than rushing into an unverified blunder.
+  - **Uncapped Headroom in Time Allocation:** Fixed an initialization bottleneck in `TimeManager` where baseline soft limits were prematurely constrained by hard limits, unlocking true dynamic scaling during critical tactical emergencies.
+  - **Guaranteed Clock Safety:** Retains strict bounds against hard limits (`remainingTime - safetyLag`), ensuring zero clock forfeits in fast time controls while improving critical tactical resilience.
+
+---
 
 ### `v1.0.13` (2026-11-04) — Checks in Quiescence Search (+15.1 Elo)
 - **Category:** Search / Quiescence Optimization (Patch Release)

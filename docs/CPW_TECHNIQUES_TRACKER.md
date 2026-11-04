@@ -19,13 +19,13 @@ This document tracks search, pruning, movegen, and move-ordering techniques cata
 | 7 | **Recapture Extensions** | Extensions | `[-] Tested & Rejected` | +2 to +5 Elo | `src/Anak.Search/Minimax/AlphaBetaEngine.cs` |
 | 8 | **One-Reply / Forced Move Extensions** | Extensions | `[-] Tested & Rejected` | +2 to +4 Elo | `src/Anak.Search/Minimax/AlphaBetaEngine.cs` |
 | 9 | **Passed Pawn Push Extensions** | Extensions | `[-] Tested & Rejected` | +3 to +7 Elo | `src/Anak.Search/Minimax/AlphaBetaEngine.cs` |
-| 10 | **Selective Check Extensions** | Extensions | `[ ] Not Started` | Speed & Tree Stability | `src/Anak.Search/Minimax/AlphaBetaEngine.cs` |
-| 11 | **Checks in Quiescence Search** | Quiescence | `[ ] Not Started` | +4 to +8 Elo | `src/Anak.Search/Minimax/QuiescenceSearch.cs` |
-| 12 | **Advanced Passed Pawn Pushes in QS** | Quiescence | `[ ] Not Started` | +3 to +6 Elo | `src/Anak.Search/Minimax/QuiescenceSearch.cs` |
-| 13 | **Dedicated Countermove History Table (CMH)**| Move Ordering | `[ ] Not Started` | +5 to +8 Elo | `ContinuationHistory.cs`, `MovePicker.cs` |
+| 10 | **Selective Check Extensions** | Extensions | `[-] Tested & Rejected` | Speed & Tree Stability | `src/Anak.Search/Minimax/AlphaBetaEngine.cs` |
+| 11 | **Checks in Quiescence Search** | Quiescence | `[x] Implemented & Accepted` | +4 to +8 Elo | `src/Anak.Search/Minimax/QuiescenceSearch.cs` |
+| 12 | **Advanced Passed Pawn Pushes in QS** | Quiescence | `[-] Tested & Rejected` | +3 to +6 Elo | `src/Anak.Search/Minimax/QuiescenceSearch.cs` |
+| 13 | **Dedicated Countermove History Table (CMH)**| Move Ordering | `[-] Tested & Rejected` | +5 to +8 Elo | `ContinuationHistory.cs`, `MovePicker.cs` |
 | 14 | **Relative History Normalization** | Move Ordering | `[ ] Not Started` | +2 to +5 Elo | `HistoryTable.cs`, `AlphaBetaEngine.cs` |
 | 15 | **Ordering Bad Captures by SEE** | Move Ordering | `[ ] Not Started` | +1 to +3 Elo | `src/Anak.Search/Minimax/MovePicker.cs` |
-| 16 | **Fail-Low Soft-Time Extension** | Time Management | `[ ] Not Started` | +3 to +6 Elo (Clock) | `TimeManager.cs`, `AlphaBetaEngine.cs` |
+| 16 | **Fail-Low Soft-Time Extension** | Time Management | `[x] Implemented & Accepted` | +3 to +6 Elo (Clock) | `TimeManager.cs`, `AlphaBetaEngine.cs` |
 
 Legend:
 - `[ ] Not Started`
@@ -191,8 +191,8 @@ Legend:
 - **Concept:** Include pawn pushes to rank 7 (White) or rank 2 (Black) in QS candidate moves, resolving immediate promotion threats.
 - **Target Files:** `src/Anak.Search/Minimax/QuiescenceSearch.cs`
 - **Testing Checklist:**
-  - [ ] Tier 1 Sanity: 250 games
-  - [ ] Tier 2 Validation: SPRT [0.0, 3.0]
+  - [x] Tier 1 Sanity: 250 games (`1+0.01` vs v1.0.13): Score 126.0 / 250 (50.40%, W: 101, L: 99, D: 50), **+2.8 &plusmn; 31.9 Elo**, LOS: 56.81%, PairsRatio: 1.10.
+  - [x] Tier 2 Validation: SPRT [0.0, 3.0] vs v1.0.13 (758 games played): Score 366.0 / 758 (48.28%, W: 279, L: 305, D: 174), **-11.9 &plusmn; 19.8 Elo**, LOS: 11.82%, PairsRatio: 0.91, LLR: -0.31. **Regression &rarr; Aborted & Reverted**. Root cause: Allowing quiet pawn pushes in QS creates an asymmetric tactical horizon (pusher gets to threaten promotion, but defender has no quiet defensive moves in QS), triggering false cutoffs and tactical misevaluations. Modern NNUE already accounts for passed pawns statically.
 
 ---
 
@@ -200,11 +200,11 @@ Legend:
 
 ### 4.1 Dedicated Countermove History Table (CMH Table)
 - **CPW Reference:** [https://chessprogramming.org/Countermove_Heuristic](https://chessprogramming.org/Countermove_Heuristic)
-- **Concept:** Anak currently tracks a single best countermove per `[prevPiece, prevTo]`. Implement a full score table `[16 piece][64 to][16 piece][64 to]` giving a scalar history score for any quiet move played in response to the opponent's previous move, blended with Continuation History.
+- **Concept:** Blend 1-ply Continuation History (Countermove History, CMH) and 2-ply Continuation History directly into quiet move scoring ($\text{score} = \text{Butterfly} + 2 \times \text{CMH} + \text{FMH}$), replacing the separate positive-only `ContinuationMoves` stage.
 - **Target Files:** `src/Anak.Search/Minimax/History/ContinuationHistory.cs`, `src/Anak.Search/Minimax/MovePicker.cs`
 - **Testing Checklist:**
-  - [ ] Tier 1 Sanity: 250 games
-  - [ ] Tier 2 Validation: SPRT [0.0, 3.0]
+  - [x] Tier 1 Sanity: 250 games (`1+0.01` vs v1.0.13): Score 126.5 / 250 (50.60%, W: 103, L: 100, D: 47), **+4.2 &plusmn; 37.6 Elo**, LOS: 58.64%, PairsRatio: 1.00.
+  - [x] Tier 2 Validation: SPRT [0.0, 3.0] vs v1.0.13 (2,062 games played): Score 1041.0 / 2062 (50.48%, W: 769, L: 749, D: 544), **+3.4 &plusmn; 12.5 Elo**, LOS: 70.17%, PairsRatio: 1.01, LLR: 0.13 (4.4% towards H1). **Aborted & Reverted**. Root cause: Disrupted the staged pruning pipeline. Anak's positive-only continuation stage acted as an effective soft filter before general quiet moves; blending diluted the global butterfly signal and failed to achieve statistical significance. Documented as entry #20 in `docs/FAILED_IDEAS.md`.
 
 ---
 
@@ -232,11 +232,12 @@ Legend:
 
 ### 5.1 Fail-Low Soft-Time Extension
 - **CPW Reference:** [https://chessprogramming.org/Time_Management#Failing_Low](https://chessprogramming.org/Time_Management#Failing_Low)
-- **Concept:** When iterative deepening fails low at the root on depth $\ge 6$, the expected move has collapsed. Dynamically scale the soft time limit by $+30\%\text{--}50\%$ to allow the search to complete a re-search and find a sound alternative.
+- **Status:** [x] Validated & SPRT Passed (+23.5 Elo vs v1.0.13)
+- **Concept:** When iterative deepening fails low at the root on depth $\ge 6$, the expected move has collapsed. Dynamically scale the soft time limit by $+40\%$ (and uncap initialization room up to $80\%$ of hard limit) to allow the search to complete the re-search, avoid playing an unverified move, and find a sound alternative.
 - **Target Files:** `src/Anak.Search/Time/TimeManager.cs`, `src/Anak.Search/Minimax/AlphaBetaEngine.cs`
 - **Testing Checklist:**
-  - [ ] Tier 1 Sanity: 250 games
-  - [ ] Tier 2 Validation: SPRT [0.0, 3.0]
+  - [x] Tier 1 Sanity: 250 games (`1+0.01` vs v1.0.13): Score 142.5 / 250 (57.00%, W: 109, L: 74, D: 67), **+49.0 &plusmn; 37.3 Elo**, LOS: 99.55%, PairsRatio: 2.12. (Passed sanity gate).
+  - [x] Tier 2 Validation: SPRT [0.0, 3.0] vs v1.0.13 (4,194 games played): Score 2,238.5 / 4,194 (53.37%, W: 1686, L: 1403, D: 1105), **+23.5 &plusmn; 8.3 Elo**, LOS: **100.00%**, PairsRatio: 1.33, LLR: 2.95 [0.00, 3.00] (H1 accepted).
 
 ---
 

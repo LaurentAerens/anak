@@ -590,6 +590,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             // Fail-low: widen alpha, avoid narrowing beta to prevent oscillations
                             alpha = Math.Max(-Value.InfiniteValue, alpha - delta);
                             delta += delta + delta / 2;
+
+                            // Technique 5.1: Extend time allocation on root fail-low to complete re-search
+                            _engine._timeManager.ExtendForFailLow(currentDepth);
                         }
                         else if (score >= beta)
                         {

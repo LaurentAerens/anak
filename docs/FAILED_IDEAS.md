@@ -8,6 +8,8 @@ This document preserves the hypotheses, match results, root-cause analyses, and 
 
 | Step / Ref | Candidate / Hypothesis | Phase | Match Result / Games | Elo Delta | LOS | Status |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| **v1.0.13 — CPW 4.1** | Dedicated CMH & Blended Quiet Scoring | Move Ordering | 1041.0 / 2062 vs v1.0.13 | **+3.4 &plusmn; 12.5 (Aborted)** | 70.2% | ❌ Reverted (Stagnant) |
+| **v1.0.13 — CPW 3.2** | Advanced Passed Pawn Pushes in QS | Quiescence | 366.0 / 758 vs v1.0.13 | **-11.9 &plusmn; 19.8** | 11.8% | ❌ Reverted |
 | **v1.0.12 — CPW 2.5** | Selective / Restricted Check Extensions | Search Extensions | 113.0 / 250 vs v1.0.12 | **-33.5 &plusmn; 36.1** | 3.3% | ❌ Reverted |
 | **v1.0.12 — CPW 2.4** | Passed Pawn Push Extensions (+1 ply rank 6/7) | Search Extensions | 1492.0 / 3094 vs v1.0.12 | **-12.4 &plusmn; 10.8** | 0.8% | ❌ Reverted |
 | **v1.0.12 — CPW 2.3** | One-Reply / Forced Move Extensions | Search Extensions | 110.5 / 250 vs v1.0.12 | **-40.5 &plusmn; 37.8** | 1.7% | ❌ Reverted |
@@ -263,3 +265,30 @@ This document preserves the hypotheses, match results, root-cause analyses, and 
   1. **Scout / Cut-Node Premature Cutoffs & Inaccuracy:** In modern PVS engines, over 90% of searches occur at non-PV nodes using null-window scout searches (`[alpha, alpha + 1]`). When non-PV check extensions are disabled, scout searches reach leaf/quiescence depth 1 ply earlier. If the opponent delivers a series of checks, the scout search fails to see the refutation (or erroneously evaluates an escape as winning), leading to either false cutoffs or expensive re-search storms when PV verification is forced.
   2. **Tactical Depth Deficit:** In complex mating or forcing check situations, 1 ply of depth is decisive. Blanket check extensions (`if (inCheck) depth++`) remain the gold standard in Anak for maintaining complete tactical vision across all branches.
 - **Revisit Conditions:** Retain baseline blanket check extensions (`if (inCheck && depth < MaxSearchDepth) depth++;`). Only revisit if combined with comprehensive evasion tree searching and tactical check generation in Quiescence Search.
+
+---
+
+### 19. Advanced Passed Pawn Pushes in Quiescence Search (-11.9 Elo)
+- **Technique:** Section 3.2 in `docs/CPW_TECHNIQUES_TRACKER.md`.
+- **Hypothesis:** Generating and searching quiet pawn pushes advancing to the 7th rank (for White) or 2nd rank (for Black) at the QS root (`qsDepth == 0`) with non-negative SEE (`see >= 0`) will resolve immediate promotion threats at leaf nodes and avoid horizon effect blunders.
+- **Match Results:**
+  - *Tier 1 Sanity (250 games at `1+0.01` vs v1.0.13):* Score 126.0 / 250 (50.40%, W: 101, L: 99, D: 50), **+2.8 &plusmn; 31.9 Elo**, LOS: 56.81%, PairsRatio: 1.10.
+  - *Tier 2 SPRT Validation (758 games at `1+0.01` vs v1.0.13):* Score 366.0 / 758 (48.28%, W: 279, L: 305, D: 174), **-11.9 &plusmn; 19.8 Elo**, LOS: 11.82%, PairsRatio: 0.91, LLR: -0.31. **Regression &rarr; Aborted & Reverted**.
+- **Root Cause:**
+  1. **Asymmetric Tactical Horizon in QS:** In Quiescence Search, move generation is strictly limited to captures and promotions (and checks at QS root). When an advanced quiet pawn push to the 7th rank is searched in QS, the pusher gets an extra ply to threaten promotion, but the defending side only has captures and check evasions available in QS—they cannot play quiet blockading or defensive moves (e.g. `...Kd7`, `...Rd8`, or `...Bc8`).
+  2. **False Cutoffs & Premature Fail-Highs:** Because the defender is starved of quiet defensive resources in QS, the engine erroneously assumes the pawn will promote cleanly on the next ply, creating false fail-high cutoffs and over-optimistic evaluations on lines where the opponent easily refutes or rounds up the pawn on the actual board.
+  3. **Redundancy with Multi-Tier NNUE:** Modern NNUE evaluation already heavily prioritizes passed pawns and proximity to queening statically without needing speculative quiet moves in Quiescence Search.
+- **Revisit Conditions:** Quiescence search should strictly remain restricted to captures, promotions, and checks. Permanently retired.
+
+---
+
+### 20. Dedicated Countermove History Table & Blended Quiet Move Scoring (+3.4 Elo — Stagnant / Flat)
+- **Technique:** Section 4.1 in `docs/CPW_TECHNIQUES_TRACKER.md`.
+- **Hypothesis:** Blending 1-ply Continuation History (Countermove History, CMH, $2\times$ weight) and 2-ply Continuation History (Followup History, FMH) directly into quiet move scoring ($\text{score} = \text{Butterfly} + 2 \times \text{CMH} + \text{FMH}$) and removing the standalone positive-only `ContinuationMoves` stage will eliminate redundant move-picker loops and improve quiet move ordering quality.
+- **Match Results:**
+  - *Tier 1 Sanity (250 games at `1+0.01` vs v1.0.13):* Score 126.5 / 250 (50.60%, W: 103, L: 100, D: 47), **+4.2 &plusmn; 37.6 Elo**, LOS: 58.64%, PairsRatio: 1.00. (Passed sanity gate).
+  - *Tier 2 Validation SPRT (2,062 games at `1+0.01` vs v1.0.13):* Score 1041.0 / 2062 (50.48%, W: 769, L: 749, D: 544), **+3.4 &plusmn; 12.5 Elo**, LOS: 70.17%, PairsRatio: 1.01, LLR: 0.13 (4.4% towards H1). **Aborted & Reverted**.
+- **Root Cause:**
+  1. **Disruption of Staged Pruning Pipeline:** Anak's move picker was carefully tuned around a strict staged sequence: TT Move -> Good Captures -> Killer 0/1 -> Countermove -> Positive Continuation Moves -> Butterfly Quiets -> Bad Captures. Trying all positive continuation moves first before ANY negative/neutral continuation quiet moves provided an effective soft-stage filter that allowed high-probability tactical responses to fail high early without computing full linear combinations for all 30+ quiet moves.
+  2. **Dilution of Butterfly History Signal:** Butterfly history tracks global square-to-square move quality across the entire tree, while 1-ply continuation history is sparse and highly context-dependent. Giving 1-ply continuation $2\times$ weight promoted moves that were successful in isolated branches but strategically terrible in the current position, displacing well-established butterfly killer moves.
+- **Revisit Conditions:** Only revisit if continuation history tables are tuned with continuous SPSA weights or normalized relative to history sample counts (Technique 4.2).

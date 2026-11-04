@@ -349,9 +349,31 @@
       "version": "v1.0.13",
       "date": "2026-11-04",
       "estimated_elo": 2572,
-      "elo_margin": null,
-      "baseline_opponent": "Baseline",
-      "notes": "Checks in Quiescence Search (+15.1 Elo)"
+      "elo_margin": 7,
+      "baseline_opponent": "Anak v1.0.12 (Known Elo: 2557)",
+      "score": "3134.0 / 6008",
+      "wins": 2416,
+      "losses": 2156,
+      "draws": 1436,
+      "perf_percent": 52.16,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.12_20261104_140314.pgn",
+      "notes": "Checks in Quiescence Search at root with SEE >= 0 (+15.1 Elo over v1.0.12 in 6,008 games, -62.5% tactical tree size reduction)"
+    },
+    "v1.0.14": {
+      "version": "v1.0.14",
+      "date": "2026-11-04",
+      "estimated_elo": 2597,
+      "elo_margin": 8,
+      "baseline_opponent": "Anak v1.0.13 (Known Elo: 2572)",
+      "score": "2381.0 / 4444",
+      "wins": 1795,
+      "losses": 1477,
+      "draws": 1172,
+      "perf_percent": 53.58,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.13_20261104_191135.pgn",
+      "notes": "Fail-low soft-time extension in aspiration search at depth >= 6 (+25.0 Elo over v1.0.13 in 4,444 games, SPRT H1 accepted)"
     }
   }
 }

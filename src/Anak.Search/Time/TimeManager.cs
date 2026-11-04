@@ -14,6 +14,7 @@ public sealed class TimeManager
     private long _hardLimitMs;
     private long _baseSoftLimitMs;
     private long _baseHardLimitMs;
+    private long _maxAllowedMs;
     private bool _hasTimeLimit;
     private Move _lastBestMove = Move.Null;
     private int _stableMoveDepths;
@@ -117,6 +118,7 @@ public sealed class TimeManager
             _hardLimitMs = long.MaxValue;
             _baseSoftLimitMs = long.MaxValue;
             _baseHardLimitMs = long.MaxValue;
+            _maxAllowedMs = long.MaxValue;
             return;
         }
 
@@ -127,6 +129,7 @@ public sealed class TimeManager
             _hardLimitMs = limits.MoveTime;
             _baseSoftLimitMs = _softLimitMs;
             _baseHardLimitMs = _hardLimitMs;
+            _maxAllowedMs = limits.MoveTime;
             CheckMask = _hardLimitMs < 100 ? 63UL : (_hardLimitMs < 250 ? 127UL : 1023UL);
             return;
         }
@@ -143,6 +146,7 @@ public sealed class TimeManager
                 _hardLimitMs = 3000;
                 _baseSoftLimitMs = _softLimitMs;
                 _baseHardLimitMs = _hardLimitMs;
+                _maxAllowedMs = 3000;
                 return;
             }
 
@@ -151,6 +155,7 @@ public sealed class TimeManager
             _hardLimitMs = long.MaxValue;
             _baseSoftLimitMs = long.MaxValue;
             _baseHardLimitMs = long.MaxValue;
+            _maxAllowedMs = long.MaxValue;
             return;
         }
 
@@ -163,6 +168,7 @@ public sealed class TimeManager
         {
             long overhead = Math.Clamp(remainingTime / 3, 25, 45);
             long maxLow = Math.Max(5, remainingTime - overhead);
+            _maxAllowedMs = maxLow;
             _hardLimitMs = Math.Clamp(remainingTime / 2, 5, maxLow);
             // Crucial: soft limit must NEVER equal hard limit!
             // Give soft limit 50% of hard limit so iterative deepening NEVER launches an iteration
@@ -188,16 +194,16 @@ public sealed class TimeManager
 
         // Soft limit is the ideal allocation per move
         long maxAllowed = Math.Max(5, remainingTime - safetyLag);
+        _maxAllowedMs = maxAllowed;
         _softLimitMs = Math.Clamp(allocated, 5, maxAllowed);
 
-        // Hard limit: allow up to 1.7x soft limit, strictly capped by remaining time - safety lag
-        float hardMultiplier = remainingTime < 2000 ? 1.3f : 1.7f;
+        // Hard limit: allow up to 1.8x soft limit (or 1.5x in bullet), strictly capped by remaining time - safety lag
+        float hardMultiplier = remainingTime < 2000 ? 1.5f : 1.8f;
         long targetHard = (long)(_softLimitMs * hardMultiplier);
         _hardLimitMs = Math.Clamp(targetHard, _softLimitMs, maxAllowed);
 
-        // Crucial safety guarantee: soft limit must never exceed 75% of hard limit,
-        // leaving a 25% safety buffer so that completing an iteration never overflows the clock!
-        _softLimitMs = Math.Min(_softLimitMs, Math.Max(5, (long)(_hardLimitMs * 0.75f)));
+        // Soft limit starts at 65% of hard limit, leaving headroom to expand up to 80% on fail-low / instability
+        _softLimitMs = Math.Min(_softLimitMs, Math.Max(5, (long)(_hardLimitMs * 0.65f)));
         _baseSoftLimitMs = _softLimitMs;
         _baseHardLimitMs = _hardLimitMs;
 
@@ -238,10 +244,10 @@ public sealed class TimeManager
         }
         else
         {
-            // Move flipped late in search (depth >= 8) with prior confidence: extend time, capped at 75% of hard limit
+            // Move flipped late in search (depth >= 8) with prior confidence: extend time, capped at 80% of hard limit
             if (depth >= 8 && _stableMoveDepths >= 2)
             {
-                long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.75f));
+                long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
                 _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.5f), 5, maxSoft);
             }
             _lastBestMove = currentBest;
@@ -256,16 +262,35 @@ public sealed class TimeManager
     }
 
     /// <summary>
-    /// Extends soft time limit up to 1.3x (strictly capped by 75% of hard limit) when evaluation drops sharply.
+    /// Extends soft time limit up to 1.3x (strictly capped by 80% of hard limit) when evaluation drops sharply.
     /// </summary>
     public void HandleScoreDrop(int currentScore, int prevScore, int depth)
     {
         if (!_hasTimeLimit || depth < 6) return;
         if (Math.Abs(prevScore) < Value.MateValue - 100 && currentScore < prevScore - ScoreDropThreshold)
         {
-            long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.75f));
+            long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
             _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.3f), 5, maxSoft);
         }
+    }
+
+    /// <summary>
+    /// Extends time budget when an aspiration search fails low at the root on depth >= 6.
+    /// Scales soft limit up to 1.4x (capped by 80% of hard limit) and expands hard limit if clock allows.
+    /// </summary>
+    public void ExtendForFailLow(int depth)
+    {
+        if (!_hasTimeLimit || depth < 6 || IsTimeCrunch) return;
+
+        // Allow hard limit to expand up to 2.2x base soft limit within maxAllowed
+        if (_maxAllowedMs > _hardLimitMs)
+        {
+            long potentialHard = (long)(_baseSoftLimitMs * 2.2f);
+            _hardLimitMs = Math.Clamp(potentialHard, _hardLimitMs, _maxAllowedMs);
+        }
+
+        long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
+        _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.4f), 5, maxSoft);
     }
 
     /// <summary>
