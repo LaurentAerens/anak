@@ -374,6 +374,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.13_20261104_191135.pgn",
       "notes": "Fail-low soft-time extension in aspiration search at depth >= 6 (+25.0 Elo over v1.0.13 in 4,444 games, SPRT H1 accepted)"
+    },
+    "v1.0.15": {
+      "version": "v1.0.15",
+      "date": "2026-11-06",
+      "estimated_elo": 2599,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.14 (Known Elo: 2597)",
+      "score": "4028.5 / 8000",
+      "wins": 3001,
+      "losses": 2944,
+      "draws": 2055,
+      "perf_percent": 50.36,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.14_20261106_094420.pgn",
+      "notes": "SPSA-tuned Dynamic Time Management across 52,352 games (+2.5 Elo / +3.14 nElo over v1.0.14 in 8,000 games, 79.1% LOS)"
     }
   }
 }

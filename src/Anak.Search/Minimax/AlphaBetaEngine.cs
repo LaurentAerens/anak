@@ -201,6 +201,54 @@ public sealed class AlphaBetaEngine : ISearchEngine
         set => _timeManager.MicroEqualWeight = value / 100.0f;
     }
 
+    public int TimeMovesToGo
+    {
+        get => _timeManager.TimeMovesToGo;
+        set => _timeManager.TimeMovesToGo = value;
+    }
+
+    public int TimeIncFactor
+    {
+        get => _timeManager.TimeIncFactor;
+        set => _timeManager.TimeIncFactor = value;
+    }
+
+    public int TimeHardMultiplier
+    {
+        get => _timeManager.TimeHardMultiplier;
+        set => _timeManager.TimeHardMultiplier = value;
+    }
+
+    public int TimeSoftHardRatio
+    {
+        get => _timeManager.TimeSoftHardRatio;
+        set => _timeManager.TimeSoftHardRatio = value;
+    }
+
+    public int TimeFlipScale
+    {
+        get => _timeManager.TimeFlipScale;
+        set => _timeManager.TimeFlipScale = value;
+    }
+
+    public int TimeStableScale
+    {
+        get => _timeManager.TimeStableScale;
+        set => _timeManager.TimeStableScale = value;
+    }
+
+    public int TimeScoreDropScale
+    {
+        get => _timeManager.TimeScoreDropScale;
+        set => _timeManager.TimeScoreDropScale = value;
+    }
+
+    public int TimeFailLowScale
+    {
+        get => _timeManager.TimeFailLowScale;
+        set => _timeManager.TimeFailLowScale = value;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetLmrReduction(int depth, int moveIndex)
     {

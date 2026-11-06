@@ -297,6 +297,14 @@ public sealed class UciOptionRegistry
     public SpinOption MicroDepthGate { get; }
     public SpinOption MicroAheadWeight { get; }
     public SpinOption MicroEqualWeight { get; }
+    public SpinOption TimeMovesToGo { get; }
+    public SpinOption TimeIncFactor { get; }
+    public SpinOption TimeHardMultiplier { get; }
+    public SpinOption TimeSoftHardRatio { get; }
+    public SpinOption TimeFlipScale { get; }
+    public SpinOption TimeStableScale { get; }
+    public SpinOption TimeScoreDropScale { get; }
+    public SpinOption TimeFailLowScale { get; }
     public StringOption ExpertRouteOrder { get; }
     public SpinOption ExpertEndgameMaxPieces { get; }
     public SpinOption ExpertImbalanceMargin { get; }
@@ -326,7 +334,7 @@ public sealed class UciOptionRegistry
         ConthistReward = new SpinOption("ConthistReward", defaultValue: 2611, min: 500, max: 6000);
         ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3805, min: 1000, max: 8000);
         HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2130, min: 500, max: 5000);
-        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 46, min: 10, max: 150);
+        ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 45, min: 10, max: 150);
         RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 111, min: 100, max: 250);
         SingularMargin = new SpinOption("SingularMargin", defaultValue: 6, min: 1, max: 8);
         QsDeltaMargin = new SpinOption("QsDeltaMargin", defaultValue: 188, min: 50, max: 500);
@@ -339,6 +347,14 @@ public sealed class UciOptionRegistry
         MicroDepthGate = new SpinOption("MicroDepthGate", defaultValue: 85, min: 50, max: 100);
         MicroAheadWeight = new SpinOption("MicroAheadWeight", defaultValue: 100, min: 25, max: 200);
         MicroEqualWeight = new SpinOption("MicroEqualWeight", defaultValue: 73, min: 25, max: 150);
+        TimeMovesToGo = new SpinOption("TimeMovesToGo", defaultValue: 38, min: 15, max: 65);
+        TimeIncFactor = new SpinOption("TimeIncFactor", defaultValue: 73, min: 20, max: 100);
+        TimeHardMultiplier = new SpinOption("TimeHardMultiplier", defaultValue: 181, min: 110, max: 260);
+        TimeSoftHardRatio = new SpinOption("TimeSoftHardRatio", defaultValue: 60, min: 40, max: 80);
+        TimeFlipScale = new SpinOption("TimeFlipScale", defaultValue: 150, min: 105, max: 250);
+        TimeStableScale = new SpinOption("TimeStableScale", defaultValue: 75, min: 40, max: 100);
+        TimeScoreDropScale = new SpinOption("TimeScoreDropScale", defaultValue: 131, min: 105, max: 220);
+        TimeFailLowScale = new SpinOption("TimeFailLowScale", defaultValue: 140, min: 105, max: 230);
 
         // NNUE expert routing (tunable; defaults set to SPSA tuned parameters)
         ExpertRouteOrder = new StringOption("ExpertRouteOrder", defaultValue: "EQIA");
@@ -381,6 +397,14 @@ public sealed class UciOptionRegistry
         Register(MicroDepthGate);
         Register(MicroAheadWeight);
         Register(MicroEqualWeight);
+        Register(TimeMovesToGo);
+        Register(TimeIncFactor);
+        Register(TimeHardMultiplier);
+        Register(TimeSoftHardRatio);
+        Register(TimeFlipScale);
+        Register(TimeStableScale);
+        Register(TimeScoreDropScale);
+        Register(TimeFailLowScale);
         Register(ExpertRouteOrder);
         Register(ExpertEndgameMaxPieces);
         Register(ExpertImbalanceMargin);

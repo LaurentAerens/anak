@@ -114,7 +114,7 @@ DEFAULT_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="ScoreDropThreshold",
-        default=46.0,
+        default=45.0,
         min_val=15.0,
         max_val=120.0,
         c=4.0,
@@ -322,50 +322,84 @@ BATCH_B_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
-# Batch B, C, D Hidden Parameters Suite
-BATCH_BCD_PARAMETERS: List[SpsaParam] = BATCH_B_PARAMETERS + [
-
-    # Batch C: Dynamic Time Management
+# Batch C: Dynamic Time Management Parameters
+TIME_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
         name="TimeMovesToGo",
-        default=40.0,
+        default=38.0,
         min_val=15.0,
-        max_val=60.0,
+        max_val=65.0,
         c=3.0,
         a=75.0,
     ),
     SpsaParam(
         name="TimeIncFactor",
-        default=70.0,
-        min_val=20.0,
+        default=73.0,
+        min_val=25.0,
         max_val=100.0,
         c=5.0,
         a=120.0,
     ),
     SpsaParam(
         name="TimeHardMultiplier",
-        default=170.0,
-        min_val=110.0,
-        max_val=250.0,
-        c=10.0,
-        a=250.0,
+        default=181.0,
+        min_val=120.0,
+        max_val=260.0,
+        c=8.0,
+        a=200.0,
     ),
     SpsaParam(
-        name="TimeStableScale",
-        default=80.0,
+        name="TimeSoftHardRatio",
+        default=60.0,
         min_val=40.0,
-        max_val=100.0,
-        c=6.0,
-        a=150.0,
+        max_val=80.0,
+        c=4.0,
+        a=100.0,
     ),
     SpsaParam(
         name="TimeFlipScale",
-        default=180.0,
-        min_val=110.0,
-        max_val=250.0,
-        c=10.0,
-        a=250.0,
+        default=150.0,
+        min_val=105.0,
+        max_val=240.0,
+        c=8.0,
+        a=200.0,
     ),
+    SpsaParam(
+        name="TimeStableScale",
+        default=75.0,
+        min_val=45.0,
+        max_val=100.0,
+        c=5.0,
+        a=120.0,
+    ),
+    SpsaParam(
+        name="TimeScoreDropScale",
+        default=131.0,
+        min_val=105.0,
+        max_val=210.0,
+        c=7.0,
+        a=170.0,
+    ),
+    SpsaParam(
+        name="TimeFailLowScale",
+        default=140.0,
+        min_val=105.0,
+        max_val=220.0,
+        c=7.0,
+        a=170.0,
+    ),
+    SpsaParam(
+        name="ScoreDropThreshold",
+        default=45.0,
+        min_val=15.0,
+        max_val=120.0,
+        c=4.0,
+        a=100.0,
+    ),
+]
+
+# Batch B, C, D Hidden Parameters Suite
+BATCH_BCD_PARAMETERS: List[SpsaParam] = BATCH_B_PARAMETERS + [p for p in TIME_PARAMETERS if p.name != "ScoreDropThreshold"] + [
 
     # Batch D: Search & Pruning Thresholds
     SpsaParam(
@@ -500,17 +534,24 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
     if "CorrHistDivisor" in params:
         lines.append(f"public const int TunedCorrHistDivisor = {int(round(params['CorrHistDivisor']))};")
 
-    # Batch C
-    if "TimeMovesToGo" in params:
-        lines.append(f"public const int TunedTimeMovesToGo = {int(round(params['TimeMovesToGo']))};")
-    if "TimeIncFactor" in params:
-        lines.append(f"public const int TunedTimeIncFactor = {int(round(params['TimeIncFactor']))};")
-    if "TimeHardMultiplier" in params:
-        lines.append(f"public const int TunedTimeHardMultiplier = {int(round(params['TimeHardMultiplier']))};")
-    if "TimeStableScale" in params:
-        lines.append(f"public const int TunedTimeStableScale = {int(round(params['TimeStableScale']))};")
-    if "TimeFlipScale" in params:
-        lines.append(f"public const int TunedTimeFlipScale = {int(round(params['TimeFlipScale']))};")
+    # Batch C / TimeManager
+    time_keys = [
+        "ScoreDropThreshold",
+        "TimeMovesToGo",
+        "TimeIncFactor",
+        "TimeHardMultiplier",
+        "TimeSoftHardRatio",
+        "TimeFlipScale",
+        "TimeStableScale",
+        "TimeScoreDropScale",
+        "TimeFailLowScale",
+    ]
+    if any(k in params for k in time_keys):
+        lines.append("")
+        lines.append("// In src/Anak.Search/Time/TimeManager.cs:")
+        for k in time_keys:
+            if k in params:
+                lines.append(f"public int {k} {{ get; set; }} = {int(round(params[k]))};")
 
     # Batch D
     if "FutilityMarginD1D2" in params:
@@ -536,10 +577,6 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
     if "QsCheckDepth" in params:
         lines.append(f"public const int TunedQsCheckDepth = {int(round(params['QsCheckDepth']))};")
 
-    if "ScoreDropThreshold" in params:
-        lines.append("")
-        lines.append("// In src/Anak.Search/Time/TimeManager.cs:")
-        lines.append(f"public int ScoreDropThreshold {{ get; set; }} = {int(round(params['ScoreDropThreshold']))};")
     lines.append("// =========================================================================")
     return "\n".join(lines)
 
@@ -966,8 +1003,8 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["core", "b", "search", "bcd", "all", "micro", "weakness", "history_pruning"], default="core",
-                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for 3 history/pawn correction dynamics, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation, 'history_pruning' for HistoryPruningThreshold)")
+    parser.add_argument("--batch", type=str, choices=["core", "b", "time", "search", "bcd", "all", "micro", "weakness", "history_pruning"], default="core",
+                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for 3 history/pawn correction dynamics, 'time' for 9 dynamic time management constants, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation, 'history_pruning' for HistoryPruningThreshold)")
     parser.add_argument("--param", type=str, default=None, help="Tune a single parameter by name (e.g. --param HistoryPruningThreshold)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
@@ -997,6 +1034,8 @@ def main():
         param_set = CORE_PARAMETERS
     elif args.batch == "b":
         param_set = BATCH_B_PARAMETERS
+    elif args.batch == "time":
+        param_set = TIME_PARAMETERS
     elif args.batch == "bcd":
         param_set = BATCH_BCD_PARAMETERS
     elif args.batch == "search":

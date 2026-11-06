@@ -29,7 +29,17 @@ public sealed class TimeManager
     public bool HasTimeLimit => _hasTimeLimit;
     public bool IsTimeCrunch => _hasTimeLimit && (_softLimitMs < 20 || _hardLimitMs < 35);
     public int StableMoveDepths => _stableMoveDepths;
-    public int ScoreDropThreshold { get; set; } = 46;
+    public int ScoreDropThreshold { get; set; } = 45;
+
+    // SPSA-tuned Dynamic Time Management parameters (converged across 52,352 games)
+    public int TimeMovesToGo { get; set; } = 38;
+    public int TimeIncFactor { get; set; } = 73;
+    public int TimeHardMultiplier { get; set; } = 181;
+    public int TimeSoftHardRatio { get; set; } = 60;
+    public int TimeFlipScale { get; set; } = 150;
+    public int TimeStableScale { get; set; } = 75;
+    public int TimeScoreDropScale { get; set; } = 131;
+    public int TimeFailLowScale { get; set; } = 140;
 
     // SPSA-tuned parameters for dynamic Micro budgeting (converged across 2,400 games)
     public float MicroMaxShare { get; set; } = 0.06f; // Max 6% of soft limit
@@ -180,11 +190,11 @@ public sealed class TimeManager
             return;
         }
 
-        // Calculate expected moves remaining in the game (default 40 for balanced game pacing)
-        int movesToGo = limits.MovesToGo > 0 ? Math.Clamp(limits.MovesToGo, 2, 50) : 40;
+        // Calculate expected moves remaining in the game (default TimeMovesToGo for balanced game pacing)
+        int movesToGo = limits.MovesToGo > 0 ? Math.Clamp(limits.MovesToGo, 2, 50) : TimeMovesToGo;
 
-        // Dynamic target allocation: (time / moves) + (7/10 * inc)
-        long allocated = (remainingTime / movesToGo) + ((long)increment * 7 / 10);
+        // Dynamic target allocation: (time / moves) + (TimeIncFactor% * inc)
+        long allocated = (remainingTime / movesToGo) + ((long)increment * TimeIncFactor / 100);
 
         // If time is low relative to increment, preserve clock by budgeting within increment
         if (increment > 0 && remainingTime < increment * 3)
@@ -197,13 +207,13 @@ public sealed class TimeManager
         _maxAllowedMs = maxAllowed;
         _softLimitMs = Math.Clamp(allocated, 5, maxAllowed);
 
-        // Hard limit: allow up to 1.8x soft limit (or 1.5x in bullet), strictly capped by remaining time - safety lag
-        float hardMultiplier = remainingTime < 2000 ? 1.5f : 1.8f;
+        // Hard limit: allow up to TimeHardMultiplier% soft limit (or 1.5x in bullet), strictly capped by remaining time - safety lag
+        float hardMultiplier = remainingTime < 2000 ? 1.5f : (TimeHardMultiplier / 100.0f);
         long targetHard = (long)(_softLimitMs * hardMultiplier);
         _hardLimitMs = Math.Clamp(targetHard, _softLimitMs, maxAllowed);
 
-        // Soft limit starts at 65% of hard limit, leaving headroom to expand up to 80% on fail-low / instability
-        _softLimitMs = Math.Min(_softLimitMs, Math.Max(5, (long)(_hardLimitMs * 0.65f)));
+        // Soft limit starts at TimeSoftHardRatio% of hard limit, leaving headroom to expand up to 80% on fail-low / instability
+        _softLimitMs = Math.Min(_softLimitMs, Math.Max(5, (long)(_hardLimitMs * (TimeSoftHardRatio / 100.0f))));
         _baseSoftLimitMs = _softLimitMs;
         _baseHardLimitMs = _hardLimitMs;
 
@@ -248,21 +258,21 @@ public sealed class TimeManager
             if (depth >= 8 && _stableMoveDepths >= 2)
             {
                 long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
-                _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.5f), 5, maxSoft);
+                _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeFlipScale / 100.0f)), 5, maxSoft);
             }
             _lastBestMove = currentBest;
             _stableMoveDepths = 1;
         }
 
-        // Highly stable move (stable for >= 4 depths): scale back allocation to 0.8x to conserve clock
+        // Highly stable move (stable for >= 4 depths): scale back allocation to TimeStableScale% to conserve clock
         if (_stableMoveDepths >= 4)
         {
-            _softLimitMs = Math.Max(10, (long)(_baseSoftLimitMs * 0.8f));
+            _softLimitMs = Math.Max(10, (long)(_baseSoftLimitMs * (TimeStableScale / 100.0f)));
         }
     }
 
     /// <summary>
-    /// Extends soft time limit up to 1.3x (strictly capped by 80% of hard limit) when evaluation drops sharply.
+    /// Extends soft time limit up to TimeScoreDropScale% (strictly capped by 80% of hard limit) when evaluation drops sharply.
     /// </summary>
     public void HandleScoreDrop(int currentScore, int prevScore, int depth)
     {
@@ -270,13 +280,13 @@ public sealed class TimeManager
         if (Math.Abs(prevScore) < Value.MateValue - 100 && currentScore < prevScore - ScoreDropThreshold)
         {
             long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
-            _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.3f), 5, maxSoft);
+            _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeScoreDropScale / 100.0f)), 5, maxSoft);
         }
     }
 
     /// <summary>
     /// Extends time budget when an aspiration search fails low at the root on depth >= 6.
-    /// Scales soft limit up to 1.4x (capped by 80% of hard limit) and expands hard limit if clock allows.
+    /// Scales soft limit up to TimeFailLowScale% (capped by 80% of hard limit) and expands hard limit if clock allows.
     /// </summary>
     public void ExtendForFailLow(int depth)
     {
@@ -290,7 +300,7 @@ public sealed class TimeManager
         }
 
         long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
-        _softLimitMs = Math.Clamp((long)(_softLimitMs * 1.4f), 5, maxSoft);
+        _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeFailLowScale / 100.0f)), 5, maxSoft);
     }
 
     /// <summary>

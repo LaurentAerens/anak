@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.14` (Estimated Rating: **2597 Elo**)  
+> **Current Active Version:** `v1.0.15` (Estimated Rating: **2599 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,18 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.15` (2026-11-06) — SPSA-Tuned Dynamic Time Management (+2.5 Elo)
+- **Category:** Search / Time Management (Patch Release)
+- **Baseline Opponent:** Anak v1.0.14 (Known Elo: 2597)
+- **Match Result:** 4,028.5 / 8,000 (50.36%) vs v1.0.14 @ 1+0.01 (3,001 W / 2,944 L / 2,055 D)
+- **Elo Delta:** **+2.5 &plusmn; 6.0 Elo** (**+3.14 &plusmn; 7.61 nElo**, LOS: **79.1%**)
+- **Estimated Elo:** **2599 &plusmn; 6**
+- **Highlights:**
+  - **Exposed & Tuned 9 Dynamic Time Management Parameters:** Wired core clock-allocation constants (`TimeMovesToGo`, `TimeIncFactor`, `TimeHardMultiplier`, `TimeSoftHardRatio`, `TimeFlipScale`, `TimeStableScale`, `TimeScoreDropScale`, `TimeFailLowScale`, `ScoreDropThreshold`) across `TimeManager`, `AlphaBetaEngine`, `UciOption`, and the SPSA tuning harness (`--batch time`).
+  - **52,352-Game SPSA Convergence (818 Steps $\times$ 64 Games):** Converged on a tighter initial soft-to-hard ratio (`65%` &rarr; `60%`) and stronger stable-move time conservation (`80%` &rarr; `75%` after $\ge 4$ stable depths), paired with faster base pacing (`TimeMovesToGo: 40` &rarr; `38`) and higher increment utilization (`TimeIncFactor: 70%` &rarr; `73%`).
+
+---
 
 ### `v1.0.14` (2026-11-04) — Fail-Low Soft-Time Extension (+25.0 Elo)
 - **Category:** Search / Time Management (Patch Release)

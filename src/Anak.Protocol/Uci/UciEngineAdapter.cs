@@ -162,6 +162,14 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.MicroDepthGate = _options.MicroDepthGate.Value;
         _alphaBetaEngine.MicroAheadWeight = _options.MicroAheadWeight.Value;
         _alphaBetaEngine.MicroEqualWeight = _options.MicroEqualWeight.Value;
+        _alphaBetaEngine.TimeMovesToGo = _options.TimeMovesToGo.Value;
+        _alphaBetaEngine.TimeIncFactor = _options.TimeIncFactor.Value;
+        _alphaBetaEngine.TimeHardMultiplier = _options.TimeHardMultiplier.Value;
+        _alphaBetaEngine.TimeSoftHardRatio = _options.TimeSoftHardRatio.Value;
+        _alphaBetaEngine.TimeFlipScale = _options.TimeFlipScale.Value;
+        _alphaBetaEngine.TimeStableScale = _options.TimeStableScale.Value;
+        _alphaBetaEngine.TimeScoreDropScale = _options.TimeScoreDropScale.Value;
+        _alphaBetaEngine.TimeFailLowScale = _options.TimeFailLowScale.Value;
 
         _options.LmrBase.ValueChanged += val => _alphaBetaEngine.LmrBase = val;
         _options.LmrDivision.ValueChanged += val => _alphaBetaEngine.LmrDivision = val;
@@ -184,6 +192,14 @@ public sealed class UciEngineAdapter
         _options.MicroDepthGate.ValueChanged += val => _alphaBetaEngine.MicroDepthGate = val;
         _options.MicroAheadWeight.ValueChanged += val => _alphaBetaEngine.MicroAheadWeight = val;
         _options.MicroEqualWeight.ValueChanged += val => _alphaBetaEngine.MicroEqualWeight = val;
+        _options.TimeMovesToGo.ValueChanged += val => _alphaBetaEngine.TimeMovesToGo = val;
+        _options.TimeIncFactor.ValueChanged += val => _alphaBetaEngine.TimeIncFactor = val;
+        _options.TimeHardMultiplier.ValueChanged += val => _alphaBetaEngine.TimeHardMultiplier = val;
+        _options.TimeSoftHardRatio.ValueChanged += val => _alphaBetaEngine.TimeSoftHardRatio = val;
+        _options.TimeFlipScale.ValueChanged += val => _alphaBetaEngine.TimeFlipScale = val;
+        _options.TimeStableScale.ValueChanged += val => _alphaBetaEngine.TimeStableScale = val;
+        _options.TimeScoreDropScale.ValueChanged += val => _alphaBetaEngine.TimeScoreDropScale = val;
+        _options.TimeFailLowScale.ValueChanged += val => _alphaBetaEngine.TimeFailLowScale = val;
 
         // Initialize board to standard start position
         _board = Fen.Parse(Fen.StartPosition);
