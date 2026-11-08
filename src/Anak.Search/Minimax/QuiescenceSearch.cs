@@ -57,6 +57,14 @@ public sealed class QuiescenceSearch
             return 0;
         }
 
+        if (qsDepth > 0 && board.HalfmoveClock >= 4)
+        {
+            if (board.IsFiftyMoveRule() || board.IsRepetition(ply))
+            {
+                return 0;
+            }
+        }
+
         ulong key = board.ZobristKey;
         int originalAlpha = alpha;
         Move bestMove = Move.Null;
@@ -248,11 +256,5 @@ public sealed class QuiescenceSearch
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool GivesCheck(ref Board board, Move m)
-    {
-        board.MakeMove(m, out BoardState state);
-        bool check = board.IsInCheck();
-        board.UnmakeMove(m, in state);
-        return check;
-    }
+    private static bool GivesCheck(ref Board board, Move m) => board.GivesCheck(m);
 }

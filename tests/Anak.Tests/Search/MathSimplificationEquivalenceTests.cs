@@ -110,6 +110,41 @@ public class MathSimplificationEquivalenceTests
         ulong SearchNodes);
 
     [Fact]
+    public void VerifyGivesCheckEquivalence()
+    {
+        for (int i = 0; i < SuitePositions.Length; i++)
+        {
+            string fen = SuitePositions[i];
+            Board board = Fen.Parse(fen);
+            MoveList legalMoves = default;
+            MoveGenerator.GenerateLegalMoves(in board, ref legalMoves);
+
+            for (int m = 0; m < legalMoves.Count; m++)
+            {
+                Move mv = legalMoves[m];
+                bool fast = board.GivesCheck(mv);
+
+                Board next = board;
+                next.MakeMove(mv, out _);
+                bool expected = next.IsInCheck();
+                Assert.True(fast == expected, $"Pos {i} ({fen}) move {mv.ToUci()}: GivesCheck={fast}, expected={expected}");
+
+                MoveList replyMoves = default;
+                MoveGenerator.GenerateLegalMoves(in next, ref replyMoves);
+                for (int r = 0; r < replyMoves.Count; r++)
+                {
+                    Move rmv = replyMoves[r];
+                    bool rFast = next.GivesCheck(rmv);
+                    Board next2 = next;
+                    next2.MakeMove(rmv, out _);
+                    bool rExpected = next2.IsInCheck();
+                    Assert.True(rFast == rExpected, $"Pos {i} ({fen}) after {mv.ToUci()} reply {rmv.ToUci()}: GivesCheck={rFast}, expected={rExpected}");
+                }
+            }
+        }
+    }
+
+    [Fact]
     public void VerifyOrGenerateBaselineSnapshots()
     {
         string snapshotPath = Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "Search", "baseline_snapshots_64.json");

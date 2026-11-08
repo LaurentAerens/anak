@@ -160,6 +160,83 @@ public struct Board : IEquatable<Board>
     public readonly bool IsCheck() => IsInCheck();
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly bool GivesCheck(Move move)
+    {
+        Color us = SideToMove;
+        Color them = us.Opponent();
+        ulong enemyKingBb = Kings & (them == Color.White ? White : Black);
+        if (enemyKingBb == 0) return false;
+
+        Square kSq = Bitboard.Lsb(enemyKingBb);
+        int k = (byte)kSq;
+
+        Square from = move.From;
+        Square to = move.To;
+        ulong fromBit = 1UL << (byte)from;
+        ulong toBit = 1UL << (byte)to;
+
+        PieceType movedType = move.IsPromotion ? move.PromotionPieceType : GetPieceAt(from).Type();
+        ulong occ = (Occupied & ~fromBit) | toBit;
+
+        if (move.Type == MoveType.EnPassant)
+        {
+            Square capSq = SquareExtensions.Create(to.File(), from.Rank());
+            occ &= ~(1UL << (byte)capSq);
+        }
+        else if (move.IsCastling)
+        {
+            Square rFrom = move.Type == MoveType.KingCastle
+                ? (us == Color.White ? Square.H1 : Square.H8)
+                : (us == Color.White ? Square.A1 : Square.A8);
+            Square rTo = move.Type == MoveType.KingCastle
+                ? (us == Color.White ? Square.F1 : Square.F8)
+                : (us == Color.White ? Square.D1 : Square.D8);
+            occ = (occ & ~(1UL << (byte)rFrom)) | (1UL << (byte)rTo);
+            toBit = 1UL << (byte)rTo;
+            movedType = PieceType.Rook;
+        }
+
+        // 1. Direct check from the moved (or promoted) piece on 'to'
+        switch (movedType)
+        {
+            case PieceType.Pawn:
+                ulong pawnAttacks = us == Color.White
+                    ? Bitboard.BlackPawnAttacks[k]
+                    : Bitboard.WhitePawnAttacks[k];
+                if ((pawnAttacks & toBit) != 0) return true;
+                break;
+            case PieceType.Knight:
+                if ((Bitboard.KnightAttacks[k] & toBit) != 0) return true;
+                break;
+            case PieceType.Bishop:
+                if ((MagicBitboards.GetBishopAttacks(kSq, occ) & toBit) != 0) return true;
+                break;
+            case PieceType.Rook:
+                if ((MagicBitboards.GetRookAttacks(kSq, occ) & toBit) != 0) return true;
+                break;
+            case PieceType.Queen:
+                if (((MagicBitboards.GetBishopAttacks(kSq, occ) | MagicBitboards.GetRookAttacks(kSq, occ)) & toBit) != 0) return true;
+                break;
+        }
+
+        // 2. Discovered check from our remaining sliders
+        ulong usPieces = (us == Color.White ? White : Black) & ~fromBit;
+        ulong diagSliders = usPieces & (Bishops | Queens);
+        if (diagSliders != 0 && (MagicBitboards.GetBishopAttacks(kSq, occ) & diagSliders) != 0)
+        {
+            return true;
+        }
+
+        ulong orthSliders = usPieces & (Rooks | Queens);
+        if (orthSliders != 0 && (MagicBitboards.GetRookAttacks(kSq, occ) & orthSliders) != 0)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void AddPiece(Square sq, Color color, PieceType type)
     {
         ulong bit = 1UL << (byte)sq;
@@ -331,10 +408,21 @@ public struct Board : IEquatable<Board>
         SideToMove = them;
         ZobristKey ^= Zobrist.BlackToMove;
 
-        // 8. Update history
+        // 8. Update history (strip EpFile from repetition history if no enemy pawn can capture en passant)
         if (_gamePly < 1024)
         {
-            _history[_gamePly++] = ZobristKey;
+            ulong histKey = ZobristKey;
+            if (EpSquare != Square.None)
+            {
+                ulong epAttackers = (us == Color.White
+                    ? Bitboard.WhitePawnAttacks[(int)EpSquare]
+                    : Bitboard.BlackPawnAttacks[(int)EpSquare]) & Pawns & (them == Color.White ? White : Black);
+                if (epAttackers == 0)
+                {
+                    histKey ^= Zobrist.EpFile[(int)EpSquare & 7];
+                }
+            }
+            _history[_gamePly++] = histKey;
         }
 
         return true;

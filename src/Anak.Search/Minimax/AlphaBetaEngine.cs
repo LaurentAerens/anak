@@ -1176,6 +1176,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 SelDepth = ply;
             }
 
+            // 1. Repetition & Fifty-move draw detection
+            // Must run before Quiescence Search so leaf moves (depth == 0) that repeat are scored as 0.
+            if (ply > 0 && board.HalfmoveClock >= 4)
+            {
+                if (board.IsFiftyMoveRule() || board.IsRepetition(ply))
+                {
+                    return 0;
+                }
+            }
+
             // Check detection & check extension
             bool inCheck = board.IsInCheck();
             _stack[ply].InCheck = inCheck;
@@ -1185,7 +1195,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 depth++;
             }
 
-            // 1. Quiescence Search at leaf nodes
+            // 2. Quiescence Search at leaf nodes
             if (depth <= 0)
             {
                 return _qsearch.Search(ref board, alpha, beta, ply);
@@ -1213,7 +1223,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             int alphaOrig = alpha;
             ulong key = board.ZobristKey;
 
-            // 2. Mate Distance Pruning
+            // 3. Mate Distance Pruning
             int alphaM = Math.Max(alpha, -Value.MateValue + ply);
             int betaM = Math.Min(beta, Value.MateValue - (ply + 1));
             if (alphaM >= betaM)
@@ -1223,13 +1233,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             alpha = alphaM;
             beta = betaM;
 
-            // 3. Draw Detection (Repetition, Fifty-move rule, Insufficient material)
-            if (ply > 0)
+            // 3a. Insufficient Material Draw Detection
+            if (ply > 0 && board.HasInsufficientMaterial())
             {
-                if (board.IsFiftyMoveRule() || board.IsRepetition(ply) || board.HasInsufficientMaterial())
-                {
-                    return 0;
-                }
+                return 0;
             }
 
             // 3b. Syzygy Tablebase WDL Probe

@@ -67,9 +67,9 @@
     "ExpertId": 2,
     "StaticEval": 6,
     "SeeAndLegalityChecksum": 13601291627889010740,
-    "BestMoveUci": "e3e4",
-    "SearchScoreCp": 45,
-    "SearchNodes": 3116
+    "BestMoveUci": "e3f4",
+    "SearchScoreCp": 43,
+    "SearchNodes": 2383
   },
   {
     "Fen": "rnbqk2r/1p3pbp/p2ppnp1/8/2PNP3/2NB4/PP3PPP/R1BQ1RK1 w kq - 2 9",
@@ -441,7 +441,7 @@
     "SeeAndLegalityChecksum": 16473042723534255909,
     "BestMoveUci": "d4e3",
     "SearchScoreCp": 14,
-    "SearchNodes": 1513
+    "SearchNodes": 1512
   },
   {
     "Fen": "8/8/8/8/k2pP2Q/8/8/4K3 b - e3 0 1",
@@ -596,8 +596,8 @@
     "StaticEval": 16,
     "SeeAndLegalityChecksum": 15869619091204944432,
     "BestMoveUci": "g3g4",
-    "SearchScoreCp": 7,
-    "SearchNodes": 15512
+    "SearchScoreCp": 8,
+    "SearchNodes": 29160
   },
   {
     "Fen": "8/2k5/8/2n5/4B3/8/2K5/8 b - - 0 1",
@@ -608,8 +608,8 @@
     "StaticEval": 12,
     "SeeAndLegalityChecksum": 13154045126669143196,
     "BestMoveUci": "c7d6",
-    "SearchScoreCp": 6,
-    "SearchNodes": 9531
+    "SearchScoreCp": 7,
+    "SearchNodes": 10037
   },
   {
     "Fen": "4k3/P7/8/8/8/8/7p/4K3 w - - 0 1",
@@ -657,7 +657,7 @@
     "SeeAndLegalityChecksum": 8424073196561766144,
     "BestMoveUci": "g1h1",
     "SearchScoreCp": 445,
-    "SearchNodes": 3575
+    "SearchNodes": 3319
   },
   {
     "Fen": "r4rk1/1bq1bppp/p1n1pn2/1p1p4/3P1B2/1B2PN2/PPQN1PPP/R4RK1 w - - 2 12",
@@ -703,9 +703,9 @@
     "ExpertId": 2,
     "StaticEval": -25,
     "SeeAndLegalityChecksum": 1074757185086897808,
-    "BestMoveUci": "e2e3",
-    "SearchScoreCp": -44,
-    "SearchNodes": 4522
+    "BestMoveUci": "e2d3",
+    "SearchScoreCp": -29,
+    "SearchNodes": 5944
   },
   {
     "Fen": "4k3/8/4r3/8/4R3/8/4K3/8 w - - 0 1",
@@ -716,8 +716,8 @@
     "StaticEval": 10,
     "SeeAndLegalityChecksum": 14420181343160623981,
     "BestMoveUci": "e4e6",
-    "SearchScoreCp": 376,
-    "SearchNodes": 7484
+    "SearchScoreCp": 375,
+    "SearchNodes": 8354
   },
   {
     "Fen": "4k3/8/4r3/8/4B3/8/4K3/8 w - - 0 1",
@@ -729,7 +729,7 @@
     "SeeAndLegalityChecksum": 1074757185086897808,
     "BestMoveUci": "e2e3",
     "SearchScoreCp": -25,
-    "SearchNodes": 10320
+    "SearchNodes": 5081
   },
   {
     "Fen": "4k2b/8/8/4B3/8/8/4K3/8 w - - 0 1",
@@ -752,8 +752,8 @@
     "StaticEval": 127,
     "SeeAndLegalityChecksum": 13216952461271753552,
     "BestMoveUci": "h1h8",
-    "SearchScoreCp": 692,
-    "SearchNodes": 5597
+    "SearchScoreCp": 697,
+    "SearchNodes": 5376
   },
   {
     "Fen": "3r1k2/8/8/8/8/8/8/R3K2R w KQ - 0 1",
@@ -764,7 +764,7 @@
     "StaticEval": 310,
     "SeeAndLegalityChecksum": 11787515765926585744,
     "BestMoveUci": "h1h8",
-    "SearchScoreCp": 647,
-    "SearchNodes": 3306
+    "SearchScoreCp": 634,
+    "SearchNodes": 2731
   }
 ]

@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.15` (Estimated Rating: **2599 Elo**)  
+> **Current Active Version:** `v1.0.16` (Estimated Rating: **2611 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,19 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.16` (2026-11-08) — Leaf/QSearch Repetition Detection & Bitboard `GivesCheck` (+11.8 Elo)
+- **Category:** Search / Repetition Accuracy & Quiescence Throughput (Patch Release)
+- **Baseline Opponent:** Anak v1.0.15 (Known Elo: 2599)
+- **Match Result:** 4,136.0 / 8,000 (51.70%) vs v1.0.15 @ 1+0.01 (2,948 W / 2,676 L / 2,376 D)
+- **Elo Delta:** **+11.8 &plusmn; 5.8 Elo** (**+15.49 &plusmn; 7.61 nElo**, LOS: **100.0%**, Pairs Ratio: 1.17)
+- **Estimated Elo:** **2611 &plusmn; 6** (First release crossing **2600 Elo**)
+- **Highlights:**
+  - **Leaf & QSearch Repetition / 50-Move Detection:** Moved repetition and 50-move draw detection (`HalfmoveClock >= 4`) before the `depth <= 0` Quiescence Search handoff in `AlphaBetaEngine` and added it to `QuiescenceSearch` (`qsDepth > 0`), preventing leaf moves from walking into 3-fold repetitions or 50-move draws while holding a winning evaluation.
+  - **FIDE-Compliant En-Passant Repetition History:** Stripped `Zobrist.EpFile` from the repetition history table (`_history`) in `Board.MakeMove` when no enemy pawn attacks `EpSquare` after a double pawn push, eliminating missed 3-fold repetitions when returning to positions reached via double pawn pushes.
+  - **Zero-MakeMove Bitboard `Board.GivesCheck`:** Replaced `MakeMove` + `IsInCheck` + `UnmakeMove` in Quiescence Search root check generation (`qsDepth == 0`) with a fast read-only bitboard direct and discovered-slider attack check (`Board.GivesCheck(Move)`).
+
+---
 
 ### `v1.0.15` (2026-11-06) — SPSA-Tuned Dynamic Time Management (+2.5 Elo)
 - **Category:** Search / Time Management (Patch Release)

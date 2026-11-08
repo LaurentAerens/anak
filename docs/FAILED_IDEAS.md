@@ -292,3 +292,14 @@ This document preserves the hypotheses, match results, root-cause analyses, and 
   1. **Disruption of Staged Pruning Pipeline:** Anak's move picker was carefully tuned around a strict staged sequence: TT Move -> Good Captures -> Killer 0/1 -> Countermove -> Positive Continuation Moves -> Butterfly Quiets -> Bad Captures. Trying all positive continuation moves first before ANY negative/neutral continuation quiet moves provided an effective soft-stage filter that allowed high-probability tactical responses to fail high early without computing full linear combinations for all 30+ quiet moves.
   2. **Dilution of Butterfly History Signal:** Butterfly history tracks global square-to-square move quality across the entire tree, while 1-ply continuation history is sparse and highly context-dependent. Giving 1-ply continuation $2\times$ weight promoted moves that were successful in isolated branches but strategically terrible in the current position, displacing well-established butterfly killer moves.
 - **Revisit Conditions:** Only revisit if continuation history tables are tuned with continuous SPSA weights or normalized relative to history sample counts (Technique 4.2).
+
+---
+
+### 21. Blanket Check Exemptions in Shallow Futility, LMP, SEE Pruning, and LMR (-19.1 Elo)
+- **Hypothesis:** Exempting all giving-check moves (`!board.GivesCheck(move)`) from Shallow Futility Pruning, Late Move Pruning (LMP), and SEE Pruning, while reducing LMR on quiet checks (`isTactical: givesCheck` and skipping `!improving` reduction), would prevent pruning sacrificial mating checks at shallow depths.
+- **Match Results:**
+  - *Tier 2 SPRT Validation (620 games at `1+0.01` vs v1.0.15):* Score 293.0 / 620 (47.26%, W: 208, L: 242, D: 170), **-19.1 &plusmn; 22.6 Elo** (`-23.14 nElo`), LLR: -0.38. **Regression &rarr; Aborted & Reverted**.
+- **Root Cause:**
+  1. **Compounding with Unconditional $+1$ Check Extension:** Anak already applies an unconditional $+1$ ply check extension (`if (inCheck && depth < MaxSearchDepth) depth++;`) at the start of every node in check. Exempting negative-SEE spite checks (`Qxf7+`, `Qh4+`, `Bc5+`) from SEE pruning and shallow futility pruning caused useless spite checks to survive at shallow depths and immediately receive a $+1$ ply extension, exploding the branching factor.
+  2. **Double-Rewarding Checks in LMR:** Because checks already receive $+1$ ply from the check extension at the child node, reducing `r` by an additional 1–2 plies in LMR resulted in searching non-critical checks 2–3 plies deeper than equivalent quiet moves, starving main variations of search depth in bullet time controls.
+- **Revisit Conditions:** Never exempt negative-SEE checks from SEE pruning or reduce LMR on checks while blanket $+1$ check extension (`if (inCheck) depth++`) is active.

@@ -389,6 +389,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.14_20261106_094420.pgn",
       "notes": "SPSA-tuned Dynamic Time Management across 52,352 games (+2.5 Elo / +3.14 nElo over v1.0.14 in 8,000 games, 79.1% LOS)"
+    },
+    "v1.0.16": {
+      "version": "v1.0.16",
+      "date": "2026-11-08",
+      "estimated_elo": 2611,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.15 (Known Elo: 2599)",
+      "score": "4136.0 / 8000",
+      "wins": 2948,
+      "losses": 2676,
+      "draws": 2376,
+      "perf_percent": 51.70,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.15_20261107_150412.pgn",
+      "notes": "Leaf & QSearch repetition/50-move draw detection, FIDE-compliant en-passant repetition history, and zero-MakeMove bitboard GivesCheck in QSearch (+11.8 Elo / +15.5 nElo over v1.0.15 in 8,000 games, 100.0% LOS)"
     }
   }
 }
