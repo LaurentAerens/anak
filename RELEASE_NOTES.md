@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.16` (Estimated Rating: **2611 Elo**)  
+> **Current Active Version:** `v1.0.17` (Estimated Rating: **2611 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,16 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.17` (2026-11-08) — Self-Contained Binary with Embedded NNUE Weights (QoL Feature)
+- **Category:** Architecture & Packaging / Usability (Patch Release)
+- **Estimated Elo:** **2611 &plusmn; 6** (Zero regression, rating preserved)
+- **Highlights:**
+  - **Embedded NNUE Weights in Executables:** Compiled all 8 multi-expert and micro NNUE models (`open`, `closed`, `endgame`, `queenless`, `imbalance`, `attack`, `micro`, and `volatility`) directly into the executable as embedded resources. Standalone release binaries (e.g. `anak-windows-x64-avx512.exe`) now operate completely self-contained without requiring companion `./networks` folders.
+  - **Fallback & Stream Deserialization:** Enhanced `NnueWeights` with `LoadFromStream` and `LoadFromSpan` methods. `MultiTierNnueEvaluator` loads external networks from disk if present (`./networks` or `NnuePath`), seamlessly falling back to embedded weights when running standalone outside the source tree.
+  - **Dynamic Engine Versioning:** Dynamically resolved engine version from assembly informational attributes, ensuring UCI correctly announces `id name Anak 1.0.17`.
+
+---
 
 ### `v1.0.16` (2026-11-08) — Leaf/QSearch Repetition Detection & Bitboard `GivesCheck` (+11.8 Elo)
 - **Category:** Search / Repetition Accuracy & Quiescence Throughput (Patch Release)
