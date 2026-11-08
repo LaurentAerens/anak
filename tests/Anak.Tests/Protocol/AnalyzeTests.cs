@@ -41,6 +41,79 @@ public class AnalyzeTests
     }
 
     [Fact]
+    public void FormatUci_VeryGoodPosition_ReportsCentipawnsNotMateInOne()
+    {
+        // Winning position (e.g. +15 pawns), RootScore > 0.98f, but no proven checkmate
+        SearchStatistics stats = new()
+        {
+            ScoreCp = 1500,
+            RootScore = 0.995f,
+            MateIn = 0
+        };
+
+        string uciScore = SearchScoreFormat.FormatUci(stats);
+        Assert.Equal("cp 1500", uciScore);
+        Assert.DoesNotContain("mate", uciScore);
+
+        // Crushing advantage for Black
+        stats.ScoreCp = -1500;
+        stats.RootScore = -0.995f;
+        uciScore = SearchScoreFormat.FormatUci(stats);
+        Assert.Equal("cp -1500", uciScore);
+        Assert.DoesNotContain("mate", uciScore);
+    }
+
+    [Fact]
+    public void FormatUci_SaturatedProbabilityWithoutCentipawns_ReportsHighEvalNotMateInOne()
+    {
+        // Saturated win probability (e.g. MCTS root score) without mate-bound score
+        SearchStatistics stats = new()
+        {
+            ScoreCp = 0,
+            RootScore = 0.999f,
+            MateIn = 0
+        };
+
+        string uciScore = SearchScoreFormat.FormatUci(stats);
+        Assert.StartsWith("cp ", uciScore);
+        Assert.NotEqual("mate 1", uciScore);
+        Assert.True(int.Parse(uciScore.Substring(3)) > 1000);
+    }
+
+    [Fact]
+    public void FormatUci_ActualMate_ReportsAccurateMateDistance()
+    {
+        SearchStatistics stats = new()
+        {
+            MateIn = 1
+        };
+
+        string uciScore = SearchScoreFormat.FormatUci(stats);
+        Assert.Equal("mate 1", uciScore);
+
+        stats.MateIn = -4;
+        uciScore = SearchScoreFormat.FormatUci(stats);
+        Assert.Equal("mate -4", uciScore);
+    }
+
+    [Fact]
+    public void FormatHuman_SaturatedForcedWinWithoutMate_Uses255Sentinel()
+    {
+        SearchStatistics stats = new()
+        {
+            MateIn = 0,
+            RootScore = 0.99f
+        };
+
+        string formatted = SearchScoreFormat.FormatHuman(stats);
+        Assert.Equal("+M255", formatted);
+
+        stats.RootScore = -0.99f;
+        formatted = SearchScoreFormat.FormatHuman(stats);
+        Assert.Equal("-M255", formatted);
+    }
+
+    [Fact]
     public void FormatPv_FormatsMoveSequence()
     {
         SearchStatistics stats = new()

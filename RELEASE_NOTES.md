@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.17` (Estimated Rating: **2611 Elo**)  
+> **Current Active Version:** `v1.0.18` (Estimated Rating: **2611 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,16 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.18` (2026-11-08) — Fix False "Mate in 1" UCI Reporting on High Evaluations (Bugfix Release)
+- **Category:** Protocol & Usability / Search Score Formatting (Patch Release)
+- **Estimated Elo:** **2611 &plusmn; 6** (Zero regression, rating preserved)
+- **Highlights:**
+  - **Eliminated False "Mate in 1" UCI Output:** Removed the legacy heuristic in `UciEngineAdapter` and `AnalyzeRunner` that falsely emitted `score mate 1` / `score mate -1` whenever root win probability exceeded 98% ($\ge 950\text{ cp}$).
+  - **Unified Score Formatting (`SearchScoreFormat`):** Standardized UCI output through `SearchScoreFormat.FormatUci`, ensuring crushing positions reliably report their actual centipawn evaluation (e.g. `score cp 1500`), while only positions with proven search checkmates announce `score mate N`.
+  - **Unknown Mate Sentinel Alignment:** Updated `SearchScoreFormat.UnknownMateDistance` from 256 to 255 (`+M255` / `-M255`), adhering to standard chess engine convention for saturated NN win probability without a proven mate depth.
+
+---
 
 ### `v1.0.17` (2026-11-08) — Self-Contained Binary with Embedded NNUE Weights (QoL Feature)
 - **Category:** Architecture & Packaging / Usability (Patch Release)

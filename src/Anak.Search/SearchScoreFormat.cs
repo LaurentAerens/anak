@@ -11,7 +11,7 @@ public static class SearchScoreFormat
     /// Display-only sentinel: forced win / mate is coming but exact distance is not known yet
     /// (e.g. NN win probability saturated without a mate-bound search score).
     /// </summary>
-    public const int UnknownMateDistance = 256;
+    public const int UnknownMateDistance = 255;
 
     /// <summary>
     /// Centipawns for side to move, using <see cref="SearchStatistics.ScoreCp"/> or inverting <see cref="SearchStatistics.RootScore"/> via atanh.

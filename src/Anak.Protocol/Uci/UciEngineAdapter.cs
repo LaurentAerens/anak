@@ -445,26 +445,7 @@ public sealed class UciEngineAdapter
     /// </summary>
     private void FormatAndSendInfo(SearchStatistics stats)
     {
-        string scoreStr;
-        if (stats.MateIn != 0)
-        {
-            scoreStr = $"mate {stats.MateIn}";
-        }
-        else if (MathF.Abs(stats.RootScore) > 0.98f)
-        {
-            int mateMoves = stats.RootScore > 0 ? 1 : -1;
-            scoreStr = $"mate {mateMoves}";
-        }
-        else if (stats.ScoreCp != 0)
-        {
-            scoreStr = $"cp {stats.ScoreCp}";
-        }
-        else
-        {
-            float clamped = Math.Clamp(stats.RootScore, -0.999f, 0.999f);
-            int cp = (int)(MathF.Atanh(clamped) * 400.0f);
-            scoreStr = $"cp {cp}";
-        }
+        string scoreStr = SearchScoreFormat.FormatUci(stats);
 
         string pvStr = string.Empty;
         if (stats.Pv != null && stats.Pv.Count > 0)

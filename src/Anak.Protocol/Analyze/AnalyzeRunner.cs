@@ -181,22 +181,7 @@ public static class AnalyzeRunner
     /// </summary>
     public static string FormatScore(SearchStatistics stats)
     {
-        if (stats.MateIn != 0)
-        {
-            return stats.MateIn > 0 ? $"+M{stats.MateIn}" : $"-M{Math.Abs(stats.MateIn)}";
-        }
-        if (MathF.Abs(stats.RootScore) > 0.98f)
-        {
-            return stats.RootScore > 0 ? "+M1" : "-M1";
-        }
-        int cp = stats.ScoreCp;
-        if (cp == 0 && stats.RootScore != 0.0f)
-        {
-            float clamped = Math.Clamp(stats.RootScore, -0.999f, 0.999f);
-            cp = (int)(MathF.Atanh(clamped) * 400.0f);
-        }
-        float pawns = cp / 100.0f;
-        return $"{(pawns >= 0 ? "+" : "")}{pawns.ToString("F2", CultureInfo.InvariantCulture)} ({cp:+0;-0;0} cp)";
+        return SearchScoreFormat.FormatHuman(stats);
     }
 
     /// <summary>

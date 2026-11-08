@@ -404,6 +404,36 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.15_20261107_150412.pgn",
       "notes": "Leaf & QSearch repetition/50-move draw detection, FIDE-compliant en-passant repetition history, and zero-MakeMove bitboard GivesCheck in QSearch (+11.8 Elo / +15.5 nElo over v1.0.15 in 8,000 games, 100.0% LOS)"
+    },
+    "v1.0.17": {
+      "version": "v1.0.17",
+      "date": "2026-11-08",
+      "estimated_elo": 2611,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.16 (Known Elo: 2611)",
+      "score": "- (50.0%)",
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "perf_percent": 50.0,
+      "tc": "standalone",
+      "pgn": "",
+      "notes": "Self-contained binaries with embedded multi-expert NNUE networks and versioned binary naming"
+    },
+    "v1.0.18": {
+      "version": "v1.0.18",
+      "date": "2026-11-08",
+      "estimated_elo": 2611,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.17 (Known Elo: 2611)",
+      "score": "- (50.0%)",
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "perf_percent": 50.0,
+      "tc": "uci bugfix",
+      "pgn": "",
+      "notes": "Fix false 'score mate 1' UCI reporting on overwhelming evaluations, delegating to SearchScoreFormat"
     }
   }
 }
