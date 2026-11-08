@@ -45,12 +45,57 @@ public sealed unsafe class NnueWeights : IDisposable
         try
         {
             byte[] bytes = File.ReadAllBytes(filePath);
-            if (bytes.Length < 16)
-            {
-                return null;
-            }
+            return LoadFromSpan(bytes);
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
-            ReadOnlySpan<byte> span = bytes;
+    public static NnueWeights? LoadFromStream(Stream stream)
+    {
+        if (stream == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            if (stream.CanSeek)
+            {
+                byte[] bytes = new byte[stream.Length];
+                int totalRead = 0;
+                while (totalRead < bytes.Length)
+                {
+                    int read = stream.Read(bytes, totalRead, bytes.Length - totalRead);
+                    if (read <= 0) break;
+                    totalRead += read;
+                }
+                return LoadFromSpan(bytes.AsSpan(0, totalRead));
+            }
+            else
+            {
+                using var ms = new MemoryStream();
+                stream.CopyTo(ms);
+                return LoadFromSpan(ms.ToArray());
+            }
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public static NnueWeights? LoadFromSpan(ReadOnlySpan<byte> span)
+    {
+        if (span.Length < 16)
+        {
+            return null;
+        }
+
+        try
+        {
             uint magic = BinaryPrimitives.ReadUInt32LittleEndian(span[0..4]);
             if (magic != NnueConstants.MagicHeader)
             {

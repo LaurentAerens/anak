@@ -1,3 +1,4 @@
+using System.Reflection;
 using Anak.Core;
 using Anak.Protocol.Analyze;
 using Anak.Protocol.Bench;
@@ -12,8 +13,11 @@ namespace Anak.Protocol;
 /// </summary>
 public static class Program
 {
-    public const string Version = "1.0.0";
-    public const string EngineName = $"Anak {Version}";
+    public static readonly string Version = typeof(Program).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
+        ?? typeof(Program).Assembly.GetName().Version?.ToString(3)
+        ?? "1.0.16";
+    public static readonly string EngineName = $"Anak {Version}";
     public const string Author = "Anak Contributors";
 
     public static async Task Main(string[] args)

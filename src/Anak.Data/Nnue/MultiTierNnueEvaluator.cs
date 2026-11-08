@@ -108,41 +108,90 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     }
 
     /// <summary>
-    /// Loads all available expert and micro .nnue networks from the specified directory.
+    /// Loads all available expert and micro .nnue networks from the specified directory,
+    /// falling back to embedded resources for any models not found on disk.
     /// Returns true if at least one model was successfully loaded.
     /// </summary>
     public bool LoadFromDirectory(string directoryPath)
     {
         string? resolvedDir = ResolveDirectory(directoryPath);
-        if (resolvedDir == null)
+        if (resolvedDir != null)
         {
-            return false;
+            NnueDirectory = resolvedDir;
+
+            TryLoadModel(resolvedDir, "open.nnue", ref _openWeights);
+            TryLoadModel(resolvedDir, "closed.nnue", ref _closedWeights);
+            TryLoadModel(resolvedDir, "endgame.nnue", ref _endgameWeights);
+            TryLoadModel(resolvedDir, "queenless.nnue", ref _queenlessWeights);
+            TryLoadModel(resolvedDir, "imbalance.nnue", ref _imbalanceWeights);
+            TryLoadModel(resolvedDir, "attack.nnue", ref _attackWeights);
+
+            // If a generic anak.nnue exists, load it as fallback for both open/closed
+            string genericPath = Path.Combine(resolvedDir, "anak.nnue");
+            if (_openWeights == null && _closedWeights == null && File.Exists(genericPath))
+            {
+                _openWeights = NnueWeights.LoadFromFile(genericPath);
+                _closedWeights = _openWeights;
+            }
+
+            TryLoadModel(resolvedDir, "micro.nnue", ref _microWeights);
+            TryLoadModel(resolvedDir, "volatility.nnue", ref _volatilityWeights);
         }
 
-        NnueDirectory = resolvedDir;
+        // Fall back to embedded network weights for any models that were not loaded from disk
+        TryLoadEmbeddedModel("open.nnue", ref _openWeights);
+        TryLoadEmbeddedModel("closed.nnue", ref _closedWeights);
+        TryLoadEmbeddedModel("endgame.nnue", ref _endgameWeights);
+        TryLoadEmbeddedModel("queenless.nnue", ref _queenlessWeights);
+        TryLoadEmbeddedModel("imbalance.nnue", ref _imbalanceWeights);
+        TryLoadEmbeddedModel("attack.nnue", ref _attackWeights);
+        TryLoadEmbeddedModel("micro.nnue", ref _microWeights);
+        TryLoadEmbeddedModel("volatility.nnue", ref _volatilityWeights);
 
-        TryLoadModel(resolvedDir, "open.nnue", ref _openWeights);
-        TryLoadModel(resolvedDir, "closed.nnue", ref _closedWeights);
-        TryLoadModel(resolvedDir, "endgame.nnue", ref _endgameWeights);
-        TryLoadModel(resolvedDir, "queenless.nnue", ref _queenlessWeights);
-        TryLoadModel(resolvedDir, "imbalance.nnue", ref _imbalanceWeights);
-        TryLoadModel(resolvedDir, "attack.nnue", ref _attackWeights);
-
-        // If a generic anak.nnue exists, load it as fallback for both open/closed
-        string genericPath = Path.Combine(resolvedDir, "anak.nnue");
-        if (_openWeights == null && _closedWeights == null && File.Exists(genericPath))
+        if (resolvedDir == null && (IsActive || _microWeights != null || _volatilityWeights != null))
         {
-            _openWeights = NnueWeights.LoadFromFile(genericPath);
-            _closedWeights = _openWeights;
+            NnueDirectory = "<embedded>";
         }
-
-        TryLoadModel(resolvedDir, "micro.nnue", ref _microWeights);
-        TryLoadModel(resolvedDir, "volatility.nnue", ref _volatilityWeights);
 
         // Active model will be locked at root when search begins via SetRootTopology / InitSearch
         _activeFullWeights = null;
 
         return IsActive || _microWeights != null || _volatilityWeights != null;
+    }
+
+    private static void TryLoadEmbeddedModel(string fileName, ref NnueWeights? targetSlot)
+    {
+        if (targetSlot != null)
+        {
+            return;
+        }
+
+        System.Reflection.Assembly assembly = typeof(MultiTierNnueEvaluator).Assembly;
+        string resourceName = $"networks.{fileName}";
+        using Stream? stream = assembly.GetManifestResourceStream(resourceName)
+            ?? FindResourceByFileName(assembly, fileName);
+
+        if (stream != null)
+        {
+            NnueWeights? loaded = NnueWeights.LoadFromStream(stream);
+            if (loaded != null)
+            {
+                targetSlot = loaded;
+            }
+        }
+    }
+
+    private static Stream? FindResourceByFileName(System.Reflection.Assembly assembly, string fileName)
+    {
+        string[] names = assembly.GetManifestResourceNames();
+        for (int i = 0; i < names.Length; i++)
+        {
+            if (names[i].EndsWith(fileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return assembly.GetManifestResourceStream(names[i]);
+            }
+        }
+        return null;
     }
 
     private static void TryLoadModel(string resolvedDir, string fileName, ref NnueWeights? targetSlot)
@@ -161,19 +210,30 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
     private static string? ResolveDirectory(string directoryPath)
     {
-        if (Directory.Exists(directoryPath))
+        bool isDefault = string.IsNullOrWhiteSpace(directoryPath) || directoryPath == "./networks" || directoryPath == "networks";
+
+        if (!string.IsNullOrWhiteSpace(directoryPath) && Directory.Exists(directoryPath))
         {
             return Path.GetFullPath(directoryPath);
         }
 
         string baseDir = AppDomain.CurrentDomain.BaseDirectory;
-        string candidate = Path.Combine(baseDir, directoryPath);
-        if (Directory.Exists(candidate))
+        if (!string.IsNullOrWhiteSpace(directoryPath))
         {
-            return Path.GetFullPath(candidate);
+            string candidatePath = Path.Combine(baseDir, directoryPath);
+            if (Directory.Exists(candidatePath))
+            {
+                return Path.GetFullPath(candidatePath);
+            }
         }
 
-        candidate = Path.Combine(baseDir, "networks");
+        if (!isDefault)
+        {
+            // Explicit non-default path specified by caller does not exist
+            return null;
+        }
+
+        string candidate = Path.Combine(baseDir, "networks");
         if (Directory.Exists(candidate))
         {
             return Path.GetFullPath(candidate);

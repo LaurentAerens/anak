@@ -1,3 +1,5 @@
+using System.Buffers.Binary;
+using System.IO;
 using Anak.Core;
 using Anak.Data.Nnue;
 using Xunit;
@@ -6,6 +8,44 @@ namespace Anak.Tests.Data;
 
 public class NnueTests
 {
+    [Fact]
+    public unsafe void NnueWeights_LoadsMicroModelWithOneBucket()
+    {
+        // Construct a synthetic 1-bucket Micro NNUE (12,404 bytes)
+        byte[] bytes = new byte[12404];
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), NnueConstants.MagicHeader);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4, 4), 1); // Version
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(8, 2), NnueConstants.ArchMicro);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(10, 2), 16); // HiddenDim
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(12, 2), 0); // L1Dim
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(14, 2), 1); // Buckets
+
+        string tempPath = Path.GetTempFileName();
+        try
+        {
+            System.IO.File.WriteAllBytes(tempPath, bytes);
+            using var weights = NnueWeights.LoadFromFile(tempPath);
+            Assert.NotNull(weights);
+            Assert.Equal(NnueConstants.ArchMicro, weights.ArchId);
+            Assert.Equal(16, weights.HiddenDim);
+            Assert.Equal(1, weights.Buckets);
+            Assert.True(weights.IsMicro);
+
+            Board board = Fen.Parse(Fen.StartPosition);
+            Span<short> whiteAcc = stackalloc short[16];
+            Span<short> blackAcc = stackalloc short[16];
+            fixed (short* w = whiteAcc, b = blackAcc)
+            {
+                NnueAccumulator.ComputeFull(in board, weights, w, b);
+                int score = NnueInference.EvaluateMicro(w, b, weights);
+                Assert.Equal(0, score);
+            }
+        }
+        finally
+        {
+            if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
+        }
+    }
     [Fact]
     public void MultiTierNnueEvaluator_LoadsAllThreeModels()
     {
@@ -16,6 +56,27 @@ public class NnueTests
         Assert.True(evaluator.HasClosedModel, "closed.nnue should be loaded");
         Assert.True(evaluator.HasMicroModel, "micro.nnue should be loaded");
         Assert.True(evaluator.IsActive, "NNUE evaluator should report IsActive == true");
+    }
+
+    [Fact]
+    public void MultiTierNnueEvaluator_FallsBackToEmbeddedWeightsWhenDirectoryNotFound()
+    {
+        string dummyDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        using var evaluator = new MultiTierNnueEvaluator(dummyDir);
+
+        Assert.True(evaluator.UseNnue);
+        Assert.True(evaluator.HasOpenModel, "open.nnue should be loaded from embedded resource");
+        Assert.True(evaluator.HasClosedModel, "closed.nnue should be loaded from embedded resource");
+        Assert.True(evaluator.HasMicroModel, "micro.nnue should be loaded from embedded resource");
+        Assert.True(evaluator.IsActive, "NNUE evaluator should report IsActive == true when using embedded weights");
+        Assert.Equal("<embedded>", evaluator.NnueDirectory);
+
+        var board = Fen.Parse(Fen.StartPosition);
+        evaluator.SetRootTopology(in board);
+        MoveList moves = default;
+        board.GenerateLegalMoves(ref moves);
+        Value val = evaluator.Evaluate(in board, moves.AsReadOnlySpan());
+        Assert.NotEqual(0, val.Raw);
     }
 
     [Fact]
