@@ -65,6 +65,7 @@ jobs:
           - os: windows-latest
             rid: win-x64
             profile: win-x64-avx512
+            target: windows-x64-avx512
             name: anak-windows-x64-avx512
             ext: '.exe'
             bin: anak.exe
@@ -72,6 +73,7 @@ jobs:
           - os: windows-latest
             rid: win-x64
             profile: win-x64-avx2
+            target: windows-x64-avx2
             name: anak-windows-x64-avx2
             ext: '.exe'
             bin: anak.exe
@@ -79,6 +81,7 @@ jobs:
           - os: windows-latest
             rid: win-x64
             profile: win-x64-generic
+            target: windows-x64-generic
             name: anak-windows-x64-generic
             ext: '.exe'
             bin: anak.exe
@@ -87,6 +90,7 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
             profile: linux-x64-avx512
+            target: linux-x64-avx512
             name: anak-linux-x64-avx512
             ext: ''
             bin: anak
@@ -94,6 +98,7 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
             profile: linux-x64-avx2
+            target: linux-x64-avx2
             name: anak-linux-x64-avx2
             ext: ''
             bin: anak
@@ -101,6 +106,7 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
             profile: linux-x64-generic
+            target: linux-x64-generic
             name: anak-linux-x64-generic
             ext: ''
             bin: anak
@@ -109,6 +115,7 @@ jobs:
           - os: macos-latest
             rid: osx-arm64
             profile: osx-arm64
+            target: macos-arm64
             name: anak-macos-arm64
             ext: ''
             bin: anak
@@ -117,6 +124,7 @@ jobs:
           - os: ubuntu-24.04-arm
             rid: linux-arm64
             profile: linux-arm64
+            target: linux-arm64
             name: anak-linux-arm64
             ext: ''
             bin: anak
@@ -152,16 +160,25 @@ jobs:
       - name: Package binary, bundle companion assets, and compute SHA-256
         shell: bash
         run: |
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            TAG="${{ github.ref_name }}"
+          fi
+          if [[ "$TAG" != v* ]]; then
+            TAG="v${TAG}"
+          fi
+
+          TARGET_NAME="anak-${TAG}-${{ matrix.target }}${{ matrix.ext }}"
           mkdir -p asset
-          TARGET_NAME="${{ matrix.name }}${{ matrix.ext }}"
           cp "publish/${{ matrix.bin }}" "asset/${TARGET_NAME}"
           chmod +x "asset/${TARGET_NAME}"
 
           # Stage bundle directory
-          BUNDLE_DIR="${{ matrix.name }}"
+          BUNDLE_DIR="anak-${TAG}-${{ matrix.target }}"
           mkdir -p "${BUNDLE_DIR}"
           cp "publish/${{ matrix.bin }}" "${BUNDLE_DIR}/${{ matrix.bin }}"
-          chmod +x "${BUNDLE_DIR}/${{ matrix.bin }}"
+          cp "publish/${{ matrix.bin }}" "${BUNDLE_DIR}/${TARGET_NAME}"
+          chmod +x "${BUNDLE_DIR}/${{ matrix.bin }}" "${BUNDLE_DIR}/${TARGET_NAME}"
 
           # Copy companion neural network weights if present
           if [ -d "networks" ] && [ -n "$(find networks -maxdepth 1 -name '*.nnue' -print -quit 2>/dev/null)" ]; then
@@ -191,14 +208,14 @@ jobs:
           # Archive bundle based on platform format (.zip for Windows, .tar.gz for Linux/macOS)
           if [ "${{ matrix.archive }}" = "zip" ]; then
             if command -v 7z >/dev/null 2>&1; then
-              7z a -tzip "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
+              7z a -tzip "asset/${BUNDLE_DIR}.zip" "${BUNDLE_DIR}"
             elif command -v zip >/dev/null 2>&1; then
-              zip -r "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
+              zip -r "asset/${BUNDLE_DIR}.zip" "${BUNDLE_DIR}"
             else
-              python -m zipfile -c "asset/${{ matrix.name }}.zip" "${BUNDLE_DIR}"
+              python -m zipfile -c "asset/${BUNDLE_DIR}.zip" "${BUNDLE_DIR}"
             fi
           else
-            tar -czvf "asset/${{ matrix.name }}.tar.gz" "${BUNDLE_DIR}"
+            tar -czvf "asset/${BUNDLE_DIR}.tar.gz" "${BUNDLE_DIR}"
           fi
 
           # Compute SHA-256 checksums for each release asset
@@ -212,7 +229,7 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
-          name: asset-${{ matrix.name }}
+          name: asset-${{ matrix.target }}
           path: asset/
 
   publish-release:

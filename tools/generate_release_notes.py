@@ -492,7 +492,12 @@ def render_verification_table(test_info: dict, perft_info: dict, bench_info: dic
     return lines
 
 
-def render_distribution_section() -> list[str]:
+def render_distribution_section(tag: str = "") -> list[str]:
+    clean_tag = tag.strip()
+    if clean_tag and not clean_tag.startswith("v") and not clean_tag.startswith("V"):
+        clean_tag = f"v{clean_tag}"
+    v_prefix = f"-{clean_tag}" if clean_tag else ""
+
     lines = [
         "## 📦 Release Assets & Distribution",
         "",
@@ -503,26 +508,26 @@ def render_distribution_section() -> list[str]:
         "",
         "| Platform | Target Architecture | Archive | Executable |",
         "| :--- | :--- | :---: | :--- |",
-        "| **Windows** | x86-64 (AVX-512) | `.zip` | `anak-windows-x64-avx512.exe` |",
-        "| **Windows** | x86-64 (AVX2 / BMI2) | `.zip` | `anak-windows-x64-avx2.exe` |",
-        "| **Windows** | x86-64 (Generic) | `.zip` | `anak-windows-x64-generic.exe` |",
-        "| **Linux** | x86-64 (AVX-512) | `.tar.gz` | `anak-linux-x64-avx512` |",
-        "| **Linux** | x86-64 (AVX2) | `.tar.gz` | `anak-linux-x64-avx2` |",
-        "| **Linux** | x86-64 (Generic) | `.tar.gz` | `anak-linux-x64-generic` |",
-        "| **macOS** | Apple Silicon (ARM64) | `.tar.gz` | `anak-macos-arm64` |",
-        "| **Linux** | ARM64 | `.tar.gz` | `anak-linux-arm64` |",
+        f"| **Windows** | x86-64 (AVX-512) | `.zip` | `anak{v_prefix}-windows-x64-avx512.exe` |",
+        f"| **Windows** | x86-64 (AVX2 / BMI2) | `.zip` | `anak{v_prefix}-windows-x64-avx2.exe` |",
+        f"| **Windows** | x86-64 (Generic) | `.zip` | `anak{v_prefix}-windows-x64-generic.exe` |",
+        f"| **Linux** | x86-64 (AVX-512) | `.tar.gz` | `anak{v_prefix}-linux-x64-avx512` |",
+        f"| **Linux** | x86-64 (AVX2) | `.tar.gz` | `anak{v_prefix}-linux-x64-avx2` |",
+        f"| **Linux** | x86-64 (Generic) | `.tar.gz` | `anak{v_prefix}-linux-x64-generic` |",
+        f"| **macOS** | Apple Silicon (ARM64) | `.tar.gz` | `anak{v_prefix}-macos-arm64` |",
+        f"| **Linux** | ARM64 | `.tar.gz` | `anak{v_prefix}-linux-arm64` |",
         "",
         "### 🚀 Quick Start (UCI Mode)",
         "```bash",
         "# Run Anak interactively in UCI mode",
-        "./anak",
+        f"./anak{v_prefix}-linux-x64-avx2",
         "",
         "# Check engine identification",
         "uci",
         "isready",
         "",
         "# Run built-in benchmark",
-        "./anak bench",
+        f"./anak{v_prefix}-linux-x64-avx2 bench",
         "```",
         "",
         "All packages include SHA-256 checksums in `SHA256SUMS.txt` for integrity verification.",
@@ -673,7 +678,7 @@ def build_single_feat_notes(
         lines.append("")
 
     # Release Assets & Distribution
-    lines.extend(render_distribution_section())
+    lines.extend(render_distribution_section(tag))
     return lines
 
 
@@ -765,7 +770,7 @@ def build_minor_notes(
             lines.append("")
 
     # Distribution
-    lines.extend(render_distribution_section())
+    lines.extend(render_distribution_section(tag))
     return lines
 
 
@@ -901,7 +906,7 @@ def build_major_notes(
             lines.append("")
 
     # Distribution
-    lines.extend(render_distribution_section())
+    lines.extend(render_distribution_section(tag))
     return lines
 
 
