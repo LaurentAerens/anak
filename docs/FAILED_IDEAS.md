@@ -8,6 +8,7 @@ This document preserves the hypotheses, match results, root-cause analyses, and 
 
 | Step / Ref | Candidate / Hypothesis | Phase | Match Result / Games | Elo Delta | LOS | Status |
 | :---: | :--- | :---: | :---: | :---: | :---: | :---: |
+| **v1.0.16 — TB 1.0** | In-Tree Syzygy Tablebase Probing (4 & 5-man) | Endgame Tablebases | 1369.0 / 2800 vs v1.0.16 | **-6.5 &plusmn; 10.2** | 10.4% | ❌ Reverted (Regression) |
 | **v1.0.13 — CPW 4.1** | Dedicated CMH & Blended Quiet Scoring | Move Ordering | 1041.0 / 2062 vs v1.0.13 | **+3.4 &plusmn; 12.5 (Aborted)** | 70.2% | ❌ Reverted (Stagnant) |
 | **v1.0.13 — CPW 3.2** | Advanced Passed Pawn Pushes in QS | Quiescence | 366.0 / 758 vs v1.0.13 | **-11.9 &plusmn; 19.8** | 11.8% | ❌ Reverted |
 | **v1.0.12 — CPW 2.5** | Selective / Restricted Check Extensions | Search Extensions | 113.0 / 250 vs v1.0.12 | **-33.5 &plusmn; 36.1** | 3.3% | ❌ Reverted |
@@ -45,6 +46,21 @@ This document preserves the hypotheses, match results, root-cause analyses, and 
 ---
 
 ## 🔬 Detailed Root Cause Analyses & Future Revisit Conditions
+
+### 0f. In-Tree Syzygy Tablebase Probing (-6.5 Elo — Regression)
+- **Hypothesis:** Following the Stockfish tablebase probing architecture—probing Syzygy WDL in-tree at non-root plies (`ply > 0`) when piece count $\le 5$ (on zero halfmove clock moves or at depth $\ge \text{probeDepth}$) and returning bounded mate-tier scores ($\pm 20000$ or $0.00$)—will resolve late endgames deterministically and boost playing strength.
+- **Match Results:**
+  - *Tier 2 SPRT Validation vs v1.0.16 (2,800 games at `1+0.01`, both engines with 5-man Syzygy tables):* Score 1369.0 / 2800 (48.89%, W: 1042, L: 1104, D: 654), **-6.5 &plusmn; 10.2 Elo**, LOS: 10.4%. Early games exhibited steep deficits up to $-50$ Elo before partially stabilizing. **Aborted & Reverted**.
+- **Root Cause:**
+  1. **Tablebase Horizon Cliff (Discrete vs Continuous Score Discontinuity):** Syzygy returns discrete, quantized evaluations ($0.00$ for draw, $\pm 20000$ for win/loss). In contrast, NNUE provides continuous centipawn evaluations (e.g. $+350\text{ cp}$ for a dominant piece advantage). When an engine searches a transition into a theoretically drawn 5-piece endgame (such as KRP vs KR), the tablebase instantly returns $0.00$. The minimax search perceives this as an unacceptable $-350\text{ cp}$ collapse and refuses to trade pieces, actively preferring objectively inferior or blunder-prone piece-keeping moves to avoid the perceived "loss of score".
+  2. **Search Discontinuities & PVS Window Thrashing:** Discrete jumps from continuous leaf evaluations directly into near-mate bounds ($\pm 20000$) shattered alpha-beta pruning assumptions and window bounds ($[\alpha, \beta]$), triggering excessive full-window re-searches and search instability.
+  3. **File I/O Latency in Bullet Time Controls:** Probing disk-backed Syzygy `.rtbw` files in-tree during $1+0.01$ bullet matches introduced microsecond latency spikes that starved deeper tactical plies of clock budget.
+  4. **Mismatch with 4–5 Man Table Limits:** Full 6-man and 7-man tables (hundreds of gigabytes) encompass widespread middlegame-to-endgame transitions. With only 4-man and 5-man tables, in-tree probing is triggered too late to assist deep endgames cleanly, serving mostly to distort the critical 6-piece &rarr; 5-piece transition horizon.
+- **Revisit Conditions:**
+  1. Limit Syzygy probing strictly to the **root node** (`ply == 0`) for DTZ moves and root-move blunder filtering (pruning root moves that convert a tablebase win into a draw/loss or a draw into a loss), leaving the in-tree search tree entirely driven by continuous NNUE evaluations.
+  2. If in-tree probing is ever re-attempted, compress tablebase scores dynamically so winning TB positions scale smoothly with continuous NNUE scores rather than snapping to a hard discrete cliff.
+
+---
 
 ### 0e. Gated Cut-Node Adaptive LMR (-0.3 Elo — Neutral Wash)
 - **Hypothesis:** Gating Cut-Node Adaptive LMR with $\text{depth} \ge 6$, $\text{movesSearched} \ge 4$, and $\text{conthist} \le 0$ will eliminate the re-search cascades, shallow tactical blunders, and timeout surges seen in the naive version, unlocking true positive Elo.
