@@ -325,6 +325,44 @@ public static unsafe class NnueAccumulator
     }
 
     /// <summary>
+    /// Fused single-pass accumulator update for castling moves: dst[i] = src[i] - weights[subKing] - weights[subRook] + weights[addKing] + weights[addRook].
+    /// Updates both King and Rook features simultaneously in a single SIMD pass from src to dst.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void SubSubAddAddFeature(int sub1Idx, int sub2Idx, int add1Idx, int add2Idx, sbyte* weights, short* srcAcc, short* dstAcc, int dim)
+    {
+        sbyte* wSub1 = weights + (sub1Idx * dim);
+        sbyte* wSub2 = weights + (sub2Idx * dim);
+        sbyte* wAdd1 = weights + (add1Idx * dim);
+        sbyte* wAdd2 = weights + (add2Idx * dim);
+
+        int i = 0;
+        if (Avx2.IsSupported && dim >= 32)
+        {
+            for (; i <= dim - 32; i += 32)
+            {
+                Vector256<short> s10 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub1 + i));
+                Vector256<short> s11 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub1 + i + 16));
+                Vector256<short> s20 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub2 + i));
+                Vector256<short> s21 = Avx2.ConvertToVector256Int16(Vector128.Load(wSub2 + i + 16));
+
+                Vector256<short> a10 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd1 + i));
+                Vector256<short> a11 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd1 + i + 16));
+                Vector256<short> a20 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd2 + i));
+                Vector256<short> a21 = Avx2.ConvertToVector256Int16(Vector128.Load(wAdd2 + i + 16));
+
+                (Vector256.Load(srcAcc + i) - s10 - s20 + a10 + a20).Store(dstAcc + i);
+                (Vector256.Load(srcAcc + i + 16) - s11 - s21 + a11 + a21).Store(dstAcc + i + 16);
+            }
+        }
+
+        for (; i < dim; i++)
+        {
+            dstAcc[i] = (short)(srcAcc[i] - wSub1[i] - wSub2[i] + wAdd1[i] + wAdd2[i]);
+        }
+    }
+
+    /// <summary>
     /// Incrementally updates White and Black accumulators in-place for a move.
     /// Handles king-bucket refresh when a king crosses bucket boundaries.
     /// </summary>
@@ -346,6 +384,7 @@ public static unsafe class NnueAccumulator
     /// into <paramref name="dstWhiteAcc"/>/<paramref name="dstBlackAcc"/> in a single fused pass.
     /// Handles king-bucket refresh when a king crosses bucket boundaries.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static void UpdateMove(
         Move move,
         Piece movedPiece,
@@ -432,7 +471,15 @@ public static unsafe class NnueAccumulator
                 int bFrom = GetBlackFeatureIndex(movedType, us, from);
                 int bTo = GetBlackFeatureIndex(movedType, us, to);
 
-                if (capturedPiece != Piece.None)
+                if (move.IsCastling)
+                {
+                    Square rFrom = to > from ? Square.H1 : Square.A1;
+                    Square rTo = to > from ? Square.F1 : Square.D1;
+                    int bRFrom = GetBlackFeatureIndex(PieceType.Rook, us, rFrom);
+                    int bRTo = GetBlackFeatureIndex(PieceType.Rook, us, rTo);
+                    SubSubAddAddFeature(bFrom, bRFrom, bTo, bRTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
+                }
+                else if (capturedPiece != Piece.None)
                 {
                     int bCap = GetBlackFeatureIndex(capturedPiece.Type(), them, to);
                     SubSubAddFeature(bFrom, bCap, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
@@ -440,15 +487,6 @@ public static unsafe class NnueAccumulator
                 else
                 {
                     SubAddFeature(bFrom, bTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
-                }
-
-                if (move.IsCastling)
-                {
-                    Square rFrom = to > from ? Square.H1 : Square.A1;
-                    Square rTo = to > from ? Square.F1 : Square.D1;
-                    int bRFrom = GetBlackFeatureIndex(PieceType.Rook, us, rFrom);
-                    int bRTo = GetBlackFeatureIndex(PieceType.Rook, us, rTo);
-                    SubAddFeature(bRFrom, bRTo, bWeights, dstBlackAcc, dstBlackAcc, dim);
                 }
 
                 // White king moved: check bucket change
@@ -480,7 +518,15 @@ public static unsafe class NnueAccumulator
                 int wFrom = GetWhiteFeatureIndex(movedType, us, from);
                 int wTo = GetWhiteFeatureIndex(movedType, us, to);
 
-                if (capturedPiece != Piece.None)
+                if (move.IsCastling)
+                {
+                    Square rFrom = to > from ? Square.H8 : Square.A8;
+                    Square rTo = to > from ? Square.F8 : Square.D8;
+                    int wRFrom = GetWhiteFeatureIndex(PieceType.Rook, us, rFrom);
+                    int wRTo = GetWhiteFeatureIndex(PieceType.Rook, us, rTo);
+                    SubSubAddAddFeature(wFrom, wRFrom, wTo, wRTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                }
+                else if (capturedPiece != Piece.None)
                 {
                     int wCap = GetWhiteFeatureIndex(capturedPiece.Type(), them, to);
                     SubSubAddFeature(wFrom, wCap, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
@@ -488,15 +534,6 @@ public static unsafe class NnueAccumulator
                 else
                 {
                     SubAddFeature(wFrom, wTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
-                }
-
-                if (move.IsCastling)
-                {
-                    Square rFrom = to > from ? Square.H8 : Square.A8;
-                    Square rTo = to > from ? Square.F8 : Square.D8;
-                    int wRFrom = GetWhiteFeatureIndex(PieceType.Rook, us, rFrom);
-                    int wRTo = GetWhiteFeatureIndex(PieceType.Rook, us, rTo);
-                    SubAddFeature(wRFrom, wRTo, wWeights, dstWhiteAcc, dstWhiteAcc, dim);
                 }
 
                 // Black king moved: check bucket change

@@ -6,6 +6,7 @@
 *.exe
 tools/fastchess/baselines/*/
 tools/fastchess/engine_dev/
+tools/fastchess/results/
 BenchmarkDotNet.Artifacts/
 artifacts/
 tools/fathom/

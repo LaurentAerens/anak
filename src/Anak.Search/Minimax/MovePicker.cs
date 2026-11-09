@@ -9,6 +9,18 @@ public struct ScoreBuffer
     private int _element0;
 }
 
+[InlineArray(256)]
+public struct ShortBuffer256
+{
+    private short _element0;
+}
+
+[InlineArray(32)]
+public struct MoveBuffer32
+{
+    private Move _element0;
+}
+
 [InlineArray(128)]
 public struct IndexBuffer128
 {
@@ -59,10 +71,12 @@ public ref struct MovePicker
     private readonly Square _prev1To;
     private readonly Piece _prev2Piece;
     private readonly Square _prev2To;
+    private readonly int _prev1Offset;
+    private readonly int _prev2Offset;
 
     private MoveList _legalMoves;
     private ScoreBuffer _scores;
-    private ScoreBuffer _seeScores;
+    private ShortBuffer256 _seeScores;
     private IndexBuffer128 _goodCaptureIndices;
     private int _goodCaptureCount;
     private IndexBuffer128 _badCaptureIndices;
@@ -73,8 +87,11 @@ public ref struct MovePicker
     private bool _capturesScored;
     private bool _contScored;
     private bool _quietsScored;
-    private bool _movesGenerated;
+    private bool _capturesGenerated;
+    private bool _allMovesGenerated;
     private bool _ttMovePicked;
+    private MoveBuffer32 _playedGoodCaptures;
+    private int _playedGoodCapturesCount;
 
     /// <summary>
     /// Gets the stage in which the current move was picked.
@@ -115,11 +132,15 @@ public ref struct MovePicker
         _prev1To = prev1To;
         _prev2Piece = prev2Piece;
         _prev2To = prev2To;
+        _prev1Offset = ContinuationHistory.GetBaseOffset(prev1Piece, prev1To);
+        _prev2Offset = ContinuationHistory.GetBaseOffset(prev2Piece, prev2To);
 
         Unsafe.SkipInit(out _legalMoves);
         _legalMoves.Clear();
-        _movesGenerated = false;
+        _capturesGenerated = false;
+        _allMovesGenerated = false;
         _ttMovePicked = false;
+        _playedGoodCapturesCount = 0;
 
         Unsafe.SkipInit(out _scores);
         Unsafe.SkipInit(out _seeScores);
@@ -152,7 +173,7 @@ public ref struct MovePicker
     {
         get
         {
-            EnsureMovesGenerated();
+            EnsureAllMovesGenerated();
             return _legalMoves.Count;
         }
     }
@@ -160,21 +181,45 @@ public ref struct MovePicker
     public readonly MovePickerStage Stage => _stage;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private void EnsureMovesGenerated()
+    private void EnsureCapturesGenerated()
     {
-        if (_movesGenerated) return;
-        _movesGenerated = true;
+        if (_capturesGenerated || _allMovesGenerated) return;
+        if (_board.IsInCheck())
+        {
+            EnsureAllMovesGenerated();
+            return;
+        }
+        _capturesGenerated = true;
         _legalMoves.Clear();
-        MoveGenerator.GenerateLegalMoves(in _board, ref _legalMoves);
+        MoveGenerator.GenerateLegalCaptures(in _board, ref _legalMoves);
 
         if (_ttMovePicked && !_ttMove.IsNull)
         {
             int ttIdx = FindMove(_ttMove);
-            if (ttIdx >= 0)
-            {
-                MarkPicked(ttIdx);
-            }
+            if (ttIdx >= 0) MarkPicked(ttIdx);
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void EnsureAllMovesGenerated()
+    {
+        if (_allMovesGenerated) return;
+        _allMovesGenerated = true;
+        _legalMoves.Clear();
+        MoveGenerator.GenerateLegalMoves(in _board, ref _legalMoves);
+        _picked = default;
+
+        if (_ttMovePicked && !_ttMove.IsNull)
+        {
+            int ttIdx = FindMove(_ttMove);
+            if (ttIdx >= 0) MarkPicked(ttIdx);
+        }
+        for (int p = 0; p < _playedGoodCapturesCount; p++)
+        {
+            int capIdx = FindMove(_playedGoodCaptures[p]);
+            if (capIdx >= 0) MarkPicked(capIdx);
+        }
+        _capturesScored = false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -198,15 +243,11 @@ public ref struct MovePicker
     /// Gets the next move in the staged move ordering.
     /// Returns true if a move was picked, false if no more moves.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public bool Next(out Move move)
     {
         while (_stage != MovePickerStage.Done)
         {
-            if (_stage != MovePickerStage.TtMove && !_movesGenerated)
-            {
-                EnsureMovesGenerated();
-            }
-
             switch (_stage)
             {
                 case MovePickerStage.TtMove:
@@ -214,7 +255,7 @@ public ref struct MovePicker
                     if (!_ttMove.IsNull && _board.IsLegal(_ttMove))
                     {
                         _ttMovePicked = true;
-                        if (_movesGenerated)
+                        if (_allMovesGenerated || _capturesGenerated)
                         {
                             int ttIdx = FindMove(_ttMove);
                             if (ttIdx >= 0) MarkPicked(ttIdx);
@@ -227,6 +268,7 @@ public ref struct MovePicker
                     break;
 
                 case MovePickerStage.GoodCaptures:
+                    EnsureCapturesGenerated();
                     if (!_capturesScored)
                     {
                         ScoreCaptures();
@@ -237,9 +279,14 @@ public ref struct MovePicker
                     if (bestCapIdx >= 0)
                     {
                         MarkPicked(bestCapIdx);
+                        Move pickedMove = _legalMoves[bestCapIdx];
+                        if (_playedGoodCapturesCount < 32)
+                        {
+                            _playedGoodCaptures[_playedGoodCapturesCount++] = pickedMove;
+                        }
                         CurrentStage = MovePickerStage.GoodCaptures;
                         CurrentSee = _seeScores[bestCapIdx];
-                        move = _legalMoves[bestCapIdx];
+                        move = pickedMove;
                         return true;
                     }
 
@@ -250,6 +297,7 @@ public ref struct MovePicker
                     _stage = MovePickerStage.Killer1;
                     if (!_killer0.IsNull && !_killer0.IsCapture && !_killer0.IsPromotion && _killer0 != _ttMove)
                     {
+                        EnsureAllMovesGenerated();
                         int k0Idx = FindMove(_killer0);
                         if (k0Idx >= 0 && !IsPicked(k0Idx))
                         {
@@ -266,6 +314,7 @@ public ref struct MovePicker
                     _stage = MovePickerStage.CounterMove;
                     if (!_killer1.IsNull && !_killer1.IsCapture && !_killer1.IsPromotion && _killer1 != _ttMove && _killer1 != _killer0)
                     {
+                        EnsureAllMovesGenerated();
                         int k1Idx = FindMove(_killer1);
                         if (k1Idx >= 0 && !IsPicked(k1Idx))
                         {
@@ -283,6 +332,7 @@ public ref struct MovePicker
                     if (!_counterMove.IsNull && !_counterMove.IsCapture && !_counterMove.IsPromotion &&
                         _counterMove != _ttMove && _counterMove != _killer0 && _counterMove != _killer1)
                     {
+                        EnsureAllMovesGenerated();
                         int cmIdx = FindMove(_counterMove);
                         if (cmIdx >= 0 && !IsPicked(cmIdx))
                         {
@@ -296,6 +346,7 @@ public ref struct MovePicker
                     break;
 
                 case MovePickerStage.ContinuationMoves:
+                    EnsureAllMovesGenerated();
                     int bestContIdx = PickBestContinuationMove();
                     if (bestContIdx >= 0)
                     {
@@ -310,6 +361,7 @@ public ref struct MovePicker
                     break;
 
                 case MovePickerStage.QuietMoves:
+                    EnsureAllMovesGenerated();
                     if (!_quietsScored)
                     {
                         ScoreQuiets();
@@ -330,6 +382,13 @@ public ref struct MovePicker
                     break;
 
                 case MovePickerStage.BadCaptures:
+                    EnsureAllMovesGenerated();
+                    if (!_capturesScored)
+                    {
+                        ScoreCaptures();
+                        _capturesScored = true;
+                    }
+
                     int bestBadCapIdx = PickBestBadCapture();
                     if (bestBadCapIdx >= 0)
                     {
@@ -370,6 +429,7 @@ public ref struct MovePicker
         return -1;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void ScoreCaptures()
     {
         _goodCaptureCount = 0;
@@ -379,16 +439,16 @@ public ref struct MovePicker
             Move m = _legalMoves[i];
             if (!m.IsCapture && !m.IsPromotion) continue;
 
+            Piece moved = _board.GetPieceAt(m.From);
+            Piece captured = m.Type == MoveType.EnPassant
+                ? PieceExtensions.Create(_board.SideToMove.Opponent(), PieceType.Pawn)
+                : _board.GetPieceAt(m.To);
+
             int see = StaticExchangeEvaluator.Evaluate(in _board, m);
-            _seeScores[i] = see;
+            _seeScores[i] = (short)see;
             if (see >= 0)
             {
-                Piece moved = _board.GetPieceAt(m.From);
-                Piece captured = m.Type == MoveType.EnPassant
-                    ? PieceExtensions.Create(_board.SideToMove.Opponent(), PieceType.Pawn)
-                    : _board.GetPieceAt(m.To);
-
-                int score = GetMvvLva(in _board, m);
+                int score = GetMvvLva(moved, captured, m);
                 if (_captureHistory != null)
                 {
                     score += _captureHistory.GetScore(moved, m.To, captured) / 16;
@@ -446,7 +506,8 @@ public ref struct MovePicker
                 if (m.IsCapture || m.IsPromotion) continue;
 
                 Piece moved = _board.GetPieceAt(m.From);
-                int contScore = _continuationHistory.GetScore(_prev1Piece, _prev1To, _prev2Piece, _prev2To, moved, m.To);
+                int contScore = _continuationHistory.Get1PlyAt(_prev1Offset, moved, m.To) +
+                                _continuationHistory.Get2PlyAt(_prev2Offset, moved, m.To);
                 if (contScore > 0)
                 {
                     _scores[i] = contScore;
@@ -474,6 +535,7 @@ public ref struct MovePicker
         return bestIdx;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private void ScoreQuiets()
     {
         _quietCount = 0;
@@ -535,18 +597,11 @@ public ref struct MovePicker
     }
 
     /// <summary>
-    /// Computes MVV-LVA score for a capture or promotion move.
+    /// Computes MVV-LVA score for a capture or promotion move using pre-retrieved pieces.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetMvvLva(in Board board, Move move)
+    public static int GetMvvLva(Piece movedPiece, Piece capturedPiece, Move move)
     {
-        Square from = move.From;
-        Square to = move.To;
-        Piece movedPiece = board.GetPieceAt(from);
-        Piece capturedPiece = move.Type == MoveType.EnPassant
-            ? PieceExtensions.Create(board.SideToMove.Opponent(), PieceType.Pawn)
-            : board.GetPieceAt(to);
-
         int victimVal = capturedPiece != Piece.None
             ? StaticExchangeEvaluator.GetPieceValue(capturedPiece.Type())
             : 0;
@@ -563,5 +618,19 @@ public ref struct MovePicker
         }
 
         return score;
+    }
+
+    /// <summary>
+    /// Computes MVV-LVA score for a capture or promotion move.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int GetMvvLva(in Board board, Move move)
+    {
+        Piece movedPiece = board.GetPieceAt(move.From);
+        Piece capturedPiece = move.Type == MoveType.EnPassant
+            ? PieceExtensions.Create(board.SideToMove.Opponent(), PieceType.Pawn)
+            : board.GetPieceAt(move.To);
+
+        return GetMvvLva(movedPiece, capturedPiece, move);
     }
 }

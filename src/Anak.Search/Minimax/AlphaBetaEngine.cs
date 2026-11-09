@@ -491,6 +491,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly CorrectionHistory _correctionHistory;
         private readonly Move[] _counterMoves;
         private readonly List<RootMoveCandidate> _rootCandidates = [];
+        private ulong _lastPawnKey;
+        private float _lastOpenness = -1.0f;
 
         public SearchWorker(int id, AlphaBetaEngine engine, IEvaluator evaluator, TranspositionTable tt)
         {
@@ -733,7 +735,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
 
                 // Populate top candidate moves
-                if (_rootCandidates.Count > 0)
+                if (infoCallback != null && _rootCandidates.Count > 0)
                 {
                     var byMove = new Dictionary<Move, RootMoveCandidate>();
                     foreach (var c in _rootCandidates)
@@ -973,9 +975,25 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private float GetOpenness(in Board board)
+        {
+            ulong pKey = board.PawnKey;
+            if (pKey == _lastPawnKey && _lastOpenness >= 0.0f)
+            {
+                return _lastOpenness;
+            }
+
+            float val = PawnTopology.CalculateOpenness(in board);
+            _lastPawnKey = pKey;
+            _lastOpenness = val;
+            return val;
+        }
+
         /// <summary>
         /// Root search with PVS move ordering and TT update.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private int SearchRoot(
             ref Board board,
             int depth,
@@ -1015,7 +1033,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Span<Piece> capturesSearchedPiece = stackalloc Piece[32];
             Span<Piece> capturesSearchedVictim = stackalloc Piece[32];
             int capturesCount = 0;
-            float rootOpenness = depth >= 3 ? PawnTopology.CalculateOpenness(in board) : 0.5f;
+            float rootOpenness = depth >= 3 ? GetOpenness(in board) : 0.5f;
 
             if (Id == 0)
             {
@@ -1025,7 +1043,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
             while (picker.Next(out Move move))
             {
                 Piece movedPiece = board.GetPieceAt(move.From);
-                board.MakeMove(move, out BoardState state);
+                board.MakeMove(move, out BoardState state, movedPiece);
+                _tt.Prefetch(board.ZobristKey);
                 Nodes++;
                 _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
 
@@ -1069,7 +1088,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     }
                 }
 
-                board.UnmakeMove(move, in state);
+                board.UnmakeMove(move, in state, movedPiece);
                 _incEval?.RollbackTo(0);
 
                 if (Id == 0)
@@ -1156,6 +1175,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         /// <summary>
         /// Negamax search with Principal Variation Search, Transposition Table, and dynamic pruning.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private int AlphaBeta(
             ref Board board,
             int depth,
@@ -1204,7 +1224,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             // Stack limit safety
             if (ply >= MaxSearchDepth)
             {
-                return _evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty).Raw;
+                return _evaluator.Evaluate(in board).Raw;
             }
 
             // Periodic time management & cancellation check (dynamically masked for low-time safety)
@@ -1285,11 +1305,19 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             // 5. Static Evaluation
             int staticEval = -Value.InfiniteValue;
+            int rawEval = -Value.InfiniteValue;
             int eval = -Value.InfiniteValue;
             if (!inCheck)
             {
-                int rawEval = _evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty).Raw;
-                staticEval = _correctionHistory.GetAdjustedEval(in board, rawEval);
+                if (ttExpertMatch && entry.StaticEval != short.MinValue)
+                {
+                    rawEval = entry.StaticEval;
+                }
+                else
+                {
+                    rawEval = _evaluator.Evaluate(in board).Raw;
+                }
+                staticEval = _correctionHistory.GetAdjustedEval(board.SideToMove, board.PawnKey, rawEval);
                 eval = staticEval;
 
                 if (ttExpertMatch)
@@ -1354,11 +1382,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 (ply >= 1 && _stack[ply - 1].CurrentMove != Move.Null) &&
                 SearchHeuristics.HasNonPawnMaterial(in board, board.SideToMove))
             {
-                openness = PawnTopology.CalculateOpenness(in board);
+                openness = GetOpenness(in board);
                 int r = SearchHeuristics.GetNmpReduction(depth, eval, beta, openness, _engine.NmpBase);
                 int nullDepth = depth - 1 - r;
 
                 board.MakeNullMove(out BoardState nullState);
+                _tt.Prefetch(board.ZobristKey);
                 _incEval?.PushNullMove(in board);
                 _stack[ply].CurrentMove = Move.Null;
                 _stack[ply].MovedPiece = Piece.None;
@@ -1496,11 +1525,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
                 if (openness < 0.0f && depth >= 3 && movesSearched > (isPv ? 2 : 1) && !inCheck && isQuiet)
                 {
-                    openness = PawnTopology.CalculateOpenness(in board);
+                    openness = GetOpenness(in board);
                 }
 
                 Piece movedPiece = board.GetPieceAt(move.From);
-                board.MakeMove(move, out BoardState state);
+                board.MakeMove(move, out BoardState state, movedPiece);
+                _tt.Prefetch(board.ZobristKey);
                 Nodes++;
                 _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
 
@@ -1570,7 +1600,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     }
                 }
 
-                board.UnmakeMove(move, in state);
+                board.UnmakeMove(move, in state, movedPiece);
                 _incEval?.RollbackTo(ply);
 
                 if (_engine._stopped || cancellationToken.IsCancellationRequested)
@@ -1623,15 +1653,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             }
 
                             // Correction history update on cutoff (LowerBound: score exceeds staticEval)
-                            if (!inCheck && staticEval != -Value.InfiniteValue && score > staticEval && Math.Abs(score) < Value.MateValue - 100)
+                            if (!inCheck && rawEval != -Value.InfiniteValue && score > staticEval && Math.Abs(score) < Value.MateValue - 100)
                             {
-                                _correctionHistory.Update(in board, depth, score, staticEval);
+                                _correctionHistory.Update(board.SideToMove, board.PawnKey, depth, score, rawEval);
                             }
 
                             // Transposition Table LowerBound store
                             if (_stack[ply].ExcludedMove.IsNull)
                             {
-                                _tt.Store(key, move, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(score, ply), _tt.CurrentAge, TTFlags.LowerBound, _activeExpertId);
+                                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                                _tt.Store(key, move, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(score, ply), _tt.CurrentAge, TTFlags.LowerBound, _activeExpertId, evalShort);
                             }
 
                             return score;
@@ -1653,11 +1684,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             // Correction history update on non-cutoff nodes
             // Exact nodes: update in either direction; UpperBound: only update if bestScore < staticEval
-            if (!inCheck && staticEval != -Value.InfiniteValue && Math.Abs(bestScore) < Value.MateValue - 100)
+            if (!inCheck && rawEval != -Value.InfiniteValue && Math.Abs(bestScore) < Value.MateValue - 100)
             {
                 if (bestScore > alphaOrig || bestScore < staticEval)
                 {
-                    _correctionHistory.Update(in board, depth, bestScore, staticEval);
+                    _correctionHistory.Update(board.SideToMove, board.PawnKey, depth, bestScore, rawEval);
                 }
             }
 
@@ -1666,7 +1697,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
             {
                 TTFlags flag = (bestScore > alphaOrig) ? TTFlags.Exact : TTFlags.UpperBound;
                 Move storeMove = !bestMove.IsNull ? bestMove : ttMove;
-                _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, ply), _tt.CurrentAge, flag, _activeExpertId);
+                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, ply), _tt.CurrentAge, flag, _activeExpertId, evalShort);
             }
 
             return bestScore;

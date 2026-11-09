@@ -74,6 +74,7 @@ public static class StaticExchangeEvaluator
     /// Computes the Static Exchange Evaluation (SEE) score in centipawns for <paramref name="move"/>.
     /// Positive scores represent winning trades, 0 equal trades, and negative scores losing trades.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static int Evaluate(in Board board, Move move)
     {
         Square from = move.From;
@@ -114,6 +115,8 @@ public static class StaticExchangeEvaluator
             occupied ^= 1UL << (byte)epCapSq;
         }
 
+        ulong diagSliders = board.Bishops | board.Queens;
+        ulong orthSliders = board.Rooks | board.Queens;
         ulong attackers = GetAllAttackers(in board, to, occupied);
         Color side = them;
         int d = 0;
@@ -140,13 +143,13 @@ public static class StaticExchangeEvaluator
             occupied ^= 1UL << (byte)attackerSq;
 
             // X-rays uncovered?
-            if (currentAttacker is PieceType.Pawn or PieceType.Bishop or PieceType.Queen)
+            if ((currentAttacker is PieceType.Pawn or PieceType.Bishop or PieceType.Queen) && (diagSliders & occupied) != 0)
             {
-                attackers |= MagicBitboards.GetBishopAttacks(to, occupied) & (board.Bishops | board.Queens);
+                attackers |= MagicBitboards.GetBishopAttacks(to, occupied) & diagSliders;
             }
-            if (currentAttacker is PieceType.Rook or PieceType.Queen)
+            if ((currentAttacker is PieceType.Rook or PieceType.Queen) && (orthSliders & occupied) != 0)
             {
-                attackers |= MagicBitboards.GetRookAttacks(to, occupied) & (board.Rooks | board.Queens);
+                attackers |= MagicBitboards.GetRookAttacks(to, occupied) & orthSliders;
             }
 
             attackers &= occupied;

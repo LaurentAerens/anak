@@ -19,9 +19,9 @@ public struct TTCluster
 /// High-performance lock-free Transposition Table with 64-byte cacheline alignment,
 /// dynamic resizing, DAG subtree reuse for MCTS, and depth-preferred replacement for Minimax.
 /// </summary>
-public sealed class TranspositionTable
+public sealed unsafe class TranspositionTable : IDisposable
 {
-    private TTCluster[] _clusters;
+    private TTCluster* _clusters;
     private ulong _clusterCount;
     private ulong _mask;
     private byte _currentAge;
@@ -39,8 +39,22 @@ public sealed class TranspositionTable
     /// <param name="sizeMb">Size in MB (rounded to nearest power-of-two clusters).</param>
     public TranspositionTable(int sizeMb = DefaultSizeMb)
     {
-        _clusters = [];
         Resize(sizeMb);
+    }
+
+    ~TranspositionTable()
+    {
+        Dispose();
+    }
+
+    public void Dispose()
+    {
+        if (_clusters != null)
+        {
+            NativeMemory.AlignedFree(_clusters);
+            _clusters = null;
+        }
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -63,9 +77,17 @@ public sealed class TranspositionTable
             count <<= 1;
         }
 
+        if (_clusters != null)
+        {
+            NativeMemory.AlignedFree(_clusters);
+            _clusters = null;
+        }
+
         _clusterCount = count;
         _mask = count - 1;
-        _clusters = new TTCluster[count];
+        nuint byteSize = (nuint)(count * 64);
+        _clusters = (TTCluster*)NativeMemory.AlignedAlloc(byteSize, 64);
+        NativeMemory.Clear(_clusters, byteSize);
         _currentAge = 1;
     }
 
@@ -84,14 +106,17 @@ public sealed class TranspositionTable
     /// </summary>
     public void Clear()
     {
-        Array.Clear(_clusters);
+        if (_clusters != null && _clusterCount > 0)
+        {
+            NativeMemory.Clear(_clusters, (nuint)(_clusterCount * 64));
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private ref TTCluster GetCluster(ulong key)
     {
         ulong index = key & _mask;
-        return ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_clusters), (nint)index);
+        return ref _clusters[index];
     }
 
     /// <summary>
@@ -99,13 +124,12 @@ public sealed class TranspositionTable
     /// to eliminate memory latency before probing.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public unsafe void Prefetch(ulong key)
+    public void Prefetch(ulong key)
     {
-        if (System.Runtime.Intrinsics.X86.Sse.IsSupported)
+        if (System.Runtime.Intrinsics.X86.Sse.IsSupported && _clusters != null)
         {
             ulong index = key & _mask;
-            ref TTCluster cluster = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_clusters), (nint)index);
-            System.Runtime.Intrinsics.X86.Sse.Prefetch0(Unsafe.AsPointer(ref cluster));
+            System.Runtime.Intrinsics.X86.Sse.Prefetch0(_clusters + index);
         }
     }
 
@@ -140,20 +164,20 @@ public sealed class TranspositionTable
     /// Stores or updates an entry for Minimax / Alpha-Beta search.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Store(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0)
+    public void Store(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0, short staticEval = short.MinValue)
     {
         ref TTCluster cluster = ref GetCluster(key);
 
         // 1. If key matches either entry in the cluster, update in-place
         if (cluster.Entry0.Key == key)
         {
-            UpdateMinimaxEntry(ref cluster.Entry0, key, bestMove, depth, score, age, flags, expertId);
+            UpdateMinimaxEntry(ref cluster.Entry0, key, bestMove, depth, score, age, flags, expertId, staticEval);
             return;
         }
 
         if (cluster.Entry1.Key == key)
         {
-            UpdateMinimaxEntry(ref cluster.Entry1, key, bestMove, depth, score, age, flags, expertId);
+            UpdateMinimaxEntry(ref cluster.Entry1, key, bestMove, depth, score, age, flags, expertId, staticEval);
             return;
         }
 
@@ -161,26 +185,26 @@ public sealed class TranspositionTable
         // Prefer uninitialized / invalid slot
         if (!cluster.Entry0.IsValid)
         {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
             return;
         }
 
         if (!cluster.Entry1.IsValid)
         {
-            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
             return;
         }
 
         // Prefer replacing slot with older age
         if (cluster.Entry0.Age != age && cluster.Entry1.Age == age)
         {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
             return;
         }
 
         if (cluster.Entry1.Age != age && cluster.Entry0.Age == age)
         {
-            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
             return;
         }
 
@@ -189,13 +213,13 @@ public sealed class TranspositionTable
         {
             if (cluster.Entry0.ExpertId != expertId && cluster.Entry1.ExpertId == expertId)
             {
-                cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+                cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
                 return;
             }
 
             if (cluster.Entry1.ExpertId != expertId && cluster.Entry0.ExpertId == expertId)
             {
-                cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+                cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
                 return;
             }
         }
@@ -203,16 +227,16 @@ public sealed class TranspositionTable
         // Prefer replacing slot with shallower depth
         if (cluster.Entry0.Depth <= cluster.Entry1.Depth)
         {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
         }
         else
         {
-            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId);
+            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void UpdateMinimaxEntry(ref TTEntry existing, ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId)
+    private static void UpdateMinimaxEntry(ref TTEntry existing, ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId, short staticEval)
     {
         // Overwrite score and depth if:
         // - New entry is Exact, OR
@@ -233,6 +257,11 @@ public sealed class TranspositionTable
         if (bestMove != Move.Null)
         {
             existing.BestMove = bestMove;
+        }
+
+        if (staticEval != short.MinValue)
+        {
+            existing.StaticEval = staticEval;
         }
     }
 
@@ -333,7 +362,7 @@ public sealed class TranspositionTable
     /// </summary>
     public int HashfullPermille()
     {
-        if (_clusters.Length == 0) return 0;
+        if (_clusters == null || _clusterCount == 0) return 0;
 
         int sampleCount = (int)Math.Min(1000UL, _clusterCount);
         int usedEntries = 0;

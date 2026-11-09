@@ -82,16 +82,21 @@ public struct TTEntry
     public byte ExpertId;
 
     /// <summary>
-    /// Padding field to ensure struct size is exactly 32 bytes.
-    /// 8 + 4 + 4 + 4 + 2 + 2 + 1 + 1 + 1 + 1 + 4 = 32 bytes.
+    /// Cached raw static evaluation (centipawns) relative to side to move, or short.MinValue if uncomputed.
     /// </summary>
-    private readonly uint _pad1;
+    public short StaticEval;
+
+    /// <summary>
+    /// Padding field to ensure struct size is exactly 32 bytes.
+    /// 8 + 4 + 4 + 4 + 2 + 2 + 1 + 1 + 1 + 1 + 2 + 2 = 32 bytes.
+    /// </summary>
+    private readonly short _pad1;
 
     /// <summary>
     /// Minimax / Alpha-Beta constructor.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public TTEntry(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0)
+    public TTEntry(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0, short staticEval = short.MinValue)
     {
         Key = key;
         Visits = Math.Max(1u, (uint)depth);
@@ -103,6 +108,7 @@ public struct TTEntry
         Age = age;
         Flags = flags;
         ExpertId = expertId;
+        StaticEval = staticEval;
         _pad1 = 0;
     }
 
@@ -122,6 +128,7 @@ public struct TTEntry
         Age = age;
         Flags = flags;
         ExpertId = 0;
+        StaticEval = short.MinValue;
         _pad1 = 0;
     }
 
@@ -176,5 +183,6 @@ public struct TTEntry
         Age = 0;
         Flags = TTFlags.None;
         ExpertId = 0;
+        StaticEval = short.MinValue;
     }
 }

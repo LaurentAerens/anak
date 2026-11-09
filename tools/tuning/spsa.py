@@ -320,6 +320,34 @@ BATCH_B_PARAMETERS: List[SpsaParam] = [
         c=128.0,
         a=15000.0,
     ),
+    SpsaParam(
+        name="CorrHistMax",
+        default=128.0,
+        min_val=16.0,
+        max_val=256.0,
+        c=8.0,
+        a=1000.0,
+    ),
+]
+
+# Batch Corr: Pawn Correction History Dynamics
+BATCH_CORR_PARAMETERS: List[SpsaParam] = [
+    SpsaParam(
+        name="CorrHistDivisor",
+        default=2048.0,
+        min_val=512.0,
+        max_val=8192.0,
+        c=128.0,
+        a=15000.0,
+    ),
+    SpsaParam(
+        name="CorrHistMax",
+        default=128.0,
+        min_val=16.0,
+        max_val=256.0,
+        c=8.0,
+        a=1000.0,
+    ),
 ]
 
 # Batch C: Dynamic Time Management Parameters
@@ -881,9 +909,18 @@ class SpsaTuner:
         wins, losses, draws = self.play_match(uci_plus, uci_minus)
         total_games = wins + losses + draws
         score_plus = (wins + (0.5 * draws)) / max(1, total_games)
-        delta_y = (wins - losses) / max(1, total_games)  # Performance gradient signal [-1, +1]
 
-        # Calculate estimated Elo difference
+        # Performance gradient signal: normalized Elo (invariant to draw-rate) vs raw points
+        mu = (wins - losses) / max(1, total_games)
+        var = (wins + losses) / max(1, total_games) - (mu * mu)
+        sigma = math.sqrt(max(1e-6, var))
+        nelo_signal = mu / sigma
+        nelo_val = 122.871565 * nelo_signal
+
+        # Use normalized Elo signal as gradient driver to prevent draw-rate distortion
+        delta_y = nelo_signal
+
+        # Calculate estimated logistic Elo difference
         elo_diff = 0.0
         if 0.0 < score_plus < 1.0:
             elo_diff = -400.0 * math.log10((1.0 / score_plus) - 1.0)
@@ -917,6 +954,7 @@ class SpsaTuner:
             "games": total_games,
             "score_plus": round(score_plus, 4),
             "delta_y": round(delta_y, 4),
+            "nelo": round(nelo_val, 2),
             "elo_diff": round(elo_diff, 1),
             "uci_plus": uci_plus,
             "uci_minus": uci_minus,
@@ -1003,8 +1041,8 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["core", "b", "time", "search", "bcd", "all", "micro", "weakness", "history_pruning"], default="core",
-                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for 3 history/pawn correction dynamics, 'time' for 9 dynamic time management constants, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation, 'history_pruning' for HistoryPruningThreshold)")
+    parser.add_argument("--batch", type=str, choices=["core", "b", "corr", "time", "search", "bcd", "all", "micro", "weakness", "history_pruning"], default="core",
+                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for history dynamics, 'corr' for CorrHistDivisor and CorrHistMax, 'time' for 9 dynamic time management constants, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation, 'history_pruning' for HistoryPruningThreshold)")
     parser.add_argument("--param", type=str, default=None, help="Tune a single parameter by name (e.g. --param HistoryPruningThreshold)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
@@ -1034,6 +1072,8 @@ def main():
         param_set = CORE_PARAMETERS
     elif args.batch == "b":
         param_set = BATCH_B_PARAMETERS
+    elif args.batch == "corr":
+        param_set = BATCH_CORR_PARAMETERS
     elif args.batch == "time":
         param_set = TIME_PARAMETERS
     elif args.batch == "bcd":

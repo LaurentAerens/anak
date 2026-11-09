@@ -448,16 +448,11 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         return NnueInference.Evaluate(whiteAcc, blackAcc, weights, board.SideToMove);
     }
 
-    /// <summary>
-    /// Evaluates the board position using dynamic multi-expert routing and smooth Open/Closed boundary interpolation.
-    /// Uses incremental pre-accumulated state if called within an active search descent.
-    /// Falls back gracefully to DefaultEvaluator if NNUE is disabled or weights are absent.
-    /// </summary>
-    public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves)
+    public Value Evaluate(in Board board)
     {
         if (!UseNnue)
         {
-            return _fallbackEvaluator.Evaluate(in board, legalMoves);
+            return _fallbackEvaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
         }
 
         // Fast incremental evaluation path during active search (1 SIMD dot product)
@@ -487,7 +482,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
         if (selectedWeights == null)
         {
-            return _fallbackEvaluator.Evaluate(in board, legalMoves);
+            return _fallbackEvaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
         }
 
         // Smooth Boundary Interpolation when routing through Open/Closed middlegame experts outside active search
@@ -516,6 +511,21 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
         int fullCp = EvaluateWithWeights(in board, selectedWeights);
         return new Value(fullCp);
+    }
+
+    /// <summary>
+    /// Evaluates the board position using dynamic multi-expert routing and smooth Open/Closed boundary interpolation.
+    /// Uses incremental pre-accumulated state if called within an active search descent.
+    /// Falls back gracefully to DefaultEvaluator if NNUE is disabled or weights are absent.
+    /// </summary>
+    public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves)
+    {
+        if (!UseNnue)
+        {
+            return _fallbackEvaluator.Evaluate(in board, legalMoves);
+        }
+
+        return Evaluate(in board);
     }
 
     /// <summary>

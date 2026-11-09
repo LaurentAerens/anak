@@ -1,3 +1,5 @@
+using Anak.Search;
+
 namespace Anak.Protocol.Uci;
 
 public enum UciOptionType
@@ -292,6 +294,7 @@ public sealed class UciOptionRegistry
     public SpinOption HistoryMaxBonus { get; }
     public SpinOption HistoryMaxMalus { get; }
     public SpinOption CorrHistDivisor { get; }
+    public SpinOption CorrHistMax { get; }
     public SpinOption MicroMaxShare { get; }
     public SpinOption MicroMinTime { get; }
     public SpinOption MicroDepthGate { get; }
@@ -341,7 +344,8 @@ public sealed class UciOptionRegistry
         HistoryBonusScale = new SpinOption("HistoryBonusScale", defaultValue: 16, min: 1, max: 64);
         HistoryMaxBonus = new SpinOption("HistoryMaxBonus", defaultValue: 2000, min: 200, max: 5000);
         HistoryMaxMalus = new SpinOption("HistoryMaxMalus", defaultValue: 2000, min: 200, max: 5000);
-        CorrHistDivisor = new SpinOption("CorrHistDivisor", defaultValue: 2048, min: 256, max: 8192);
+        CorrHistDivisor = new SpinOption("CorrHistDivisor", defaultValue: SearchHeuristics.TunedCorrHistDivisor, min: 256, max: 8192);
+        CorrHistMax = new SpinOption("CorrHistMax", defaultValue: SearchHeuristics.TunedCorrHistMax, min: 16, max: 256);
         MicroMaxShare = new SpinOption("MicroMaxShare", defaultValue: 6, min: 1, max: 20);
         MicroMinTime = new SpinOption("MicroMinTime", defaultValue: 25, min: 10, max: 60);
         MicroDepthGate = new SpinOption("MicroDepthGate", defaultValue: 85, min: 50, max: 100);
@@ -392,6 +396,7 @@ public sealed class UciOptionRegistry
         Register(HistoryMaxBonus);
         Register(HistoryMaxMalus);
         Register(CorrHistDivisor);
+        Register(CorrHistMax);
         Register(MicroMaxShare);
         Register(MicroMinTime);
         Register(MicroDepthGate);

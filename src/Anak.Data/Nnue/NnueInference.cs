@@ -99,7 +99,7 @@ public static unsafe class NnueInference
         int halfDim = weights.HiddenDim;
         int inputDim = halfDim * 2;
         int l1Dim = weights.L1Dim;
-        byte* pAct = stackalloc byte[inputDim];
+        byte* pAct = stackalloc byte[1024];
 
         // 1. SCReLU activation for feature transformer output: clamp to [0..64], square >> 6
         ActivateFeatures(ourAcc, theirAcc, pAct, halfDim);

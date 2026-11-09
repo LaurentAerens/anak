@@ -18,8 +18,23 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-# Paths relative to repo root
+# Add fastchess script dir to sys.path for elo_kit
 SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+import elo_kit
+
+# Add tools dir for manage_engines
+TOOLS_DIR = SCRIPT_DIR.parent
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
+try:
+    from manage_engines import get_engine_by_name, get_installed_path, load_registry
+except ImportError:
+    get_engine_by_name = None
+    get_installed_path = None
+    load_registry = None
+
 REPO_ROOT = SCRIPT_DIR.parent.parent
 BIN_DIR = SCRIPT_DIR / "bin"
 RESULTS_DIR = SCRIPT_DIR / "results"
@@ -246,8 +261,10 @@ def ensure_anak(skip_build: bool = False, profile: str = None):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Anak Chess Engine — Fast-Chess Elo Benchmark Runner")
-    parser.add_argument("--opponent", type=str, choices=["baseline", "stockfish"], default=None,
-                        help="Benchmark opponent type ('baseline' or 'stockfish'). Defaults to 'baseline' if a baseline is archived, else 'stockfish'.")
+    parser.add_argument("--opponent", type=str, choices=["baseline", "stockfish", "reference"], default=None,
+                        help="Benchmark opponent type ('baseline', 'stockfish', or 'reference'). Defaults to 'baseline' if a baseline is archived, else 'stockfish'.")
+    parser.add_argument("--engine", "--reference-engine", dest="reference_engine", type=str, default=None,
+                        help="Specific reference engine name or fuzzy match from registry when --opponent reference is selected (e.g. 'foxsee', 'FoxSEE-8.2').")
     parser.add_argument("--baseline", type=str, default="latest",
                         help="Specific baseline version to benchmark against (default: 'latest')")
     parser.add_argument("--elo", type=int, default=1800,
@@ -270,6 +287,8 @@ def parse_args():
                         help="Quick smoke test: 25 rounds (50 games) at 3+0.05 time control")
     parser.add_argument("--sprt", nargs="*", default=None, metavar=("ELO0", "ELO1"),
                         help="Enable SPRT (Sequential Probability Ratio Test) with bounds [elo0, elo1] (default: 0.0 3.0)")
+    parser.add_argument("--model", type=str, choices=["normalized", "logistic", "bayesian"], default="normalized",
+                        help="Elo model for SPRT and evaluation ('normalized' for Fishtest nElo, 'logistic' for FIDE Elo). Default: 'normalized'.")
     parser.add_argument("--early-stop", action="store_true",
                         help="Abort match early if statistically negligible chance of positive Elo (e.g. upper 95%% CI < 0)")
     parser.add_argument("--rebuild", action="store_true",
@@ -318,10 +337,18 @@ def main():
     total_games = args.rounds * 2
     ratings = load_ratings()
 
+    if args.reference_engine and args.opponent is None:
+        args.opponent = "reference"
+    elif args.opponent is None:
+        args.opponent = "baseline" if len(available_baselines) > 0 else "stockfish"
+
     # Resolve baseline details if applicable
     baseline_tag = None
     baseline_exe = None
     baseline_elo = 1600
+    ref_engine = None
+    ref_installed = None
+
     if args.opponent == "baseline":
         if args.baseline == "latest":
             baseline_tag = available_baselines[-1]
@@ -341,6 +368,29 @@ def main():
         version_meta = ratings.get("versions", {}).get(baseline_tag, {})
         baseline_elo = version_meta.get("estimated_elo", 1616)
         opponent_label = f"Anak {baseline_tag} (Known Elo: {baseline_elo})"
+    elif args.opponent == "reference":
+        target_name = args.reference_engine or "FoxSEE-8.2"
+        if get_engine_by_name:
+            ref_engine = get_engine_by_name(target_name)
+        if not ref_engine and load_registry:
+            for t in load_registry():
+                for e in t.get("engines", []):
+                    if target_name.lower() in e["name"].lower():
+                        ref_engine = e
+                        break
+                if ref_engine:
+                    break
+        if not ref_engine:
+            print(f"[!] Error: Reference engine '{target_name}' not found in tools/engines_registry.json.")
+            print(f"    Run 'python tools/manage_engines.py list' to view available reference engines.")
+            sys.exit(1)
+        ref_installed = get_installed_path(ref_engine) if get_installed_path else None
+        if not ref_installed:
+            print(f"[!] Error: Reference engine '{ref_engine['name']}' binary '{ref_engine.get('binary_name')}' is not installed.")
+            print(f"    Place the binary in tools/reference_engines/ (Run 'python tools/manage_engines.py' for details).")
+            sys.exit(1)
+        baseline_elo = ref_engine["known_elo"]
+        opponent_label = f"{ref_engine['name']} (CCRL Elo: ~{baseline_elo} | Style: {ref_engine.get('style', 'Standard')})"
     else:
         opponent_label = f"Stockfish 19 (Calibrated Elo: {args.elo})"
 
@@ -367,16 +417,29 @@ def main():
     
     if args.opponent == "baseline":
         pgn_output = RESULTS_DIR / f"anak_dev_vs_{baseline_tag}_{timestamp}.pgn"
-        opp_cmd_rel = str(os.path.relpath(baseline_exe, REPO_ROOT))
         opp_name = f"Anak-{baseline_tag}"
+        opp_cmd = baseline_exe.name
+        opp_dir = str(os.path.relpath(baseline_exe.parent, REPO_ROOT))
         opp_options = [
             f"option.Threads={args.threads}",
             f"option.Hash={args.hash}",
         ]
+    elif args.opponent == "reference":
+        clean_slug = re.sub(r"[^a-zA-Z0-9_]", "_", ref_engine["name"].lower())
+        pgn_output = RESULTS_DIR / f"anak_vs_{clean_slug}_{timestamp}.pgn"
+        opp_name = ref_engine["name"]
+        opp_cmd = ref_installed.name
+        opp_dir = str(os.path.relpath(ref_installed.parent, REPO_ROOT))
+        opp_options = [
+            f"option.Hash={args.hash}",
+        ]
+        for k, v in ref_engine.get("options", {}).items():
+            opp_options.append(f"option.{k}={v}")
     else:
         pgn_output = RESULTS_DIR / f"anak_vs_sf{args.elo}_{timestamp}.pgn"
-        opp_cmd_rel = str(os.path.relpath(STOCKFISH_EXE, REPO_ROOT))
         opp_name = f"Stockfish-{args.elo}"
+        opp_cmd = STOCKFISH_EXE.name
+        opp_dir = str(os.path.relpath(STOCKFISH_EXE.parent, REPO_ROOT))
         opp_options = [
             f"option.Threads={args.threads}",
             f"option.Hash={args.hash}",
@@ -389,14 +452,6 @@ def main():
     anak_dir = str(os.path.relpath(ANAK_EXE.parent, REPO_ROOT))
     openings_path = str(os.path.relpath(OPENINGS_FILE, REPO_ROOT))
     pgn_path = str(os.path.relpath(pgn_output, REPO_ROOT))
-
-    # Determine opponent command and working directory
-    if args.opponent == "baseline":
-        opp_cmd = baseline_exe.name
-        opp_dir = str(os.path.relpath(baseline_exe.parent, REPO_ROOT))
-    else:
-        opp_cmd = STOCKFISH_EXE.name
-        opp_dir = str(os.path.relpath(STOCKFISH_EXE.parent, REPO_ROOT))
 
     # Build fast-chess command
     cmd = [
@@ -439,7 +494,7 @@ def main():
     if args.sprt is not None:
         elo0 = args.sprt[0] if len(args.sprt) > 0 else "0.0"
         elo1 = args.sprt[1] if len(args.sprt) > 1 else "3.0"
-        cmd.extend(["-sprt", f"elo0={elo0}", f"elo1={elo1}", "alpha=0.05", "beta=0.05"])
+        cmd.extend(["-sprt", f"elo0={elo0}", f"elo1={elo1}", f"model={args.model}", "alpha=0.05", "beta=0.05"])
 
     print("\n[+] Launching fast-chess match ...")
     print(f"[+] PGN output will be saved to: {pgn_output}\n")
@@ -504,7 +559,24 @@ def main():
     print(f"  Reference Opponent:       {opponent_label}")
 
     w, l, d, pts, pct = 0, 0, 0, 0.0, 0.0
-    if games_match:
+    elo_res = None
+    if pgn_output.exists():
+        try:
+            elo_res = elo_kit.parse_fastchess_pgn(pgn_output, "Anak-Dev")
+            w, l, d = elo_res.wins, elo_res.losses, elo_res.draws
+            pts = w + (0.5 * d)
+            g = elo_res.games
+            pct = elo_res.score * 100.0
+            print(f"  Total Games Played:       {g}")
+            print(f"  Score:                    {pts:g} / {g}  (Wins: {w}, Losses: {l}, Draws: {d} | Draw Rate: {elo_res.draw_rate*100:.1f}%)")
+            print(f"  Performance Percentage:   {pct:.2f}%")
+            if elo_res.pentanomial and elo_res.pairs_count > 0:
+                ll, ld, ddwl, wd, ww = elo_res.pentanomial
+                print(f"  Pentanomial Pairs ({elo_res.pairs_count}): [LL: {ll}, LD: {ld}, DD/WL: {ddwl}, WD: {wd}, WW: {ww}]")
+        except Exception as e:
+            print(f"[!] Warning: elo_kit PGN parsing failed ({e})")
+
+    if elo_res is None and games_match:
         g, w, l, d = games_match
         pts = w + (0.5 * d)
         pct = (pts / g) * 100.0 if g > 0 else 0.0
@@ -512,7 +584,22 @@ def main():
         print(f"  Score:                    {pts:g} / {g}  (Wins: {w}, Losses: {l}, Draws: {d})")
         print(f"  Performance Percentage:   {pct:.2f}%")
 
-    if elo_match:
+    if elo_res:
+        delta_nelo = elo_res.nelo
+        err_nelo = elo_res.nelo_err
+        delta_log = elo_res.logistic_elo
+        err_log = elo_res.logistic_err
+
+        err_margin = round(err_nelo if args.model == "normalized" else err_log)
+        delta_used = delta_nelo if args.model == "normalized" else delta_log
+        estimated_elo = round(reference_elo + delta_used)
+
+        print(f"  Normalized Elo (nElo):    {delta_nelo:+0.2f} +/- {err_nelo:.2f} (95% CI)")
+        print(f"  Logistic Elo:             {delta_log:+0.2f} +/- {err_log:.2f} (95% CI)")
+        print("  " + "-" * 66)
+        print(f"  >>> ESTIMATED ANAK ELO:   {estimated_elo} +/- {err_margin} ({args.model}) <<<")
+        print("  " + "-" * 66)
+    elif elo_match:
         delta_elo, err = elo_match
         err_margin = round(err)
         estimated_elo = round(reference_elo + delta_elo)
@@ -529,13 +616,13 @@ def main():
     # Record result if requested
     if args.record and estimated_elo is not None:
         tag = args.record
-        ratings.setdefault("versions", {})[tag] = {
+        record_entry = {
             "version": tag,
             "date": time.strftime("%Y-%m-%d"),
             "estimated_elo": estimated_elo,
             "elo_margin": err_margin,
             "baseline_opponent": opponent_label,
-            "score": f"{pts:g} / {games_match[0]}",
+            "score": f"{pts:g} / {g}",
             "wins": w,
             "losses": l,
             "draws": d,
@@ -544,6 +631,13 @@ def main():
             "pgn": str(pgn_output.relative_to(REPO_ROOT)).replace("\\", "/"),
             "notes": args.notes or f"Benchmarked against {opponent_label}",
         }
+        if elo_res:
+            record_entry["nelo"] = round(elo_res.nelo, 2)
+            record_entry["nelo_margin"] = round(elo_res.nelo_err, 2)
+            record_entry["draw_rate"] = round(elo_res.draw_rate, 4)
+            if elo_res.pentanomial:
+                record_entry["pentanomial"] = list(elo_res.pentanomial)
+        ratings.setdefault("versions", {})[tag] = record_entry
         save_ratings(ratings)
         update_benchmarks_md(ratings)
 

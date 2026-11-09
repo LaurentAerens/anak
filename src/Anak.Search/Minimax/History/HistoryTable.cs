@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Anak.Core;
 
 namespace Anak.Search;
@@ -25,7 +26,7 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetScore(Color side, Square from, Square to)
     {
-        return _table[GetIndex(side, from, to)];
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, from, to));
     }
 
     /// <summary>
@@ -34,7 +35,7 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetScore(Color side, Move move)
     {
-        return _table[GetIndex(side, move.From, move.To)];
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, move.From, move.To));
     }
 
     /// <summary>
@@ -44,7 +45,7 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Update(Color side, Square from, Square to, int bonus)
     {
-        ref int val = ref _table[GetIndex(side, from, to)];
+        ref int val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, from, to));
         val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 

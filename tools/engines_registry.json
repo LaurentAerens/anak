@@ -1,0 +1,433 @@
+{
+  "description": "Standardized Multi-Engine Reference Ladder (1600 to 3350 CCRL Elo). Provides 2-3 diverse engine options per tier (tactical, positional, classical, NNUE) to prevent style overfitting in tuning and weakness finding.",
+  "tiers": [
+    {
+      "tier": 1600,
+      "description": "Club / Novice Ground Floor (~1600-1750 CCRL)",
+      "engines": [
+        {
+          "name": "TSCP-1.81",
+          "known_elo": 1650,
+          "author": "Tom Kerrigan",
+          "style": "Classical / Minimax",
+          "binary_name": "tscp.exe",
+          "options": {}
+        },
+        {
+          "name": "Sunfish",
+          "known_elo": 1700,
+          "author": "Thomas Dybdahl Ahle",
+          "style": "Minimalist / Unorthodox",
+          "binary_name": "sunfish.exe",
+          "options": {}
+        },
+        {
+          "name": "MicroMax-4.8",
+          "known_elo": 1750,
+          "author": "H.G. Muller",
+          "style": "Sharp Tactical / Compact",
+          "binary_name": "micromax-4.8.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 1800,
+      "description": "Intermediate / Tactical (~1800-1900 CCRL)",
+      "engines": [
+        {
+          "name": "Rival-1.18",
+          "known_elo": 1850,
+          "author": "Chris Cox",
+          "style": "Classical Mailbox / Solid",
+          "binary_name": "rival-1.18.exe",
+          "options": {}
+        },
+        {
+          "name": "Mediocre-0.5",
+          "known_elo": 1800,
+          "author": "Jonatan Pettersson",
+          "style": "Positional / Developing",
+          "binary_name": "mediocre-0.5.exe",
+          "options": {}
+        },
+        {
+          "name": "Faile-1.4",
+          "known_elo": 1850,
+          "author": "Adrien Regimbald",
+          "style": "Aggressive / Direct Attack",
+          "binary_name": "faile-1.4.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 2000,
+      "description": "Club Master Baseline (~2000-2150 CCRL)",
+      "engines": [
+        {
+          "name": "Glaurung-1.2.1",
+          "known_elo": 2050,
+          "author": "Tord Romstad",
+          "style": "Positional / Classical Pruning",
+          "binary_name": "glaurung-1.2.1.exe",
+          "options": {}
+        },
+        {
+          "name": "Philemon-0.85",
+          "known_elo": 1980,
+          "author": "Jerome Dutreve",
+          "style": "Solid / Defensive",
+          "binary_name": "philemon-0.85.exe",
+          "options": {}
+        },
+        {
+          "name": "Sjeng-11.2",
+          "known_elo": 2100,
+          "author": "Gian-Carlo Pascutto",
+          "style": "Tactical / Endgame Specialist",
+          "binary_name": "sjeng-11.2.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 2200,
+      "description": "Advanced Candidate Master (~2200-2300 CCRL)",
+      "engines": [
+        {
+          "name": "BikJump-2.01",
+          "known_elo": 2250,
+          "author": "Aart Bik",
+          "style": "Fast Bitboard / Sharp",
+          "binary_name": "bikjump-2.01.exe",
+          "options": {}
+        },
+        {
+          "name": "Wasp-1.0",
+          "known_elo": 2250,
+          "author": "John Stanback",
+          "style": "King Safety / Mobility Focus",
+          "binary_name": "wasp-1.0.exe",
+          "options": {}
+        },
+        {
+          "name": "Scorpio-1.9",
+          "known_elo": 2280,
+          "author": "Daniel Shawul",
+          "style": "Complex Tactical / Hybrid Search",
+          "binary_name": "scorpio-1.9.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 2400,
+      "description": "FIDE Master / Classical Gold Standard (~2350-2500 CCRL)",
+      "engines": [
+        {
+          "name": "FoxSEE-8.2",
+          "known_elo": 2495,
+          "author": "Zixiao Han",
+          "style": "Modern Rust / Sharp SEE & Alpha-Beta",
+          "binary_name": "foxsee.exe",
+          "options": {}
+        },
+        {
+          "name": "Fruit-2.1",
+          "known_elo": 2380,
+          "author": "Fabien Letouzey",
+          "style": "Positional Mastery / Gold Standard",
+          "binary_name": "fruit-2.1.exe",
+          "options": {}
+        },
+        {
+          "name": "Toga-II-1.4",
+          "known_elo": 2450,
+          "author": "Thomas Gaksch",
+          "style": "Tactical Extension / Sharp Lines",
+          "binary_name": "toga-ii-1.4.exe",
+          "options": {}
+        },
+        {
+          "name": "Strelka-2.0",
+          "known_elo": 2430,
+          "author": "Yuri Osipov",
+          "style": "Aggressive Pruning / Counter-Attack",
+          "binary_name": "strelka-2.0.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 2600,
+      "description": "International Master Benchmark (~2550-2700 CCRL)",
+      "engines": [
+        {
+          "name": "Crafty-25.2",
+          "known_elo": 2650,
+          "author": "Robert Hyatt",
+          "style": "Complex Positional / Aggressive Attacks",
+          "binary_name": "crafty-25.2.exe",
+          "options": {}
+        },
+        {
+          "name": "Glaurung-2.2",
+          "known_elo": 2600,
+          "author": "Tord Romstad",
+          "style": "Strategic / Stockfish Predecessor",
+          "binary_name": "glaurung-2.2.exe",
+          "options": {}
+        },
+        {
+          "name": "ProDeo-2.0",
+          "known_elo": 2630,
+          "author": "Ed Schroder",
+          "style": "Human-like Positional Play / Rebel Style",
+          "binary_name": "prodeo-2.0.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 2800,
+      "description": "Grandmaster Gatekeeper (~2750-2920 CCRL)",
+      "engines": [
+        {
+          "name": "Senpai-2.0",
+          "known_elo": 2820,
+          "author": "Fabien Letouzey",
+          "style": "Pure Alpha-Beta / Tough Defender",
+          "binary_name": "senpai-2.0.exe",
+          "options": {}
+        },
+        {
+          "name": "Rodent-IV",
+          "known_elo": 2850,
+          "author": "Pawel Koziol",
+          "style": "Piece-Square Heavy / Classical Positional",
+          "binary_name": "rodent-iv.exe",
+          "options": {}
+        },
+        {
+          "name": "Texel-1.07",
+          "known_elo": 2930,
+          "author": "Peter Osterlund",
+          "style": "Precision Texel-Tuned Eval / Solid",
+          "binary_name": "texel-1.07.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 3000,
+      "description": "Super-GM / Elite Classical Alpha-Beta (~3000-3150 CCRL)",
+      "engines": [
+        {
+          "name": "Laser-1.7",
+          "known_elo": 3020,
+          "author": "Jeffery An & Michael An",
+          "style": "Deep Search / Positional Maneuvering",
+          "binary_name": "laser-1.7.exe",
+          "options": {}
+        },
+        {
+          "name": "Arasan-21.4",
+          "known_elo": 3050,
+          "author": "Jon Dart",
+          "style": "Deep Strategic / King Attack",
+          "binary_name": "arasan-21.4.exe",
+          "options": {}
+        },
+        {
+          "name": "Vajolet2-2.8",
+          "known_elo": 3080,
+          "author": "Marco Belli",
+          "style": "Fast Tactical Search / Sharp Complications",
+          "binary_name": "vajolet2-2.8.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 3200,
+      "description": "Modern NNUE Heavyweights (~3180-3280 CCRL)",
+      "engines": [
+        {
+          "name": "Koivisto-8.0",
+          "known_elo": 3220,
+          "author": "Finn Eggers & Kim Kahre",
+          "style": "Modern NNUE / Dynamic Piece Play",
+          "binary_name": "koivisto-8.0.exe",
+          "options": {}
+        },
+        {
+          "name": "RubiChess-2.2",
+          "known_elo": 3260,
+          "author": "Andreas Matthies",
+          "style": "Balanced NNUE / Highly Precise",
+          "binary_name": "rubichess-2.2.exe",
+          "options": {}
+        },
+        {
+          "name": "Seer-2.5",
+          "known_elo": 3250,
+          "author": "Connor McMonigle",
+          "style": "Reinforcement Learned NNUE / Deep Strategy",
+          "binary_name": "seer-2.5.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 3350,
+      "description": "Top-Tier Super-Engine Benchmark (~3300-3400 CCRL)",
+      "engines": [
+        {
+          "name": "Berserk-11.1",
+          "known_elo": 3360,
+          "author": "Jay Honnold",
+          "style": "Top-Tier Open-Source NNUE / Fast Tactics",
+          "binary_name": "berserk-11.1.exe",
+          "options": {}
+        },
+        {
+          "name": "Ethereal-13.25",
+          "known_elo": 3320,
+          "author": "Andrew Grant",
+          "style": "Deep Alpha-Beta / Clean Technical Play",
+          "binary_name": "ethereal-13.25.exe",
+          "options": {}
+        },
+        {
+          "name": "Igel-3.1",
+          "known_elo": 3350,
+          "author": "Volodymyr Shcherbyna",
+          "style": "Sharp Tactical NNUE / King Attacker",
+          "binary_name": "igel-3.1.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 3400,
+      "description": "Super-GM / Elite NNUE Powerhouses (~3400-3450 CCRL)",
+      "engines": [
+        {
+          "name": "Caissa-1.18",
+          "known_elo": 3430,
+          "author": "Michael Byrne",
+          "style": "Deep Dynamic NNUE / Pawn Structure Expert",
+          "binary_name": "caissa-1.18.exe",
+          "options": {}
+        },
+        {
+          "name": "RubiChess-2024",
+          "known_elo": 3410,
+          "author": "Andreas Matthies",
+          "style": "Modern Double-NNUE / High Precision",
+          "binary_name": "rubichess-2024.exe",
+          "options": {}
+        },
+        {
+          "name": "Alexandria-6.2",
+          "known_elo": 3410,
+          "author": "Michael Whiteley",
+          "style": "Fast Tactical Search / Singular Extensions",
+          "binary_name": "alexandria-6.2.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 3500,
+      "description": "World Championship Top Division (~3480-3540 CCRL)",
+      "engines": [
+        {
+          "name": "Berserk-13.0",
+          "known_elo": 3520,
+          "author": "Jay Honnold",
+          "style": "TCEC Finalist / Supreme Tactical NNUE",
+          "binary_name": "berserk-13.0.exe",
+          "options": {}
+        },
+        {
+          "name": "Clover-6.1",
+          "known_elo": 3510,
+          "author": "Luca Metehau",
+          "style": "Extremely Fast Search / Aggressive Pruning",
+          "binary_name": "clover-6.1.exe",
+          "options": {}
+        },
+        {
+          "name": "Ethereal-14.25",
+          "known_elo": 3500,
+          "author": "Andrew Grant",
+          "style": "Clean High-Performance Alpha-Beta & NNUE",
+          "binary_name": "ethereal-14.25.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 3580,
+      "description": "Near-Apex Open-Source Titan Tier (~3520-3560 CCRL)",
+      "engines": [
+        {
+          "name": "PlentyChess-2.2",
+          "known_elo": 3550,
+          "author": "Rowan van Malsen",
+          "style": "Open-Source CPU NNUE / Highly Optimized Alpha-Beta",
+          "binary_name": "plentychess-2.2.exe",
+          "options": {}
+        },
+        {
+          "name": "Obsidian-13.0",
+          "known_elo": 3540,
+          "author": "Gabriel Fernandes",
+          "style": "Open-Source CPU NNUE / Sharp Tactical Pressure",
+          "binary_name": "obsidian-13.0.exe",
+          "options": {}
+        },
+        {
+          "name": "Velvet-v7.1",
+          "known_elo": 3520,
+          "author": "Martin Sedlak",
+          "style": "Open-Source CPU NNUE / Fast Dynamic Play",
+          "binary_name": "velvet-7.1.exe",
+          "options": {}
+        }
+      ]
+    },
+    {
+      "tier": 3650,
+      "description": "The Apex Oracle: Unthrottled CPU Stockfish Summit (~3620-3680+ CCRL)",
+      "engines": [
+        {
+          "name": "Stockfish-19",
+          "known_elo": 3680,
+          "author": "The Stockfish Developers",
+          "style": "The Undisputed World Computer Chess Champion (GPL)",
+          "binary_name": "stockfish.exe",
+          "options": {}
+        },
+        {
+          "name": "Stockfish-17",
+          "known_elo": 3650,
+          "author": "The Stockfish Developers",
+          "style": "World Champion Release (GPL)",
+          "binary_name": "stockfish-17.exe",
+          "options": {}
+        },
+        {
+          "name": "Stockfish-16.1",
+          "known_elo": 3620,
+          "author": "The Stockfish Developers",
+          "style": "Dual Large Network NNUE Reference (GPL)",
+          "binary_name": "stockfish-16.1.exe",
+          "options": {}
+        }
+      ]
+    }
+  ]
+}

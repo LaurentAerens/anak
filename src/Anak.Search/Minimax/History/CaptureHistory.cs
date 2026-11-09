@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Anak.Core;
 
 namespace Anak.Search;
@@ -48,7 +49,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = PieceToIndex(victim);
-        return _table[GetIndex(p, to, v)];
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
     }
 
     /// <summary>
@@ -59,7 +60,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = TypeToIndex(victimType);
-        return _table[GetIndex(p, to, v)];
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
     }
 
     /// <summary>
@@ -70,7 +71,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = PieceToIndex(victim);
-        ref int val = ref _table[GetIndex(p, to, v)];
+        ref int val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
         val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 
@@ -82,7 +83,7 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = TypeToIndex(victimType);
-        ref int val = ref _table[GetIndex(p, to, v)];
+        ref int val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
         val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
     }
 

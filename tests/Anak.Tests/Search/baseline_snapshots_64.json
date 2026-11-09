@@ -8,8 +8,8 @@
     "StaticEval": 14,
     "SeeAndLegalityChecksum": 11450624123649329516,
     "BestMoveUci": "e2e4",
-    "SearchScoreCp": 23,
-    "SearchNodes": 2929
+    "SearchScoreCp": 26,
+    "SearchNodes": 2788
   },
   {
     "Fen": "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
@@ -21,7 +21,7 @@
     "SeeAndLegalityChecksum": 4289653033051617066,
     "BestMoveUci": "e2a6",
     "SearchScoreCp": -70,
-    "SearchNodes": 2551
+    "SearchNodes": 2556
   },
   {
     "Fen": "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
@@ -33,7 +33,7 @@
     "SeeAndLegalityChecksum": 11947831744557275294,
     "BestMoveUci": "b4f4",
     "SearchScoreCp": 161,
-    "SearchNodes": 3512
+    "SearchNodes": 3161
   },
   {
     "Fen": "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
@@ -45,7 +45,7 @@
     "SeeAndLegalityChecksum": 15413505561324672136,
     "BestMoveUci": "g1h1",
     "SearchScoreCp": -462,
-    "SearchNodes": 2038
+    "SearchNodes": 2040
   },
   {
     "Fen": "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
@@ -56,8 +56,8 @@
     "StaticEval": -2,
     "SeeAndLegalityChecksum": 2109530971776920121,
     "BestMoveUci": "d7c8q",
-    "SearchScoreCp": 534,
-    "SearchNodes": 1677
+    "SearchScoreCp": 522,
+    "SearchNodes": 1898
   },
   {
     "Fen": "8/8/4k3/8/8/4K3/4P3/8 w - - 0 1",
@@ -68,8 +68,8 @@
     "StaticEval": 6,
     "SeeAndLegalityChecksum": 13601291627889010740,
     "BestMoveUci": "e3f4",
-    "SearchScoreCp": 43,
-    "SearchNodes": 2383
+    "SearchScoreCp": 47,
+    "SearchNodes": 2303
   },
   {
     "Fen": "rnbqk2r/1p3pbp/p2ppnp1/8/2PNP3/2NB4/PP3PPP/R1BQ1RK1 w kq - 2 9",
@@ -79,9 +79,9 @@
     "ExpertId": 0,
     "StaticEval": 55,
     "SeeAndLegalityChecksum": 1368375072027109967,
-    "BestMoveUci": "h2h3",
-    "SearchScoreCp": 29,
-    "SearchNodes": 7288
+    "BestMoveUci": "c1e3",
+    "SearchScoreCp": 35,
+    "SearchNodes": 12289
   },
   {
     "Fen": "rq2kb1r/pb1p1ppp/1pn1pn2/8/2PpP3/2N2NP1/PP3PBP/R1BQ1RK1 w kq - 0 9",
@@ -92,8 +92,8 @@
     "StaticEval": -52,
     "SeeAndLegalityChecksum": 17462879037678989103,
     "BestMoveUci": "f3d4",
-    "SearchScoreCp": 48,
-    "SearchNodes": 5328
+    "SearchScoreCp": 46,
+    "SearchNodes": 1733
   },
   {
     "Fen": "r1bq1rk1/pp1n1pbp/2pp1np1/4p3/2PPP3/2N1BP2/PP1QN1PP/R3KB1R w KQ - 2 9",
@@ -105,7 +105,7 @@
     "SeeAndLegalityChecksum": 10195034585396995512,
     "BestMoveUci": "e1c1",
     "SearchScoreCp": 76,
-    "SearchNodes": 1794
+    "SearchNodes": 1717
   },
   {
     "Fen": "r1bq1rk1/pp1nppbp/3p1np1/8/2PNP3/2N5/PP2BPPP/R1BQ1RK1 w - - 4 9",
@@ -117,7 +117,7 @@
     "SeeAndLegalityChecksum": 11410798864587264997,
     "BestMoveUci": "c1e3",
     "SearchScoreCp": 46,
-    "SearchNodes": 6681
+    "SearchNodes": 5465
   },
   {
     "Fen": "r2qk2r/pppn1ppp/3bpn2/7b/2BP4/2N1PN1P/PP3PP1/R1BQ1RK1 w kq - 1 9",
@@ -129,7 +129,7 @@
     "SeeAndLegalityChecksum": 11597170682653161741,
     "BestMoveUci": "e3e4",
     "SearchScoreCp": 91,
-    "SearchNodes": 3720
+    "SearchNodes": 3727
   },
   {
     "Fen": "r1b1kb1r/p1pqnppp/1pn1p3/3pP3/P2P2Q1/2N2N2/1PPB1PPP/R3KB1R w KQkq - 3 9",
@@ -139,9 +139,9 @@
     "ExpertId": 1,
     "StaticEval": 63,
     "SeeAndLegalityChecksum": 11793931310122968040,
-    "BestMoveUci": "g4f4",
-    "SearchScoreCp": 47,
-    "SearchNodes": 6261
+    "BestMoveUci": "h2h4",
+    "SearchScoreCp": 48,
+    "SearchNodes": 4582
   },
   {
     "Fen": "r1bq1rk1/pp2nppp/2n1p3/2ppP3/3P2Q1/P1P2N2/2P2PPP/R1B1KB1R w KQ - 5 9",
@@ -152,8 +152,8 @@
     "StaticEval": 28,
     "SeeAndLegalityChecksum": 8795914482116936715,
     "BestMoveUci": "f1d3",
-    "SearchScoreCp": 65,
-    "SearchNodes": 3002
+    "SearchScoreCp": 67,
+    "SearchNodes": 2464
   },
   {
     "Fen": "r2qkbnr/pp1nppp1/2p5/7p/3P3P/3b1NN1/PPP2PP1/R1BQK2R w KQkq - 0 9",
@@ -165,7 +165,7 @@
     "SeeAndLegalityChecksum": 8629001879178273391,
     "BestMoveUci": "d1d3",
     "SearchScoreCp": 109,
-    "SearchNodes": 3841
+    "SearchNodes": 3928
   },
   {
     "Fen": "r1b1kb1r/1pqn1ppp/p2ppn2/8/3NPP2/2N2B2/PPP3PP/R1BQK2R w KQkq - 3 9",
@@ -177,7 +177,7 @@
     "SeeAndLegalityChecksum": 15695776177369880933,
     "BestMoveUci": "d1e2",
     "SearchScoreCp": 26,
-    "SearchNodes": 5106
+    "SearchNodes": 5220
   },
   {
     "Fen": "rnb1k2r/p1q1nppp/1p2p3/2ppP3/P2P4/2P2N2/2P2PPP/R1BQKB1R w KQkq - 0 9",
@@ -189,7 +189,7 @@
     "SeeAndLegalityChecksum": 16021876798857419728,
     "BestMoveUci": "f1b5",
     "SearchScoreCp": 61,
-    "SearchNodes": 3562
+    "SearchNodes": 3595
   },
   {
     "Fen": "r1bq1rk1/pppp1ppp/2n5/1B6/1b2P3/2N1Q3/PPP2PPP/R1B1K2R w KQ - 5 9",
@@ -200,8 +200,8 @@
     "StaticEval": 34,
     "SeeAndLegalityChecksum": 15712433310356278151,
     "BestMoveUci": "e1g1",
-    "SearchScoreCp": 48,
-    "SearchNodes": 8310
+    "SearchScoreCp": 46,
+    "SearchNodes": 7520
   },
   {
     "Fen": "r2qkb1r/pp3p1p/n1p1pp2/5b2/2BP1B2/5N2/PPP2PPP/R2QK2R w KQkq - 2 9",
@@ -213,7 +213,7 @@
     "SeeAndLegalityChecksum": 17887033482430939437,
     "BestMoveUci": "e1g1",
     "SearchScoreCp": 80,
-    "SearchNodes": 4677
+    "SearchNodes": 4656
   },
   {
     "Fen": "rn2kb1r/ppq2p1p/2p1pp2/5b2/3P4/5N2/PPP1BPPP/R1BQ1RK1 w kq - 0 9",
@@ -224,8 +224,8 @@
     "StaticEval": 98,
     "SeeAndLegalityChecksum": 2363531830578995539,
     "BestMoveUci": "c2c4",
-    "SearchScoreCp": 116,
-    "SearchNodes": 4943
+    "SearchScoreCp": 98,
+    "SearchNodes": 6404
   },
   {
     "Fen": "r1bq1rk1/pp3pbp/n2ppnp1/2pP4/2P1P3/2NB1N1P/PP3PP1/R1BQK2R w KQ - 2 9",
@@ -236,8 +236,8 @@
     "StaticEval": 93,
     "SeeAndLegalityChecksum": 16571977189603526486,
     "BestMoveUci": "e1g1",
-    "SearchScoreCp": 59,
-    "SearchNodes": 5094
+    "SearchScoreCp": 57,
+    "SearchNodes": 4287
   },
   {
     "Fen": "rnbq1rk1/pp3pbp/3p1np1/3pp3/2P1P3/2N1BP2/PP1Q2PP/R3KBNR w KQ - 0 9",
@@ -249,7 +249,7 @@
     "SeeAndLegalityChecksum": 1592405213855273036,
     "BestMoveUci": "c4d5",
     "SearchScoreCp": 65,
-    "SearchNodes": 4029
+    "SearchNodes": 4371
   },
   {
     "Fen": "1rbqkb1r/npp2ppp/p3pn2/8/2pP4/4P1P1/PP1N1PBP/RNBQ1RK1 w k - 3 9",
@@ -261,7 +261,7 @@
     "SeeAndLegalityChecksum": 1803900984484929164,
     "BestMoveUci": "a2a4",
     "SearchScoreCp": 86,
-    "SearchNodes": 2659
+    "SearchNodes": 2638
   },
   {
     "Fen": "rn1qkb1r/pb1p1ppp/1p2p3/4P3/2Pp2n1/5NP1/PP1N1PBP/R1BQK2R w KQkq - 1 9",
@@ -273,7 +273,7 @@
     "SeeAndLegalityChecksum": 16786207202834618163,
     "BestMoveUci": "e1g1",
     "SearchScoreCp": 62,
-    "SearchNodes": 3486
+    "SearchNodes": 2930
   },
   {
     "Fen": "r1b1k2r/pp1npp1p/3p1np1/q1pP4/2P1PP2/2PB4/P5PP/R1BQK1NR w KQkq - 3 9",
@@ -284,8 +284,8 @@
     "StaticEval": 94,
     "SeeAndLegalityChecksum": 3646481421728533050,
     "BestMoveUci": "g1e2",
-    "SearchScoreCp": 121,
-    "SearchNodes": 2153
+    "SearchScoreCp": 120,
+    "SearchNodes": 2187
   },
   {
     "Fen": "rnbq1rk1/4ppbp/p2p1np1/1PpP2B1/4P3/2N5/PP2BPPP/R2QK1NR w KQ - 0 9",
@@ -296,8 +296,8 @@
     "StaticEval": 110,
     "SeeAndLegalityChecksum": 667112239570607340,
     "BestMoveUci": "a2a4",
-    "SearchScoreCp": 91,
-    "SearchNodes": 3424
+    "SearchScoreCp": 90,
+    "SearchNodes": 3597
   },
   {
     "Fen": "rn2kb1r/ppp2ppp/4pnb1/q3N3/3P2P1/2N4P/PPP2P2/R1BQKB1R w KQkq - 0 9",
@@ -309,7 +309,7 @@
     "SeeAndLegalityChecksum": 16092383614618830048,
     "BestMoveUci": "f1g2",
     "SearchScoreCp": 101,
-    "SearchNodes": 6769
+    "SearchNodes": 7177
   },
   {
     "Fen": "rnb2rk1/pp2ppbp/3p1np1/q7/2PN4/2N3P1/PP2PPBP/R1BQ1RK1 w - - 1 9",
@@ -320,8 +320,8 @@
     "StaticEval": 52,
     "SeeAndLegalityChecksum": 1484617819088930141,
     "BestMoveUci": "c1e3",
-    "SearchScoreCp": 62,
-    "SearchNodes": 8854
+    "SearchScoreCp": 72,
+    "SearchNodes": 10686
   },
   {
     "Fen": "1rbq1rk1/pp1nbppp/2pp1n2/4p3/2PP4/2N2NP1/PPQ1PPBP/R1B2RK1 w - - 6 9",
@@ -333,7 +333,7 @@
     "SeeAndLegalityChecksum": 16579606265750311470,
     "BestMoveUci": "f1d1",
     "SearchScoreCp": 68,
-    "SearchNodes": 2977
+    "SearchNodes": 3046
   },
   {
     "Fen": "r1b1k1nr/pp1pqpbp/2p3p1/8/2BpP3/2P2Q2/PP1P1PPP/RNB2RK1 w kq - 3 9",
@@ -345,7 +345,7 @@
     "SeeAndLegalityChecksum": 7166446778839000553,
     "BestMoveUci": "d2d3",
     "SearchScoreCp": 46,
-    "SearchNodes": 5142
+    "SearchNodes": 5125
   },
   {
     "Fen": "r2qkb1r/pppn1p1p/3p1np1/8/2PNP3/2N5/PP2QPPP/R1B1K2R w KQkq - 0 9",
@@ -355,9 +355,9 @@
     "ExpertId": 0,
     "StaticEval": 94,
     "SeeAndLegalityChecksum": 2867064739206621464,
-    "BestMoveUci": "e1g1",
-    "SearchScoreCp": 39,
-    "SearchNodes": 6992
+    "BestMoveUci": "h2h3",
+    "SearchScoreCp": 40,
+    "SearchNodes": 5939
   },
   {
     "Fen": "rn1qkb1r/pp1n1ppp/2p5/4p2b/P1NP4/2N2P2/1P2P1PP/R1BQKB1R w KQkq e6 0 9",
@@ -369,7 +369,7 @@
     "SeeAndLegalityChecksum": 15791312651727232723,
     "BestMoveUci": "c3e4",
     "SearchScoreCp": 37,
-    "SearchNodes": 9566
+    "SearchNodes": 10341
   },
   {
     "Fen": "rnb1k2r/pp1p2pp/4p3/q1p2p2/2PPn3/2PQ1NP1/P2BPP1P/R3KB1R w KQkq f6 0 9",
@@ -381,7 +381,7 @@
     "SeeAndLegalityChecksum": 16559827606201768440,
     "BestMoveUci": "f1g2",
     "SearchScoreCp": 45,
-    "SearchNodes": 2807
+    "SearchNodes": 2781
   },
   {
     "Fen": "rnbqk2r/ppp2pb1/3p3p/4p1p1/3PP1n1/2N3B1/PPPQ1PPP/R3KBNR w KQkq e6 0 9",
@@ -393,7 +393,7 @@
     "SeeAndLegalityChecksum": 15416476252545930634,
     "BestMoveUci": "g1f3",
     "SearchScoreCp": 104,
-    "SearchNodes": 2954
+    "SearchNodes": 2561
   },
   {
     "Fen": "rnb1k2r/ppq2pb1/2pp1npp/4p3/3PPP1B/2PB4/PP1N2PP/R2QK1NR w KQkq e6 0 9",
@@ -405,7 +405,7 @@
     "SeeAndLegalityChecksum": 47991512539433728,
     "BestMoveUci": "f4e5",
     "SearchScoreCp": 120,
-    "SearchNodes": 2691
+    "SearchNodes": 2685
   },
   {
     "Fen": "rnbqkbnr/ppp1p1pp/8/3pPp2/8/8/PPPP1PPP/RNBQKBNR w KQkq f6 0 3",
@@ -417,7 +417,7 @@
     "SeeAndLegalityChecksum": 3882306600039819522,
     "BestMoveUci": "d2d4",
     "SearchScoreCp": 88,
-    "SearchNodes": 2849
+    "SearchNodes": 2848
   },
   {
     "Fen": "rnbqkbnr/pppp1ppp/8/8/3pP3/8/PPP2PPP/RNBQKBNR b KQkq e3 0 3",
@@ -429,7 +429,7 @@
     "SeeAndLegalityChecksum": 5030777172013431077,
     "BestMoveUci": "d4e3",
     "SearchScoreCp": 103,
-    "SearchNodes": 3963
+    "SearchNodes": 3910
   },
   {
     "Fen": "8/8/8/2k5/3pP3/8/8/4K3 b - e3 0 1",
@@ -441,7 +441,7 @@
     "SeeAndLegalityChecksum": 16473042723534255909,
     "BestMoveUci": "d4e3",
     "SearchScoreCp": 14,
-    "SearchNodes": 1512
+    "SearchNodes": 1551
   },
   {
     "Fen": "8/8/8/8/k2pP2Q/8/8/4K3 b - e3 0 1",
@@ -451,9 +451,9 @@
     "ExpertId": 2,
     "StaticEval": -691,
     "SeeAndLegalityChecksum": 17303811074551151865,
-    "BestMoveUci": "a4a5",
-    "SearchScoreCp": -1035,
-    "SearchNodes": 2936
+    "BestMoveUci": "a4b5",
+    "SearchScoreCp": -1056,
+    "SearchNodes": 5930
   },
   {
     "Fen": "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
@@ -465,7 +465,7 @@
     "SeeAndLegalityChecksum": 6107035837312778854,
     "BestMoveUci": "b1c3",
     "SearchScoreCp": -11,
-    "SearchNodes": 2268
+    "SearchNodes": 2230
   },
   {
     "Fen": "r3k2r/pppq1ppp/2npbn2/2b1p3/2B1P3/2NPBN2/PPPQ1PPP/R3K2R b KQkq - 6 6",
@@ -477,7 +477,7 @@
     "SeeAndLegalityChecksum": 13217880955447487647,
     "BestMoveUci": "c5e3",
     "SearchScoreCp": 20,
-    "SearchNodes": 2850
+    "SearchNodes": 2855
   },
   {
     "Fen": "r3k2r/ppp2ppp/2n1bn2/3p4/3P4/2N1BN2/PPP2PPP/R3K2R w KQkq - 0 1",
@@ -489,7 +489,7 @@
     "SeeAndLegalityChecksum": 15185344201327975140,
     "BestMoveUci": "e1c1",
     "SearchScoreCp": 13,
-    "SearchNodes": 3593
+    "SearchNodes": 4413
   },
   {
     "Fen": "2kr1b1r/ppp2ppp/2n1bn2/3p4/3P4/2N1BN2/PPP2PPP/R4RK1 b - - 0 1",
@@ -500,8 +500,8 @@
     "StaticEval": 410,
     "SeeAndLegalityChecksum": 11847379613928694049,
     "BestMoveUci": "e6f5",
-    "SearchScoreCp": 423,
-    "SearchNodes": 6317
+    "SearchScoreCp": 426,
+    "SearchNodes": 9233
   },
   {
     "Fen": "r1bq1rk1/ppp2ppp/2n2n2/3p4/3P4/2PB1N2/PP3PPP/R1BQR1K1 w - - 0 1",
@@ -512,8 +512,8 @@
     "StaticEval": 137,
     "SeeAndLegalityChecksum": 10780130530729723730,
     "BestMoveUci": "h2h3",
-    "SearchScoreCp": 124,
-    "SearchNodes": 7154
+    "SearchScoreCp": 120,
+    "SearchNodes": 6758
   },
   {
     "Fen": "r1bq1rk1/2p1bppp/p1np1n2/1p2p3/4P3/1BP2N1P/PP1P1PP1/RNBQR1K1 w - - 0 1",
@@ -525,7 +525,7 @@
     "SeeAndLegalityChecksum": 8144518349957807670,
     "BestMoveUci": "d2d4",
     "SearchScoreCp": 73,
-    "SearchNodes": 2343
+    "SearchNodes": 2369
   },
   {
     "Fen": "2kr3r/ppp1qppp/2npbn2/4p1B1/4P3/2NP1Q2/PPP2PPP/R4RK1 w - - 0 1",
@@ -537,7 +537,7 @@
     "SeeAndLegalityChecksum": 15547654533559183791,
     "BestMoveUci": "c3d5",
     "SearchScoreCp": -385,
-    "SearchNodes": 2256
+    "SearchNodes": 2199
   },
   {
     "Fen": "r4rk1/ppp1qppp/2npbn2/4p3/4P1b1/2NP1N2/PPP1QPPP/2KR3R b - - 0 1",
@@ -549,7 +549,7 @@
     "SeeAndLegalityChecksum": 17014506173953064093,
     "BestMoveUci": "c6d4",
     "SearchScoreCp": 713,
-    "SearchNodes": 2441
+    "SearchNodes": 2434
   },
   {
     "Fen": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNB1KB1R w KQkq - 0 1",
@@ -561,7 +561,7 @@
     "SeeAndLegalityChecksum": 18241723251464714397,
     "BestMoveUci": "f1c4",
     "SearchScoreCp": -870,
-    "SearchNodes": 5102
+    "SearchNodes": 5126
   },
   {
     "Fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
@@ -573,7 +573,7 @@
     "SeeAndLegalityChecksum": 12247168616758055009,
     "BestMoveUci": "g1f3",
     "SearchScoreCp": 54,
-    "SearchNodes": 2199
+    "SearchNodes": 2875
   },
   {
     "Fen": "4k3/pppppppp/8/8/8/8/PPPPPPPP/4K2R w K - 0 1",
@@ -595,9 +595,9 @@
     "ExpertId": 2,
     "StaticEval": 16,
     "SeeAndLegalityChecksum": 15869619091204944432,
-    "BestMoveUci": "g3g4",
-    "SearchScoreCp": 8,
-    "SearchNodes": 29160
+    "BestMoveUci": "d4b4",
+    "SearchScoreCp": 3,
+    "SearchNodes": 35619
   },
   {
     "Fen": "8/2k5/8/2n5/4B3/8/2K5/8 b - - 0 1",
@@ -607,9 +607,9 @@
     "ExpertId": 2,
     "StaticEval": 12,
     "SeeAndLegalityChecksum": 13154045126669143196,
-    "BestMoveUci": "c7d6",
-    "SearchScoreCp": 7,
-    "SearchNodes": 10037
+    "BestMoveUci": "c5e4",
+    "SearchScoreCp": 0,
+    "SearchNodes": 2866
   },
   {
     "Fen": "4k3/P7/8/8/8/8/7p/4K3 w - - 0 1",
@@ -620,8 +620,8 @@
     "StaticEval": -17,
     "SeeAndLegalityChecksum": 7101477822152929934,
     "BestMoveUci": "a7a8q",
-    "SearchScoreCp": 835,
-    "SearchNodes": 5542
+    "SearchScoreCp": 849,
+    "SearchNodes": 6691
   },
   {
     "Fen": "r3k2r/P6P/8/8/8/8/p6p/R3K2R b KQkq - 0 1",
@@ -632,8 +632,8 @@
     "StaticEval": 14,
     "SeeAndLegalityChecksum": 11437902733335003456,
     "BestMoveUci": "a8a7",
-    "SearchScoreCp": 17,
-    "SearchNodes": 2453
+    "SearchScoreCp": 16,
+    "SearchNodes": 2141
   },
   {
     "Fen": "r1bq1rk1/ppp2ppp/2nb1n2/3pp3/8/2PP1NP1/PP2PPBP/RNBQ1RK1 b - - 0 6",
@@ -657,7 +657,7 @@
     "SeeAndLegalityChecksum": 8424073196561766144,
     "BestMoveUci": "g1h1",
     "SearchScoreCp": 445,
-    "SearchNodes": 3319
+    "SearchNodes": 3329
   },
   {
     "Fen": "r4rk1/1bq1bppp/p1n1pn2/1p1p4/3P1B2/1B2PN2/PPQN1PPP/R4RK1 w - - 2 12",
@@ -692,8 +692,8 @@
     "StaticEval": -346,
     "SeeAndLegalityChecksum": 13130901772254378720,
     "BestMoveUci": "f7f6",
-    "SearchScoreCp": -302,
-    "SearchNodes": 12383
+    "SearchScoreCp": -322,
+    "SearchNodes": 10262
   },
   {
     "Fen": "4k3/8/4r3/8/4N3/8/4K3/8 w - - 0 1",
@@ -703,9 +703,9 @@
     "ExpertId": 2,
     "StaticEval": -25,
     "SeeAndLegalityChecksum": 1074757185086897808,
-    "BestMoveUci": "e2d3",
-    "SearchScoreCp": -29,
-    "SearchNodes": 5944
+    "BestMoveUci": "e2e3",
+    "SearchScoreCp": -65,
+    "SearchNodes": 9450
   },
   {
     "Fen": "4k3/8/4r3/8/4R3/8/4K3/8 w - - 0 1",
@@ -716,8 +716,8 @@
     "StaticEval": 10,
     "SeeAndLegalityChecksum": 14420181343160623981,
     "BestMoveUci": "e4e6",
-    "SearchScoreCp": 375,
-    "SearchNodes": 8354
+    "SearchScoreCp": 356,
+    "SearchNodes": 8609
   },
   {
     "Fen": "4k3/8/4r3/8/4B3/8/4K3/8 w - - 0 1",
@@ -728,8 +728,8 @@
     "StaticEval": 11,
     "SeeAndLegalityChecksum": 1074757185086897808,
     "BestMoveUci": "e2e3",
-    "SearchScoreCp": -25,
-    "SearchNodes": 5081
+    "SearchScoreCp": -73,
+    "SearchNodes": 8393
   },
   {
     "Fen": "4k2b/8/8/4B3/8/8/4K3/8 w - - 0 1",
@@ -752,8 +752,8 @@
     "StaticEval": 127,
     "SeeAndLegalityChecksum": 13216952461271753552,
     "BestMoveUci": "h1h8",
-    "SearchScoreCp": 697,
-    "SearchNodes": 5376
+    "SearchScoreCp": 687,
+    "SearchNodes": 5475
   },
   {
     "Fen": "3r1k2/8/8/8/8/8/8/R3K2R w KQ - 0 1",
@@ -764,7 +764,7 @@
     "StaticEval": 310,
     "SeeAndLegalityChecksum": 11787515765926585744,
     "BestMoveUci": "h1h8",
-    "SearchScoreCp": 634,
-    "SearchNodes": 2731
+    "SearchScoreCp": 720,
+    "SearchNodes": 3546
   }
 ]

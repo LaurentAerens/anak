@@ -155,7 +155,7 @@ public class MinimaxFoundationsTests
         ulong pawnKey = CorrectionHistory.ComputePawnKey(in board);
         Assert.True(pawnKey != 0);
 
-        corr.Update(pawnKey, depth: 8, searchScore: 100, staticEval: 20);
+        corr.Update(pawnKey, depth: 8, searchScore: 100, rawEval: 20);
         int correction = corr.GetCorrection(pawnKey);
         Assert.True(correction > 0);
         Assert.True(correction <= CorrectionHistory.MaxCorrection);
@@ -171,14 +171,41 @@ public class MinimaxFoundationsTests
         Board whiteBoard = Fen.Parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         Board blackBoard = Fen.Parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
 
-        corr.Update(in whiteBoard, depth: 8, searchScore: 100, staticEval: 20);
-        corr.Update(in blackBoard, depth: 8, searchScore: 20, staticEval: 100);
+        corr.Update(in whiteBoard, depth: 8, searchScore: 100, rawEval: 20);
+        corr.Update(in blackBoard, depth: 8, searchScore: 20, rawEval: 100);
 
         int whiteCorr = corr.GetCorrection(in whiteBoard);
         int blackCorr = corr.GetCorrection(in blackBoard);
 
         Assert.True(whiteCorr > 0);
         Assert.True(blackCorr < 0);
+    }
+
+    [Fact]
+    public void CorrectionHistory_TargetConvergenceAndStability()
+    {
+        var corr = new CorrectionHistory();
+        Board board = Fen.Parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        ulong pawnKey = CorrectionHistory.ComputePawnKey(in board);
+
+        const int rawEval = 20;
+        const int searchScore = 84; // True position value is +84, error is +64
+
+        // Perform successive updates until convergence
+        for (int i = 0; i < 100; i++)
+        {
+            corr.Update(pawnKey, depth: 16, searchScore: searchScore, rawEval: rawEval);
+        }
+
+        int correction = corr.GetCorrection(pawnKey);
+        // Learned correction should converge to true prediction error (+64) within integer rounding precision,
+        // and NOT halve to +32 as occurred with the staticEval defect.
+        Assert.InRange(correction, 63, 64);
+        Assert.InRange(corr.GetAdjustedEval(in board, rawEval), 83, 84);
+
+        // When prediction matches search score, updating with rawEval must NOT decay the correction toward zero
+        corr.Update(pawnKey, depth: 16, searchScore: searchScore, rawEval: rawEval);
+        Assert.InRange(corr.GetCorrection(pawnKey), 63, 64);
     }
 
     [Fact]

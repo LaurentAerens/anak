@@ -8,7 +8,7 @@ This document tracks identified bugs, state pollution issues, and mathematical c
 
 | Bug / Ref | Module | Severity | Description | Fix Status |
 | :---: | :--- | :---: | :--- | :---: |
-| **BUG-01** | `CorrectionHistory` | **High** | Mathematical convergence defect: updates against adjusted static eval decay learned corrections toward zero and halve steady-state table magnitudes. | Ready for Testing |
+| **BUG-01** | `CorrectionHistory` | **High** | Mathematical convergence defect: updates against adjusted static eval decay learned corrections toward zero and halve steady-state table magnitudes. | Implemented (Tier 1 Cleared: 49.2%, 0 crashes) |
 | **BUG-02** | `SearchStack` / Killers | **Medium-High** | Killer move bleed: killers from unrelated branches and earlier iterations persist indefinitely at child plies, distorting move ordering in subsequent searches. | Ready for Testing |
 
 ---

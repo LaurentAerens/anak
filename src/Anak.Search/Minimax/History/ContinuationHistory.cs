@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Anak.Core;
 
 namespace Anak.Search;
@@ -14,8 +15,29 @@ public sealed class ContinuationHistory
 
     public const int TableSize = 16 * 64 * 16 * 64;
 
-    private readonly int[] _table1Ply = new int[TableSize];
-    private readonly int[] _table2Ply = new int[TableSize];
+    private readonly short[] _table1Ply = new short[TableSize];
+    private readonly short[] _table2Ply = new short[TableSize];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int GetBaseOffset(Piece prevPiece, Square prevTo)
+    {
+        if (prevPiece == Piece.None || prevTo == Square.None) return -1;
+        return ((int)prevPiece << 16) | ((int)prevTo << 10);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Get1PlyAt(int baseOffset, Piece currPiece, Square currTo)
+    {
+        if (baseOffset < 0 || currPiece == Piece.None || currTo == Square.None) return 0;
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table1Ply), baseOffset | ((int)currPiece << 6) | (int)currTo);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int Get2PlyAt(int baseOffset, Piece currPiece, Square currTo)
+    {
+        if (baseOffset < 0 || currPiece == Piece.None || currTo == Square.None) return 0;
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table2Ply), baseOffset | ((int)currPiece << 6) | (int)currTo);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int GetIndex(Piece p1, Square to1, Piece p2, Square to2)
@@ -42,7 +64,7 @@ public sealed class ContinuationHistory
         if (prevPiece == Piece.None || prevTo == Square.None || currPiece == Piece.None || currTo == Square.None)
             return 0;
 
-        return _table1Ply[GetIndex(prevPiece, prevTo, currPiece, currTo)];
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table1Ply), GetIndex(prevPiece, prevTo, currPiece, currTo));
     }
 
     /// <summary>
@@ -54,7 +76,7 @@ public sealed class ContinuationHistory
         if (prevPiece == Piece.None || prevTo == Square.None || currPiece == Piece.None || currTo == Square.None)
             return 0;
 
-        return _table2Ply[GetIndex(prevPiece, prevTo, currPiece, currTo)];
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table2Ply), GetIndex(prevPiece, prevTo, currPiece, currTo));
     }
 
     /// <summary>
@@ -77,8 +99,8 @@ public sealed class ContinuationHistory
             return;
 
         int idx = GetIndex(prevPiece, prevTo, currPiece, currTo);
-        ref int val = ref _table1Ply[idx];
-        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
+        ref short val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table1Ply), idx);
+        val = (short)(val + bonus - ((val * Math.Abs(bonus)) / MaxHistory));
     }
 
     /// <summary>
@@ -91,8 +113,8 @@ public sealed class ContinuationHistory
             return;
 
         int idx = GetIndex(prevPiece, prevTo, currPiece, currTo);
-        ref int val = ref _table2Ply[idx];
-        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
+        ref short val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table2Ply), idx);
+        val = (short)(val + bonus - ((val * Math.Abs(bonus)) / MaxHistory));
     }
 
     /// <summary>

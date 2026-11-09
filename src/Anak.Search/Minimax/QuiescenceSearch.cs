@@ -50,9 +50,10 @@ public sealed class QuiescenceSearch
     /// <summary>
     /// Searches captures and promotions until a quiet position is reached.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public int Search(ref Board board, int alpha, int beta, int ply = 0, int qsDepth = 0)
     {
-        if (_isTimeUp != null && _isTimeUp())
+        if ((++_qsNodes & 511) == 0 && _isTimeUp != null && _isTimeUp())
         {
             return 0;
         }
@@ -70,7 +71,9 @@ public sealed class QuiescenceSearch
         Move bestMove = Move.Null;
 
         // 1. Transposition Table probe
-        if (_tt != null && _tt.TryGet(key, out TTEntry entry) && entry.ExpertId == ActiveExpertId)
+        TTEntry entry = default;
+        bool ttHit = _tt != null && _tt.TryGet(key, out entry);
+        if (ttHit && entry.ExpertId == ActiveExpertId)
         {
             int ttScore = TTEntry.ScoreFromTt(entry.Score, ply);
             if (entry.Flags == TTFlags.Exact) return ttScore;
@@ -81,15 +84,22 @@ public sealed class QuiescenceSearch
         bool inCheck = board.IsInCheck();
 
         // 2. Stand-pat evaluation (only when not in check)
+        int rawEval = -Value.InfiniteValue;
         int standPat = -Value.InfiniteValue;
         if (!inCheck)
         {
-            // Full evaluation (fast incremental evaluation via IIncrementalEvaluator)
-            standPat = _evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty).Raw;
-            if (_correctionHistory != null)
+            if (ttHit && entry.ExpertId == ActiveExpertId && entry.StaticEval != short.MinValue)
             {
-                standPat = _correctionHistory.GetAdjustedEval(in board, standPat);
+                rawEval = entry.StaticEval;
             }
+            else
+            {
+                rawEval = _evaluator.Evaluate(in board).Raw;
+            }
+
+            standPat = _correctionHistory != null
+                ? _correctionHistory.GetAdjustedEval(board.SideToMove, board.PawnKey, rawEval)
+                : rawEval;
 
             if (standPat >= beta)
             {
@@ -129,12 +139,20 @@ public sealed class QuiescenceSearch
         // 4. Generate legal moves
         Unsafe.SkipInit(out MoveList moves);
         moves.Clear();
-        MoveGenerator.GenerateLegalMoves(in board, ref moves);
 
-        if (moves.Count == 0)
+        bool genAll = inCheck || (qsDepth == 0 && EnableQsChecks);
+        if (genAll)
         {
-            // If in check and no moves exist, it is checkmate
-            return inCheck ? -(Value.MateValue - ply) : 0;
+            MoveGenerator.GenerateLegalMoves(in board, ref moves);
+            if (moves.Count == 0)
+            {
+                // If in check and no moves exist, it is checkmate; if not in check, stalemate
+                return inCheck ? -(Value.MateValue - ply) : 0;
+            }
+        }
+        else
+        {
+            MoveGenerator.GenerateLegalCaptures(in board, ref moves);
         }
 
         // 5. Filter and score candidate moves into compact arrays
@@ -163,12 +181,14 @@ public sealed class QuiescenceSearch
                 }
                 else
                 {
+                    Piece moved = board.GetPieceAt(m.From);
+                    Piece captured = m.Type == MoveType.EnPassant
+                        ? PieceExtensions.Create(board.SideToMove.Opponent(), PieceType.Pawn)
+                        : board.GetPieceAt(m.To);
+
                     // Move-level Delta Pruning
                     if (!m.IsPromotion)
                     {
-                        Piece captured = m.Type == MoveType.EnPassant
-                            ? PieceExtensions.Create(board.SideToMove.Opponent(), PieceType.Pawn)
-                            : board.GetPieceAt(m.To);
                         int victimVal = captured != Piece.None
                             ? StaticExchangeEvaluator.GetPieceValue(captured.Type())
                             : 0;
@@ -183,7 +203,7 @@ public sealed class QuiescenceSearch
                     int see = StaticExchangeEvaluator.Evaluate(in board, m);
                     if (see < 0) continue;
 
-                    moveScore = MovePicker.GetMvvLva(in board, m) + see;
+                    moveScore = MovePicker.GetMvvLva(moved, captured, m) + see;
                 }
             }
             else
@@ -229,17 +249,19 @@ public sealed class QuiescenceSearch
             candidateScores[bestSlot] = int.MinValue; // Mark as picked
 
             Piece movedPiece = board.GetPieceAt(move.From);
-            board.MakeMove(move, out BoardState state);
+            board.MakeMove(move, out BoardState state, movedPiece);
+            _tt?.Prefetch(board.ZobristKey);
             _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
 
             int score = -Search(ref board, -beta, -alpha, ply + 1, qsDepth + 1);
 
-            board.UnmakeMove(move, in state);
+            board.UnmakeMove(move, in state, movedPiece);
             _incEval?.RollbackTo(ply);
 
             if (score >= beta)
             {
-                _tt?.Store(key, move, 0, TTEntry.ScoreToTt(beta, ply), _tt.CurrentAge, TTFlags.LowerBound, ActiveExpertId);
+                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                _tt?.Store(key, move, 0, TTEntry.ScoreToTt(beta, ply), _tt.CurrentAge, TTFlags.LowerBound, ActiveExpertId, evalShort);
                 return beta;
             }
 
@@ -251,7 +273,8 @@ public sealed class QuiescenceSearch
         }
 
         TTFlags flag = (alpha > originalAlpha) ? TTFlags.Exact : TTFlags.UpperBound;
-        _tt?.Store(key, bestMove, 0, TTEntry.ScoreToTt(alpha, ply), _tt?.CurrentAge ?? 1, flag, ActiveExpertId);
+        short finalEvalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+        _tt?.Store(key, bestMove, 0, TTEntry.ScoreToTt(alpha, ply), _tt?.CurrentAge ?? 1, flag, ActiveExpertId, finalEvalShort);
         return alpha;
     }
 

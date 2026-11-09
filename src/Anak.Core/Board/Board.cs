@@ -51,12 +51,12 @@ public struct Board : IEquatable<Board>
         0x07, 0x0F, 0x0F, 0x0F, 0x03, 0x0F, 0x0F, 0x0B  // Rank 8: A8(~BQ), E8(~B), H8(~BK)
     ];
 
-    // Repetition history
-    private RepetitionTable _history;
+    // Piece mailbox (kept in hot cachelines alongside bitboards)
+    private Mailbox _mailbox;
     private int _gamePly;
 
-    // Piece mailbox
-    private Mailbox _mailbox;
+    // Repetition history (cold 8KB buffer placed at end of struct)
+    private RepetitionTable _history;
 
     public int GamePly => _gamePly;
 
@@ -105,13 +105,16 @@ public struct Board : IEquatable<Board>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly Piece GetPieceAt(Square square)
     {
-        return (uint)square < 64 ? (Piece)_mailbox[(int)square] : Piece.None;
+        return (uint)square < 64
+            ? (Piece)Unsafe.Add(ref Unsafe.As<Mailbox, byte>(ref Unsafe.AsRef(in _mailbox)), (int)(byte)square)
+            : Piece.None;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal void SetPiece(Square sq, Piece piece)
     {
-        if ((uint)sq < 64) _mailbox[(int)sq] = (byte)piece;
+        if ((uint)sq < 64)
+            Unsafe.Add(ref Unsafe.As<Mailbox, byte>(ref _mailbox), (int)(byte)sq) = (byte)piece;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -134,12 +137,12 @@ public struct Board : IEquatable<Board>
 
         // Bishops & Queens
         ulong occ = Occupied;
-        ulong bAttacks = MagicBitboards.GetBishopAttacks(sq, occ);
-        if ((bAttacks & (Bishops | Queens) & attackerPieces) != 0) return true;
+        ulong enemyBishopsQueens = (Bishops | Queens) & attackerPieces;
+        if (enemyBishopsQueens != 0 && (MagicBitboards.GetBishopAttacks(sq, occ) & enemyBishopsQueens) != 0) return true;
 
         // Rooks & Queens
-        ulong rAttacks = MagicBitboards.GetRookAttacks(sq, occ);
-        if ((rAttacks & (Rooks | Queens) & attackerPieces) != 0) return true;
+        ulong enemyRooksQueens = (Rooks | Queens) & attackerPieces;
+        if (enemyRooksQueens != 0 && (MagicBitboards.GetRookAttacks(sq, occ) & enemyRooksQueens) != 0) return true;
 
         return false;
     }
@@ -288,7 +291,14 @@ public struct Board : IEquatable<Board>
         _mailbox[(byte)from] = 0;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public bool MakeMove(Move move, out BoardState state)
+    {
+        return MakeMove(move, out state, GetPieceAt(move.From));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public bool MakeMove(Move move, out BoardState state, Piece movedPiece)
     {
         Square from = move.From;
         Square to = move.To;
@@ -296,7 +306,6 @@ public struct Board : IEquatable<Board>
         Color us = SideToMove;
         Color them = us.Opponent();
 
-        Piece movedPiece = GetPieceAt(from);
         PieceType movedType = movedPiece.Type();
 
         // Determine captured piece
@@ -383,10 +392,19 @@ public struct Board : IEquatable<Board>
             EpSquare = Square.None;
         }
 
+        ulong epKey = 0UL;
+        bool epCanBeCaptured = false;
         if (type == MoveType.DoublePawnPush)
         {
-            EpSquare = (Square)((int)from ^ 24);
-            ZobristKey ^= Zobrist.EpFile[(int)from & 7];
+            Square epSq = (Square)((int)from ^ 24);
+            EpSquare = epSq;
+            epKey = Zobrist.EpFile[(int)from & 7];
+            ZobristKey ^= epKey;
+
+            ulong epAttackers = (us == Color.White
+                ? Bitboard.WhitePawnAttacks[(int)epSq]
+                : Bitboard.BlackPawnAttacks[(int)epSq]) & Pawns & (them == Color.White ? White : Black);
+            epCanBeCaptured = epAttackers != 0;
         }
 
         // 6. Update clocks
@@ -411,24 +429,22 @@ public struct Board : IEquatable<Board>
         // 8. Update history (strip EpFile from repetition history if no enemy pawn can capture en passant)
         if (_gamePly < 1024)
         {
-            ulong histKey = ZobristKey;
-            if (EpSquare != Square.None)
-            {
-                ulong epAttackers = (us == Color.White
-                    ? Bitboard.WhitePawnAttacks[(int)EpSquare]
-                    : Bitboard.BlackPawnAttacks[(int)EpSquare]) & Pawns & (them == Color.White ? White : Black);
-                if (epAttackers == 0)
-                {
-                    histKey ^= Zobrist.EpFile[(int)EpSquare & 7];
-                }
-            }
-            _history[_gamePly++] = histKey;
+            _history[_gamePly++] = (type == MoveType.DoublePawnPush && !epCanBeCaptured)
+                ? (ZobristKey ^ epKey)
+                : ZobristKey;
         }
 
         return true;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void UnmakeMove(Move move, in BoardState state)
+    {
+        UnmakeMove(move, in state, move.IsPromotion ? Piece.None : GetPieceAt(move.To));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public void UnmakeMove(Move move, in BoardState state, Piece movedPiece)
     {
         if (_gamePly > 0)
         {
@@ -457,7 +473,6 @@ public struct Board : IEquatable<Board>
         }
         else
         {
-            Piece movedPiece = GetPieceAt(to);
             MovePiece(to, from, us, movedPiece.Type());
         }
 
@@ -558,6 +573,7 @@ public struct Board : IEquatable<Board>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly bool IsRepetition(int searchPly)
     {
+        if (HalfmoveClock < 4) return false;
         int count = 0;
         int start = Math.Max(0, (_gamePly - 1) - HalfmoveClock);
         int rootIndex = (_gamePly - 1) - searchPly;
@@ -676,24 +692,63 @@ public struct Board : IEquatable<Board>
     {
         if (move.IsNull) return false;
 
-        // For castling, fall back to legal move check
-        if (move.IsCastling)
-        {
-            MoveList list = default;
-            MoveGenerator.GenerateLegalMoves(in this, ref list);
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (list[i] == move) return true;
-            }
-            return false;
-        }
-
         Square from = move.From;
         Square to = move.To;
         if (from == to) return false;
 
         Color us = SideToMove;
         Color them = us.Opponent();
+
+        // Fast O(1) castling legality check without generating moves
+        if (move.IsCastling)
+        {
+            if (IsInCheck()) return false;
+            ulong occ = Occupied;
+
+            if (us == Color.White)
+            {
+                if (move.Type == MoveType.KingCastle)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.F1) | (1UL << (int)Square.G1);
+                    return from == Square.E1 && to == Square.G1 &&
+                           (Castling & CastlingRights.WhiteKingside) != 0 &&
+                           (occ & emptyMask) == 0 &&
+                           !IsSquareAttacked(Square.F1, Color.Black) &&
+                           !IsSquareAttacked(Square.G1, Color.Black);
+                }
+                if (move.Type == MoveType.QueenCastle)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.B1) | (1UL << (int)Square.C1) | (1UL << (int)Square.D1);
+                    return from == Square.E1 && to == Square.C1 &&
+                           (Castling & CastlingRights.WhiteQueenside) != 0 &&
+                           (occ & emptyMask) == 0 &&
+                           !IsSquareAttacked(Square.D1, Color.Black) &&
+                           !IsSquareAttacked(Square.C1, Color.Black);
+                }
+            }
+            else
+            {
+                if (move.Type == MoveType.KingCastle)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.F8) | (1UL << (int)Square.G8);
+                    return from == Square.E8 && to == Square.G8 &&
+                           (Castling & CastlingRights.BlackKingside) != 0 &&
+                           (occ & emptyMask) == 0 &&
+                           !IsSquareAttacked(Square.F8, Color.White) &&
+                           !IsSquareAttacked(Square.G8, Color.White);
+                }
+                if (move.Type == MoveType.QueenCastle)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.B8) | (1UL << (int)Square.C8) | (1UL << (int)Square.D8);
+                    return from == Square.E8 && to == Square.C8 &&
+                           (Castling & CastlingRights.BlackQueenside) != 0 &&
+                           (occ & emptyMask) == 0 &&
+                           !IsSquareAttacked(Square.D8, Color.White) &&
+                           !IsSquareAttacked(Square.C8, Color.White);
+                }
+            }
+            return false;
+        }
 
         Piece piece = GetPieceAt(from);
         if (piece == Piece.None || piece.Color() != us) return false;
@@ -917,8 +972,10 @@ public struct Board : IEquatable<Board>
         if ((pawnAttacks & Pawns & enemyAfter) != 0) return false;
         if ((Bitboard.KnightAttacks[k] & Knights & enemyAfter) != 0) return false;
         if ((Bitboard.KingAttacks[k] & Kings & enemyAfter) != 0) return false;
-        if ((MagicBitboards.GetBishopAttacks(kingSq, occAfter) & (Bishops | Queens) & enemyAfter) != 0) return false;
-        if ((MagicBitboards.GetRookAttacks(kingSq, occAfter) & (Rooks | Queens) & enemyAfter) != 0) return false;
+        ulong bq = (Bishops | Queens) & enemyAfter;
+        if (bq != 0 && (MagicBitboards.GetBishopAttacks(kingSq, occAfter) & bq) != 0) return false;
+        ulong rq = (Rooks | Queens) & enemyAfter;
+        if (rq != 0 && (MagicBitboards.GetRookAttacks(kingSq, occAfter) & rq) != 0) return false;
 
         return true;
     }

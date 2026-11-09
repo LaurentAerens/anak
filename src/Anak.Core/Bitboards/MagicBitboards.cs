@@ -8,6 +8,9 @@ namespace Anak.Core;
 
 public static class MagicBitboards
 {
+    public static readonly MagicEntry[] BishopEntries = new MagicEntry[64];
+    public static readonly MagicEntry[] RookEntries = new MagicEntry[64];
+
     public static readonly ulong[] BishopMasks = new ulong[64];
     public static readonly ulong[] RookMasks = new ulong[64];
 
@@ -70,14 +73,18 @@ public static class MagicBitboards
             ulong bMask = GenerateBishopMask(sq);
             BishopMasks[sq] = bMask;
             int bBits = BitOperations.PopCount(bMask);
-            BishopShifts[sq] = 64 - bBits;
+            int bShift = 64 - bBits;
+            BishopShifts[sq] = bShift;
+            BishopEntries[sq] = new MagicEntry(bMask, BishopMagics[sq], bishopOffset, bShift);
             bishopOffset += 1 << bBits;
 
             RookOffsets[sq] = rookOffset;
             ulong rMask = GenerateRookMask(sq);
             RookMasks[sq] = rMask;
             int rBits = BitOperations.PopCount(rMask);
-            RookShifts[sq] = 64 - rBits;
+            int rShift = 64 - rBits;
+            RookShifts[sq] = rShift;
+            RookEntries[sq] = new MagicEntry(rMask, RookMagics[sq], rookOffset, rShift);
             rookOffset += 1 << rBits;
         }
 
@@ -129,44 +136,36 @@ public static class MagicBitboards
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetBishopAttacks(Square square, ulong occupancy)
     {
-        int sq = (byte)square;
-        ulong mask = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopMasks), sq);
-        int offset = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopOffsets), sq);
+        ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopEntries), (int)(byte)square);
 
         if (Bmi2.X64.IsSupported)
         {
-            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, mask);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), offset + index);
+            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), entry.Offset + index);
         }
         else
         {
-            ulong occ = occupancy & mask;
-            ulong magic = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopMagics), sq);
-            int shift = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopShifts), sq);
-            int index = (int)((occ * magic) >> shift);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), offset + index);
+            ulong occ = occupancy & entry.Mask;
+            int index = (int)((occ * entry.Magic) >> entry.Shift);
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), entry.Offset + index);
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetRookAttacks(Square square, ulong occupancy)
     {
-        int sq = (byte)square;
-        ulong mask = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookMasks), sq);
-        int offset = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookOffsets), sq);
+        ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookEntries), (int)(byte)square);
 
         if (Bmi2.X64.IsSupported)
         {
-            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, mask);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), offset + index);
+            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), entry.Offset + index);
         }
         else
         {
-            ulong occ = occupancy & mask;
-            ulong magic = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookMagics), sq);
-            int shift = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookShifts), sq);
-            int index = (int)((occ * magic) >> shift);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), offset + index);
+            ulong occ = occupancy & entry.Mask;
+            int index = (int)((occ * entry.Magic) >> entry.Shift);
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), entry.Offset + index);
         }
     }
 
@@ -303,3 +302,13 @@ public static class MagicBitboards
         }
     }
 }
+
+[StructLayout(LayoutKind.Sequential)]
+public readonly struct MagicEntry(ulong mask, ulong magic, int offset, int shift)
+{
+    public readonly ulong Mask = mask;
+    public readonly ulong Magic = magic;
+    public readonly int Offset = offset;
+    public readonly int Shift = shift;
+}
+

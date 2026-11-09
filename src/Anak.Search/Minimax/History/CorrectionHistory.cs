@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Anak.Core;
 
 namespace Anak.Search;
@@ -13,9 +14,9 @@ public sealed class CorrectionHistory
     public const int TableSizePerColor = 16384;
     public const int TableMask = 16383;
     public const int TotalTableSize = TableSizePerColor * 2;
-    public const int MaxCorrection = 128;
+    public static int MaxCorrection { get; set; } = SearchHeuristics.TunedCorrHistMax;
     public const int ScaleFactor = 128;
-    public static int WeightDivisor { get; set; } = 2048;
+    public static int WeightDivisor { get; set; } = SearchHeuristics.TunedCorrHistDivisor;
 
     private readonly short[] _table = new short[TotalTableSize];
 
@@ -54,7 +55,7 @@ public sealed class CorrectionHistory
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetCorrection(Color side, ulong pawnKey)
     {
-        return _table[GetIndex(side, pawnKey)] / ScaleFactor;
+        return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, pawnKey)) / ScaleFactor;
     }
 
     /// <summary>
@@ -104,62 +105,64 @@ public sealed class CorrectionHistory
 
     /// <summary>
     /// Updates the pawn correction history offset using exponential moving average weighted by search depth.
+    /// Uses unadjusted raw static evaluation so that the learned offset converges to the true evaluation error (searchScore - rawEval).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Update(Color side, ulong pawnKey, int depth, int searchScore, int staticEval)
+    public void Update(Color side, ulong pawnKey, int depth, int searchScore, int rawEval)
     {
-        int diff = Math.Clamp(searchScore - staticEval, -MaxCorrection, MaxCorrection);
+        int diff = Math.Clamp(searchScore - rawEval, -MaxCorrection, MaxCorrection);
         int target = diff * ScaleFactor;
         int weight = Math.Clamp(depth * 32, 16, 512);
 
         int index = GetIndex(side, pawnKey);
-        int current = _table[index];
-        _table[index] = (short)(current + (target - current) * weight / WeightDivisor);
+        ref short entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), index);
+        int current = entry;
+        entry = (short)(current + (target - current) * weight / WeightDivisor);
     }
 
     /// <summary>
     /// Updates the pawn correction history offset using board pawn structure and side to move, weighted by depth.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Update(in Board board, int depth, int searchScore, int staticEval)
+    public void Update(in Board board, int depth, int searchScore, int rawEval)
     {
-        Update(board.SideToMove, ComputePawnKey(in board), depth, searchScore, staticEval);
+        Update(board.SideToMove, ComputePawnKey(in board), depth, searchScore, rawEval);
     }
 
     /// <summary>
     /// Overload for backward compatibility / tests (defaults to White).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Update(ulong pawnKey, int depth, int searchScore, int staticEval)
+    public void Update(ulong pawnKey, int depth, int searchScore, int rawEval)
     {
-        Update(Color.White, pawnKey, depth, searchScore, staticEval);
+        Update(Color.White, pawnKey, depth, searchScore, rawEval);
     }
 
     /// <summary>
     /// Overload for backward compatibility / tests (defaults depth to 1).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Update(Color side, ulong pawnKey, int searchScore, int staticEval)
+    public void Update(Color side, ulong pawnKey, int searchScore, int rawEval)
     {
-        Update(side, pawnKey, 1, searchScore, staticEval);
+        Update(side, pawnKey, 1, searchScore, rawEval);
     }
 
     /// <summary>
     /// Overload for backward compatibility / tests (defaults to White, depth 1).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Update(ulong pawnKey, int searchScore, int staticEval)
+    public void Update(ulong pawnKey, int searchScore, int rawEval)
     {
-        Update(Color.White, pawnKey, 1, searchScore, staticEval);
+        Update(Color.White, pawnKey, 1, searchScore, rawEval);
     }
 
     /// <summary>
     /// Overload for backward compatibility / tests (defaults depth to 1).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Update(in Board board, int searchScore, int staticEval)
+    public void Update(in Board board, int searchScore, int rawEval)
     {
-        Update(in board, 1, searchScore, staticEval);
+        Update(in board, 1, searchScore, rawEval);
     }
 
     /// <summary>
