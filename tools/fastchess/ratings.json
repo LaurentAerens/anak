@@ -434,6 +434,31 @@
       "tc": "uci bugfix",
       "pgn": "",
       "notes": "Fix false 'score mate 1' UCI reporting on overwhelming evaluations, delegating to SearchScoreFormat"
+    },
+    "v1.0.19": {
+      "version": "v1.0.19",
+      "date": "2026-11-09",
+      "estimated_elo": 2630,
+      "elo_margin": 9,
+      "baseline_opponent": "Anak v1.0.16 (Known Elo: 2611)",
+      "score": "1490.5 / 2683",
+      "wins": 1105,
+      "losses": 807,
+      "draws": 771,
+      "perf_percent": 55.55,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.16_20261109_214311.pgn",
+      "notes": "Movegen & search NPS throughput optimizations (+19.2 nElo / +38.8 Elo over v1.0.16 in 2,683 SPRT games, 100.0% LOS)",
+      "nelo": 19.22,
+      "nelo_margin": 9.35,
+      "draw_rate": 0.2874,
+      "pentanomial": [
+        55,
+        139,
+        205,
+        173,
+        99
+      ]
     }
   }
 }

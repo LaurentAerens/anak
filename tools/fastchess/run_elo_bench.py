@@ -112,12 +112,17 @@ def get_available_baselines() -> list[str]:
     if not BASELINES_DIR.exists():
         return []
     baselines = []
-    for d in sorted(BASELINES_DIR.iterdir()):
+    for d in BASELINES_DIR.iterdir():
         if d.is_dir():
             exe = d / ("anak.exe" if os.name == "nt" else "anak")
             if exe.exists():
                 baselines.append(d.name)
-    return baselines
+
+    def version_key(name: str):
+        nums = [int(n) for n in re.findall(r"\d+", name)]
+        return (1 if name.startswith("v") else 0, nums, name)
+
+    return sorted(baselines, key=version_key)
 
 
 def archive_baseline(version_tag: str, elo: int = None, margin: int = None, opponent: str = None, notes: str = "", profile: str = None):
@@ -269,12 +274,16 @@ def parse_args():
                         help="Specific baseline version to benchmark against (default: 'latest')")
     parser.add_argument("--elo", type=int, default=1800,
                         help="Target Stockfish Elo rating when benchmarking against Stockfish (default: 1800, range: 1320-3190)")
-    parser.add_argument("--games", type=int, default=None,
+    parser.add_argument("--games", "--max-games", dest="games", type=int, default=None,
                         help="Total number of games to play (default: 1000). Sets rounds = games // 2 with color reversal.")
     parser.add_argument("--rounds", type=int, default=None,
                         help="Number of opening pairs (each played twice with swapped colors, default: 500 = 1000 games)")
     parser.add_argument("--tc", type=str, default="3+0.05",
                         help="Time control base+inc in seconds (default: 3+0.05 for high-volume 1000-game matches)")
+    parser.add_argument("--nodes", type=int, default=None,
+                        help="Fixed node limit per move (e.g. 50000) for deterministic hardware-independent benchmarking")
+    parser.add_argument("--candidate-nnue-dir", type=str, default=None,
+                        help="Path to candidate .nnue networks directory (passed as option.NnuePath to candidate Anak)")
     total_cpus = os.cpu_count() or 2
     default_concurrency = max(1, (total_cpus // 2) - 2) if total_cpus > 8 else max(1, total_cpus // 2)
     parser.add_argument("--concurrency", type=int, default=default_concurrency,
@@ -420,9 +429,11 @@ def main():
         opp_name = f"Anak-{baseline_tag}"
         opp_cmd = baseline_exe.name
         opp_dir = str(os.path.relpath(baseline_exe.parent, REPO_ROOT))
+        syzygy_abs = str((REPO_ROOT / "syzygy").resolve())
         opp_options = [
             f"option.Threads={args.threads}",
             f"option.Hash={args.hash}",
+            f"option.SyzygyPath={syzygy_abs}",
         ]
     elif args.opponent == "reference":
         clean_slug = re.sub(r"[^a-zA-Z0-9_]", "_", ref_engine["name"].lower())
@@ -454,21 +465,32 @@ def main():
     pgn_path = str(os.path.relpath(pgn_output, REPO_ROOT))
 
     # Build fast-chess command
-    cmd = [
-        fastchess_cmd,
+    syzygy_abs = str((REPO_ROOT / "syzygy").resolve())
+    anak_dev_options = [
         "-engine",
         f"cmd={anak_cmd}",
         f"dir={anak_dir}",
         "name=Anak-Dev",
         f"option.Threads={args.threads}",
         f"option.Hash={args.hash}",
+        f"option.SyzygyPath={syzygy_abs}",
+    ]
+    if args.candidate_nnue_dir:
+        cand_dir_abs = os.path.abspath(args.candidate_nnue_dir)
+        anak_dev_options.append(f"option.NnuePath={cand_dir_abs}")
+
+    each_limit = f"nodes={args.nodes}" if args.nodes else f"tc={args.tc}"
+
+    cmd = [
+        fastchess_cmd,
+    ] + anak_dev_options + [
         "-engine",
         f"cmd={opp_cmd}",
         f"dir={opp_dir}",
         f"name={opp_name}",
     ] + opp_options + [
         "-each",
-        f"tc={args.tc}",
+        each_limit,
         "-openings",
         f"file={openings_path}",
         "format=epd",

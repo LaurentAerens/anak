@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.18` (Estimated Rating: **2611 Elo**)  
+> **Current Active Version:** `v1.0.19` (Estimated Rating: **2630 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,23 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.19` (2026-11-09) — Move Generation & Search NPS Throughput Optimizations
+- **Category:** Performance & Move Ordering / Search Speedup (Patch Release)
+- **Estimated Elo:** **2630 &plusmn; 9** (+19.2 nElo / +38.8 Elo over v1.0.16, 100.0% LOS)
+- **SPRT Validation:** Tier 2 SPRT [0.0, 3.0] accepted $H_1$ at 2,683 games (1105 wins, 807 losses, 771 draws, 55.55% score, LLR 2.95)
+- **Highlights:**
+  - **Move Generation Throughput Optimizations:**
+    - Streamlined legal move generation throughput and eliminated `stackalloc` pin ray allocations in `MoveGenerator`.
+    - Accelerated pin and check resolution masks across king evasion and non-evasion pathways.
+  - **Search & Quiescence NPS Speedups:**
+    - Comprehensive zero-eval-impact hot-path optimizations across `AlphaBetaEngine`, `QuiescenceSearch`, and `MovePicker`.
+    - Streamlined history tables (`ContinuationHistory`, `CorrectionHistory`, `CaptureHistory`) and transposition table entry access.
+  - **Tooling & Benchmark Infrastructure:**
+    - Integrated `elo_kit` pentanomial and Fishtest normalized Elo evaluation into fastchess benchmarking.
+    - Added natural semver sorting and auto-detection for baseline opponents.
+
+---
 
 ### `v1.0.18` (2026-11-08) — Fix False "Mate in 1" UCI Reporting on High Evaluations (Bugfix Release)
 - **Category:** Protocol & Usability / Search Score Formatting (Patch Release)

@@ -16,7 +16,7 @@ public static class Program
     public static readonly string Version = typeof(Program).Assembly
         .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0]
         ?? typeof(Program).Assembly.GetName().Version?.ToString(3)
-        ?? "1.0.18";
+        ?? "1.0.19";
     public static readonly string EngineName = $"Anak {Version}";
     public const string Author = "Anak Contributors";
 

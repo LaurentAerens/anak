@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "tools\\fastchess\\results\\anak_dev_vs_v1.0.15_20261109_184929.pgn",
+        "file": "tools\\fastchess\\results\\anak_dev_vs_v1.0.16_20261109_214311.pgn",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -60,7 +60,7 @@
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 7369987972724238474,
+    "seed": 3536494717234807912,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -70,7 +70,7 @@
     "autosaveinterval": 20,
     "games": 2,
     "rounds": 4000,
-    "concurrency": 8,
+    "concurrency": 10,
     "force_concurrency": false,
     "recover": false,
     "noswap": false,
@@ -102,6 +102,10 @@
                 [
                     "Hash",
                     "64"
+                ],
+                [
+                    "SyzygyPath",
+                    "C:\\Users\\laurent aerens\\source\\repos\\anak\\syzygy"
                 ]
             ],
             "limit": {
@@ -118,8 +122,8 @@
             "variant": 0
         },
         {
-            "name": "Anak-v1.0.15",
-            "dir": "tools\\fastchess\\baselines\\v1.0.15",
+            "name": "Anak-v1.0.16",
+            "dir": "tools\\fastchess\\baselines\\v1.0.16",
             "cmd": "anak.exe",
             "args": "",
             "restart": false,
@@ -131,6 +135,10 @@
                 [
                     "Hash",
                     "64"
+                ],
+                [
+                    "SyzygyPath",
+                    "C:\\Users\\laurent aerens\\source\\repos\\anak\\syzygy"
                 ]
             ],
             "limit": {
@@ -148,16 +156,16 @@
         }
     ],
     "stats": {
-        "Anak-Dev vs Anak-v1.0.15": {
-            "wins": 258,
-            "losses": 180,
-            "draws": 144,
-            "penta_WW": 47,
-            "penta_WD": 59,
-            "penta_WL": 105,
-            "penta_DD": 21,
-            "penta_LD": 43,
-            "penta_LL": 16
+        "Anak-Dev vs Anak-v1.0.16": {
+            "wins": 1104,
+            "losses": 807,
+            "draws": 771,
+            "penta_WW": 215,
+            "penta_WD": 326,
+            "penta_WL": 348,
+            "penta_DD": 114,
+            "penta_LD": 217,
+            "penta_LL": 121
         }
     }
 }
