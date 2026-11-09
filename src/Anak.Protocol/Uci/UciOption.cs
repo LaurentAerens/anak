@@ -326,7 +326,7 @@ public sealed class UciOptionRegistry
         SyzygyProbeDepth = new SpinOption("SyzygyProbeDepth", defaultValue: 1, min: 1, max: 100);
         UseNnue = new CheckOption("UseNnue", defaultValue: true);
         NnuePath = new StringOption("NnuePath", defaultValue: "./networks");
-        BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: true);
+        BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: false);
         MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
         Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
         LmrBase = new SpinOption("LmrBase", defaultValue: 83, min: 0, max: 250);

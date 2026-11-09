@@ -10,6 +10,7 @@ This document tracks identified bugs, state pollution issues, and mathematical c
 | :---: | :--- | :---: | :--- | :---: |
 | **BUG-01** | `CorrectionHistory` | **High** | Mathematical convergence defect: updates against adjusted static eval decay learned corrections toward zero and halve steady-state table magnitudes. | Implemented (Tier 1 Cleared: 49.2%, 0 crashes) |
 | **BUG-02** | `SearchStack` / Killers | **Medium-High** | Killer move bleed: killers from unrelated branches and earlier iterations persist indefinitely at child plies, distorting move ordering in subsequent searches. | Ready for Testing |
+| **BUG-03** | `RunMicroBlunderWatchdog` | **Critical** | Root move hijacking & false refutations: 1-ply SEE on opponent reply flags sound queen trades, piece sacrifices, and recaptures as blunders, overriding deep search with blunders. | Disabled in v1.0.20 (+52.5 Elo at MTC); Redesign Plan Defined |
 
 ---
 
@@ -111,6 +112,51 @@ if (ply + 2 < MaxStackSize)
 }
 ```
 This guarantees that killer moves probed at ply $N$ were produced either by immediate sibling moves or within the active local subtree.
+
+---
+
+### BUG-03: Micro Blunder Watchdog Root Move Hijacking & False-Blunder Refutations
+
+- **Affected Files:**
+  - [`src/Anak.Search/Minimax/AlphaBetaEngine.cs`](file:///c:/Users/laurent%20aerens/source/repos/anak/src/Anak.Search/Minimax/AlphaBetaEngine.cs#L779-L952)
+  - [`src/Anak.Protocol/Uci/UciOption.cs`](file:///c:/Users/laurent%20aerens/source/repos/anak/src/Anak.Protocol/Uci/UciOption.cs#L329)
+
+#### Mechanism of the Defect
+At the end of `RunMainSearch`, when the engine has completed a 20+ ply iterative deepening search, `RunMicroBlunderWatchdog` was called to verify the candidate root move:
+```csharp
+if (multiTier is { HasMicroModel: true } && !bestMove.IsNull && !cancellationToken.IsCancellationRequested)
+{
+    bestMove = RunMicroBlunderWatchdog(in rootBoard, bestMove, bestScore, completedDepth, expectedDepth, multiTier, cancellationToken);
+}
+```
+Inside the watchdog, the candidate move was made (`boardAfter.MakeMove(candidateMove)`), and opponent responses were checked:
+```csharp
+if (oppMove.IsCapture || oppMove.IsPromotion)
+{
+    int see = StaticExchangeEvaluator.Evaluate(in boardAfter, oppMove);
+    if (see >= 200)
+    {
+        isRefuted = true;
+        break;
+    }
+}
+```
+
+#### Why It Failed
+1. **Exchange Blindness (Queen Trades):** If the candidate move was a Queen trade (e.g. `23. Qxc7`), White captured Black's queen on c7. From `boardAfter`, Black played `23... Bxc7` (Bishop captures Queen). Since White has no defender on c7, `SEE(Bxc7) = +900 >= 200`. The watchdog did not credit the +900 White had just captured on the same square, declaring the trade a catastrophic blunder!
+2. **Piece Sacrifices (Reynolds Meran `12. Nxb5`):** In theoretical piece sacrifices, opponent can capture the sacrificed knight with a pawn (`12... axb5`, `SEE = +200`). The watchdog flagged the 21-ply GM line as refuted and substituted `12. Nxd4??`, hanging central pawns and losing on the spot.
+3. **Piece Recaptures (`29. Nxe4`):** When opponent pawn takes back (`29... fxe4`, `SEE = +200`), the watchdog again aborted the main line and played an unsound alternative (`29. Nc4??`).
+4. **Time Gate Discrepancy:** In bullet (`1+0.01`), average move time is $\sim 20\text{ ms} < 25\text{ ms}$ threshold, so the watchdog was 100% dormant in bullet test runs. At moderate time control (`5+0.05` or `300+2`), the watchdog ran on nearly every move, sabotaging tournament play.
+
+#### Status & Benchmark
+- **v1.0.20 Action:** Disabled by default (`BlunderWatchdog: false`) and properly wired to UCI option check.
+- **MTC 100-Game Benchmark (`5+0.05`):** **+52.51 Elo** (98.6% LOS, 39 wins vs 24 losses against v1.0.19 baseline).
+
+#### Roadmap for a Working Blunder Watchdog
+To revive the blunder watchdog effectively without false-blunder hijacking:
+1. **Net Material Accounting:** Account for material captured by `candidateMove` before comparing against opponent reply SEE ($\Delta \text{Material} = \text{OurGain} - \text{OpponentGain}$).
+2. **Mini 2-Ply Quiescence Search:** Instead of raw 1-ply SEE + single-ply eval, run a fast mini-QS on the top 2 opponent replies.
+3. **Confidence Gating:** Never override a root move if search depth $\ge 14$ and score confidence is high; only intervene if the position was considered sharp or volatile and search depth was truncated early due to time panic.
 
 ---
 

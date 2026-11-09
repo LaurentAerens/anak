@@ -28,6 +28,11 @@ public interface IMultiTierEvaluator : IEvaluator
     bool HasMicroModel { get; }
 
     /// <summary>
+    /// Gets whether the blunder watchdog is enabled.
+    /// </summary>
+    bool BlunderWatchdog => false;
+
+    /// <summary>
     /// Evaluates the position using the ultra-compact Micro-NNUE model for fast blunder and trap checking.
     /// </summary>
     Value EvaluateMicro(in Board board);

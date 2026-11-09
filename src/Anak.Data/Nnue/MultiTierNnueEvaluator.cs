@@ -68,7 +68,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
     public bool UseNnue { get; set; } = true;
     public string NnueDirectory { get; set; } = "./networks";
-    public bool BlunderWatchdog { get; set; } = true;
+    public bool BlunderWatchdog { get; set; } = false;
     public SyzygyTablebase? Tablebase { get; set; }
 
     /// <summary>

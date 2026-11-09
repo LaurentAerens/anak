@@ -400,7 +400,7 @@
       "wins": 2948,
       "losses": 2676,
       "draws": 2376,
-      "perf_percent": 51.70,
+      "perf_percent": 51.7,
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.15_20261107_150412.pgn",
       "notes": "Leaf & QSearch repetition/50-move draw detection, FIDE-compliant en-passant repetition history, and zero-MakeMove bitboard GivesCheck in QSearch (+11.8 Elo / +15.5 nElo over v1.0.15 in 8,000 games, 100.0% LOS)"
@@ -458,6 +458,31 @@
         205,
         173,
         99
+      ]
+    },
+    "v1.0.20": {
+      "version": "v1.0.20",
+      "date": "2026-11-09",
+      "estimated_elo": 2669,
+      "elo_margin": 49,
+      "baseline_opponent": "Anak v1.0.19 (Known Elo: 2630)",
+      "score": "57.5 / 100",
+      "wins": 39,
+      "losses": 24,
+      "draws": 37,
+      "perf_percent": 57.5,
+      "tc": "5+0.05",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.19_20261109_224127.pgn",
+      "notes": "Disable blunder watchdog pending redesign (+38.6 nElo / +52.5 Elo over v1.0.19 at MTC in 100 games, 98.6% LOS)",
+      "nelo": 38.63,
+      "nelo_margin": 49.33,
+      "draw_rate": 0.37,
+      "pentanomial": [
+        1,
+        9,
+        20,
+        14,
+        6
       ]
     }
   }

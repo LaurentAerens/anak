@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.19` (Estimated Rating: **2630 Elo**)  
+> **Current Active Version:** `v1.0.20` (Estimated Rating: **2669 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,17 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.20` (2026-11-09) — Disable Blunder Watchdog Pending Redesign (Critical Bugfix Release)
+- **Category:** Search Move Integrity & Tactical Stability (Bugfix Release)
+- **Estimated Elo:** **2669 &plusmn; 49** (+38.6 nElo / +52.5 Elo over v1.0.19 at MTC, 98.6% LOS)
+- **Validation:** 100-game match at Moderate Time Control (`5+0.05`): 39 wins, 24 losses, 37 draws (57.50% score).
+- **Highlights:**
+  - **Eliminated Root Move Hijacking:** Disabled `RunMicroBlunderWatchdog` by default. Previously, the watchdog performed raw 1-ply SEE checks on opponent responses to candidate root moves without exchange awareness, causing it to misclassify Queen trades (e.g. `23. Qxc7`), standard piece sacrifices (e.g. Reynolds Meran `12. Nxb5`), and recaptures as blunders, overriding deep 20+ ply searches with severe tactical blunders.
+  - **Wired UCI BlunderWatchdog Option:** Connected `BlunderWatchdog` UCI option to `IMultiTierEvaluator` and `AlphaBetaEngine` search worker, defaulting to `false`.
+  - **Documented Defect & Redesign Roadmap:** Added comprehensive defect analysis and 3-step redesign plan in `docs/BUGFIX_CANDIDATES.md` (BUG-03) to re-introduce a net-exchange-aware watchdog in a future release.
+
+---
 
 ### `v1.0.19` (2026-11-09) — Move Generation & Search NPS Throughput Optimizations
 - **Category:** Performance & Move Ordering / Search Speedup (Patch Release)

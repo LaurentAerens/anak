@@ -776,7 +776,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             // --- Micro Forward Blunder Watchdog ---
             // When holding a candidate move, verify with ultra-fast Micro tactical watchdog
-            if (multiTier is { HasMicroModel: true } && !bestMove.IsNull && !cancellationToken.IsCancellationRequested)
+            if (multiTier is { HasMicroModel: true, BlunderWatchdog: true } && !bestMove.IsNull && !cancellationToken.IsCancellationRequested)
             {
                 bestMove = RunMicroBlunderWatchdog(in rootBoard, bestMove, bestScore, completedDepth, expectedDepth, multiTier, cancellationToken);
             }
