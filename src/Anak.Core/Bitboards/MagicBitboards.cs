@@ -136,15 +136,17 @@ public static class MagicBitboards
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetBishopAttacks(Square square, ulong occupancy)
     {
-        ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopEntries), (int)(byte)square);
-
+        int sq = (int)(byte)square;
         if (Bmi2.X64.IsSupported)
         {
-            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), entry.Offset + index);
+            ulong mask = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopMasks), sq);
+            int offset = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopOffsets), sq);
+            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, mask);
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), offset + index);
         }
         else
         {
+            ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopEntries), sq);
             ulong occ = occupancy & entry.Mask;
             int index = (int)((occ * entry.Magic) >> entry.Shift);
             return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), entry.Offset + index);
@@ -154,15 +156,17 @@ public static class MagicBitboards
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetRookAttacks(Square square, ulong occupancy)
     {
-        ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookEntries), (int)(byte)square);
-
+        int sq = (int)(byte)square;
         if (Bmi2.X64.IsSupported)
         {
-            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), entry.Offset + index);
+            ulong mask = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookMasks), sq);
+            int offset = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookOffsets), sq);
+            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, mask);
+            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), offset + index);
         }
         else
         {
+            ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookEntries), sq);
             ulong occ = occupancy & entry.Mask;
             int index = (int)((occ * entry.Magic) >> entry.Shift);
             return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), entry.Offset + index);
