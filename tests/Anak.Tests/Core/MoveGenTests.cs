@@ -266,4 +266,49 @@ public class MoveGenTests
             Assert.False(board.IsLegal(new Move(Square.E1, Square.E1, MoveType.Quiet)));
         }
     }
+
+    [Theory]
+    [InlineData(Fen.StartPosition)]
+    [InlineData("r1bqk2r/pppp1ppp/2n5/4p3/2B1n3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 6")]
+    [InlineData("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1")]
+    [InlineData("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")]
+    [InlineData("7k/8/8/r2Pp2K/8/8/8/8 w - e6 0 1")]
+    [InlineData("7k/4P3/8/8/8/8/8/4K3 w - - 0 1")]
+    [InlineData("rnbqkb1r/pp1p1ppp/2p5/4P3/2B5/8/PPP1NnPP/RNBQK2R w KQkq - 0 6")]
+    [InlineData("r1bq1rk1/ppp2ppp/2np1n2/2b1p3/2B1P3/2NP1N2/PPP2PPP/R1BQ1RK1 w - - 0 7")]
+    public void GenerateLegalQuiets_AndCaptures_PartitionAllLegalMoves(string fen)
+    {
+        var board = Fen.Parse(fen);
+        MoveList allMoves = default;
+        board.GenerateLegalMoves(ref allMoves);
+
+        MoveList captures = default;
+        board.GenerateLegalCaptures(ref captures);
+
+        MoveList quiets = default;
+        board.GenerateLegalQuiets(ref quiets);
+
+        Assert.Equal(allMoves.Count, captures.Count + quiets.Count);
+
+        HashSet<Move> allSet = new(allMoves.AsReadOnlySpan().ToArray());
+        HashSet<Move> partitionSet = new();
+
+        for (int i = 0; i < captures.Count; i++)
+        {
+            Move m = captures[i];
+            Assert.True(m.IsCapture || m.IsPromotion, $"Capture move {m} must be capture or promotion");
+            Assert.True(allSet.Contains(m), $"Capture move {m} must be in all legal moves");
+            Assert.True(partitionSet.Add(m), $"Duplicate move {m} in captures");
+        }
+
+        for (int i = 0; i < quiets.Count; i++)
+        {
+            Move m = quiets[i];
+            Assert.False(m.IsCapture || m.IsPromotion, $"Quiet move {m} must not be capture or promotion");
+            Assert.True(allSet.Contains(m), $"Quiet move {m} must be in all legal moves");
+            Assert.True(partitionSet.Add(m), $"Duplicate move {m} between captures and quiets");
+        }
+
+        Assert.Equal(allSet.Count, partitionSet.Count);
+    }
 }

@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.20` (Estimated Rating: **2669 Elo**)  
+> **Current Active Version:** `v1.0.21` (Estimated Rating: **2670 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,20 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.21` (2026-11-10) — Move Generation Throughput & Hardware Intrinsic Optimizations (Patch Release)
+- **Category:** Performance & Move Generation Throughput (Patch Release)
+- **Estimated Elo:** **2670 &plusmn; 5** (+1.05 nElo / +1.30 Elo over v1.0.20 in 8,000 games)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 2,903 wins, 2,873 losses, 2,224 draws (50.19% score, 0 crashes, 1 timeout).
+- **Highlights:**
+  - **Hardware Intrinsic Pin Blocker Detection:** Replaced multi-branch pin checks with `BitOperations.IsPow2` hardware intrinsics across all move generators.
+  - **Branchless Pawn Attack Lookups:** Replaced 4 file conditional branches per pawn with precomputed table lookups `Bitboard.WhitePawnAttacks` / `Bitboard.BlackPawnAttacks`.
+  - **Pawn Push Bitwise Shift Register Reuse:** Reused bitwise shifts for single and double pushes.
+  - **Ray-Directional Queen Validation:** Pre-checks orthogonality in `Board.IsLegal()` to execute only 1 slider query instead of 2.
+  - **Dedicated `GenerateLegalQuiets` Method & Partition Invariant Tests:** Added dedicated legal quiet move generation validated with 8 comprehensive xUnit partition tests.
+  - **Search NPS Gain:** Search throughput rose from ~305k NPS to ~348k–365k NPS (+14.1% in minimax search, +22–29% in raw movegen).
+
+---
 
 ### `v1.0.20` (2026-11-09) — Disable Blunder Watchdog Pending Redesign (Critical Bugfix Release)
 - **Category:** Search Move Integrity & Tactical Stability (Bugfix Release)

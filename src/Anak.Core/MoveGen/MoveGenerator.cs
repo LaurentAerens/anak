@@ -64,7 +64,7 @@ public static class MoveGenerator
         while (kingTargets != 0)
         {
             Square to = Bitboard.PopLsb(ref kingTargets);
-            if (!IsSquareAttackedCustom(board, to, them, occWithoutKing, enemyPieces, enemyPawns, enemyKnights, enemyKingBb, enemyBq, enemyRq))
+            if (!IsSquareAttackedCustom(to, occWithoutKing, enemyKnights, enemyBq, enemyRq))
             {
                 bool isCapture = (enemyPieces & (1UL << (int)to)) != 0;
                 list.Add(new Move(kingSq, to, isCapture ? MoveType.Capture : MoveType.Quiet));
@@ -114,7 +114,7 @@ public static class MoveGenerator
         {
             Square pinnerSq = Bitboard.PopLsb(ref pinners);
             ulong blockers = Bitboard.Between[(int)kingSq, (int)pinnerSq] & occupied;
-            if (blockers != 0 && (blockers & (blockers - 1)) == 0 && (blockers & ourPieces) != 0)
+            if (BitOperations.IsPow2(blockers))
             {
                 pinnedPieces |= blockers;
             }
@@ -232,15 +232,15 @@ public static class MoveGenerator
                 ulong allowedMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
 
                 int r = (int)from.Rank();
-                int f = (int)from.File();
 
                 // Single push
                 Square to1 = (Square)((int)from + 8);
-                if ((occupied & (1UL << (int)to1)) == 0)
+                ulong to1Bit = 1UL << (int)to1;
+                if ((occupied & to1Bit) == 0)
                 {
                     if (r == 6) // Promotion
                     {
-                        if (((1UL << (int)to1) & allowedMask) != 0)
+                        if ((to1Bit & allowedMask) != 0)
                         {
                             list.Add(new Move(from, to1, MoveType.QueenPromotion));
                             list.Add(new Move(from, to1, MoveType.RookPromotion));
@@ -250,7 +250,7 @@ public static class MoveGenerator
                     }
                     else
                     {
-                        if (((1UL << (int)to1) & allowedMask) != 0)
+                        if ((to1Bit & allowedMask) != 0)
                         {
                             list.Add(new Move(from, to1, MoveType.Quiet));
                         }
@@ -259,8 +259,9 @@ public static class MoveGenerator
                         if (r == 1)
                         {
                             Square to2 = (Square)((int)from + 16);
-                            if ((occupied & (1UL << (int)to2)) == 0 &&
-                                (((1UL << (int)to2) & allowedMask) != 0))
+                            ulong to2Bit = to1Bit << 8;
+                            if ((occupied & to2Bit) == 0 &&
+                                ((to2Bit & allowedMask) != 0))
                             {
                                 list.Add(new Move(from, to2, MoveType.DoublePawnPush));
                             }
@@ -269,43 +270,24 @@ public static class MoveGenerator
                 }
 
                 // Captures
-                // West capture: file > 0 (from + 7)
-                if (f > 0)
+                ulong attacks = Bitboard.WhitePawnAttacks[(int)from] & enemyPieces & allowedMask;
+                if (r == 6) // Promotion Capture
                 {
-                    Square capWest = (Square)((int)from + 7);
-                    if (((1UL << (int)capWest) & enemyPieces & allowedMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 6) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capWest, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capWest, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.RookPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
                     }
                 }
-
-                // East capture: file < 7 (from + 9)
-                if (f < 7)
+                else
                 {
-                    Square capEast = (Square)((int)from + 9);
-                    if (((1UL << (int)capEast) & enemyPieces & allowedMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 6) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capEast, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capEast, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.Capture));
                     }
                 }
             }
@@ -345,15 +327,15 @@ public static class MoveGenerator
                 ulong allowedMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
 
                 int r = (int)from.Rank();
-                int f = (int)from.File();
 
                 // Single push
                 Square to1 = (Square)((int)from - 8);
-                if ((occupied & (1UL << (int)to1)) == 0)
+                ulong to1Bit = 1UL << (int)to1;
+                if ((occupied & to1Bit) == 0)
                 {
                     if (r == 1) // Promotion
                     {
-                        if (((1UL << (int)to1) & allowedMask) != 0)
+                        if ((to1Bit & allowedMask) != 0)
                         {
                             list.Add(new Move(from, to1, MoveType.QueenPromotion));
                             list.Add(new Move(from, to1, MoveType.RookPromotion));
@@ -363,7 +345,7 @@ public static class MoveGenerator
                     }
                     else
                     {
-                        if (((1UL << (int)to1) & allowedMask) != 0)
+                        if ((to1Bit & allowedMask) != 0)
                         {
                             list.Add(new Move(from, to1, MoveType.Quiet));
                         }
@@ -372,8 +354,9 @@ public static class MoveGenerator
                         if (r == 6)
                         {
                             Square to2 = (Square)((int)from - 16);
-                            if ((occupied & (1UL << (int)to2)) == 0 &&
-                                (((1UL << (int)to2) & allowedMask) != 0))
+                            ulong to2Bit = to1Bit >> 8;
+                            if ((occupied & to2Bit) == 0 &&
+                                ((to2Bit & allowedMask) != 0))
                             {
                                 list.Add(new Move(from, to2, MoveType.DoublePawnPush));
                             }
@@ -382,43 +365,24 @@ public static class MoveGenerator
                 }
 
                 // Captures
-                // West capture: file > 0 (from - 9)
-                if (f > 0)
+                ulong attacks = Bitboard.BlackPawnAttacks[(int)from] & enemyPieces & allowedMask;
+                if (r == 1) // Promotion Capture
                 {
-                    Square capWest = (Square)((int)from - 9);
-                    if (((1UL << (int)capWest) & enemyPieces & allowedMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 1) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capWest, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capWest, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.RookPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
                     }
                 }
-
-                // East capture: file < 7 (from - 7)
-                if (f < 7)
+                else
                 {
-                    Square capEast = (Square)((int)from - 7);
-                    if (((1UL << (int)capEast) & enemyPieces & allowedMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 1) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capEast, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capEast, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.Capture));
                     }
                 }
             }
@@ -444,6 +408,268 @@ public static class MoveGenerator
                     if (((1UL << (int)from) & board.Pawns & ourPieces) != 0)
                     {
                         TryAddEnPassant(in board, from, epTo, epCapSq, kingSq, numCheckers, checkers, enemyPieces, occupied, ref list);
+                    }
+                }
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public static void GenerateLegalQuiets(in Board board, ref MoveList list)
+    {
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+
+        ulong ourPieces = board.GetPieces(us);
+        ulong enemyPieces = board.GetPieces(them);
+        ulong occupied = board.Occupied;
+
+        ulong kingBb = board.Kings & ourPieces;
+        if (kingBb == 0) return;
+        Square kingSq = Bitboard.Lsb(kingBb);
+
+        ulong enemyPawns = board.Pawns & enemyPieces;
+        ulong enemyKnights = board.Knights & enemyPieces;
+        ulong enemyBq = (board.Bishops | board.Queens) & enemyPieces;
+        ulong enemyRq = (board.Rooks | board.Queens) & enemyPieces;
+
+        // 1. Identify Checkers
+        ulong checkers = 0UL;
+        ulong pawnAttackers = us == Color.White
+            ? Bitboard.WhitePawnAttacks[(int)kingSq]
+            : Bitboard.BlackPawnAttacks[(int)kingSq];
+        checkers |= pawnAttackers & enemyPawns;
+        checkers |= Bitboard.KnightAttacks[(int)kingSq] & enemyKnights;
+        if (enemyBq != 0) checkers |= MagicBitboards.GetBishopAttacks(kingSq, occupied) & enemyBq;
+        if (enemyRq != 0) checkers |= MagicBitboards.GetRookAttacks(kingSq, occupied) & enemyRq;
+
+        // 2. King Quiet Moves
+        ulong enemyPawnAttacks = us == Color.White
+            ? ((enemyPawns & ~Bitboard.FileA) >> 9) | ((enemyPawns & ~Bitboard.FileH) >> 7)
+            : ((enemyPawns & ~Bitboard.FileA) << 7) | ((enemyPawns & ~Bitboard.FileH) << 9);
+
+        ulong enemyKingBb = board.Kings & enemyPieces;
+        ulong enemyKingAttacks = enemyKingBb != 0 ? Bitboard.KingAttacks[(int)Bitboard.Lsb(enemyKingBb)] : 0UL;
+        ulong unsafeForKing = enemyPawnAttacks | enemyKingAttacks;
+
+        ulong kingTargets = Bitboard.KingAttacks[(int)kingSq] & ~occupied & ~unsafeForKing;
+        ulong occWithoutKing = occupied ^ (1UL << (int)kingSq);
+
+        while (kingTargets != 0)
+        {
+            Square to = Bitboard.PopLsb(ref kingTargets);
+            if (!IsSquareAttackedCustom(to, occWithoutKing, enemyKnights, enemyBq, enemyRq))
+            {
+                list.Add(new Move(kingSq, to, MoveType.Quiet));
+            }
+        }
+
+        if ((checkers & (checkers - 1)) != 0)
+        {
+            // In double check, only king moves can escape check
+            return;
+        }
+
+        int numCheckers = checkers != 0 ? 1 : 0;
+
+        // 3. Setup Quiet Target Mask for remaining pieces
+        ulong quietTargetMask;
+        if (numCheckers == 1)
+        {
+            Square checkerSq = Bitboard.Lsb(checkers);
+            ulong captureMask = 1UL << (int)checkerSq;
+            if (((enemyBq | enemyRq) & captureMask) != 0)
+            {
+                quietTargetMask = Bitboard.Between[(int)kingSq, (int)checkerSq];
+            }
+            else
+            {
+                // Checker is pawn or knight: cannot be blocked by quiet moves
+                return;
+            }
+        }
+        else
+        {
+            quietTargetMask = ~occupied;
+        }
+
+        // 4. Calculate Pinned Pieces
+        ulong pinnedPieces = 0UL;
+        ulong pinners = 0UL;
+        if (enemyBq != 0) pinners |= MagicBitboards.GetBishopAttacks(kingSq, enemyPieces) & enemyBq;
+        if (enemyRq != 0) pinners |= MagicBitboards.GetRookAttacks(kingSq, enemyPieces) & enemyRq;
+
+        while (pinners != 0)
+        {
+            Square pinnerSq = Bitboard.PopLsb(ref pinners);
+            ulong blockers = Bitboard.Between[(int)kingSq, (int)pinnerSq] & occupied;
+            if (BitOperations.IsPow2(blockers))
+            {
+                pinnedPieces |= blockers;
+            }
+        }
+
+        // 5. Castling (only legal when not in check)
+        if (numCheckers == 0)
+        {
+            if (us == Color.White)
+            {
+                if ((board.Castling & CastlingRights.WhiteKingside) != 0)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.F1) | (1UL << (int)Square.G1);
+                    if ((occupied & emptyMask) == 0 &&
+                        !board.IsSquareAttacked(Square.F1, Color.Black) &&
+                        !board.IsSquareAttacked(Square.G1, Color.Black))
+                    {
+                        list.Add(new Move(Square.E1, Square.G1, MoveType.KingCastle));
+                    }
+                }
+                if ((board.Castling & CastlingRights.WhiteQueenside) != 0)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.B1) | (1UL << (int)Square.C1) | (1UL << (int)Square.D1);
+                    if ((occupied & emptyMask) == 0 &&
+                        !board.IsSquareAttacked(Square.D1, Color.Black) &&
+                        !board.IsSquareAttacked(Square.C1, Color.Black))
+                    {
+                        list.Add(new Move(Square.E1, Square.C1, MoveType.QueenCastle));
+                    }
+                }
+            }
+            else
+            {
+                if ((board.Castling & CastlingRights.BlackKingside) != 0)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.F8) | (1UL << (int)Square.G8);
+                    if ((occupied & emptyMask) == 0 &&
+                        !board.IsSquareAttacked(Square.F8, Color.White) &&
+                        !board.IsSquareAttacked(Square.G8, Color.White))
+                    {
+                        list.Add(new Move(Square.E8, Square.G8, MoveType.KingCastle));
+                    }
+                }
+                if ((board.Castling & CastlingRights.BlackQueenside) != 0)
+                {
+                    const ulong emptyMask = (1UL << (int)Square.B8) | (1UL << (int)Square.C8) | (1UL << (int)Square.D8);
+                    if ((occupied & emptyMask) == 0 &&
+                        !board.IsSquareAttacked(Square.D8, Color.White) &&
+                        !board.IsSquareAttacked(Square.C8, Color.White))
+                    {
+                        list.Add(new Move(Square.E8, Square.C8, MoveType.QueenCastle));
+                    }
+                }
+            }
+        }
+
+        // 6. Knight Quiet Moves (pinned knights can never move)
+        ulong knights = board.Knights & ourPieces & ~pinnedPieces;
+        while (knights != 0)
+        {
+            Square from = Bitboard.PopLsb(ref knights);
+            ulong moves = Bitboard.KnightAttacks[(int)from] & quietTargetMask;
+            while (moves != 0)
+            {
+                Square to = Bitboard.PopLsb(ref moves);
+                list.Add(new Move(from, to, MoveType.Quiet));
+            }
+        }
+
+        // 7. Bishop & Queen Diagonal Quiet Moves
+        ulong diagSliders = (board.Bishops | board.Queens) & ourPieces;
+        while (diagSliders != 0)
+        {
+            Square from = Bitboard.PopLsb(ref diagSliders);
+            ulong moves = MagicBitboards.GetBishopAttacks(from, occupied) & quietTargetMask;
+            if ((pinnedPieces & (1UL << (int)from)) != 0)
+            {
+                moves &= Bitboard.Line[(int)kingSq, (int)from];
+            }
+            while (moves != 0)
+            {
+                Square to = Bitboard.PopLsb(ref moves);
+                list.Add(new Move(from, to, MoveType.Quiet));
+            }
+        }
+
+        // 8. Rook & Queen Orthogonal Quiet Moves
+        ulong orthoSliders = (board.Rooks | board.Queens) & ourPieces;
+        while (orthoSliders != 0)
+        {
+            Square from = Bitboard.PopLsb(ref orthoSliders);
+            ulong moves = MagicBitboards.GetRookAttacks(from, occupied) & quietTargetMask;
+            if ((pinnedPieces & (1UL << (int)from)) != 0)
+            {
+                moves &= Bitboard.Line[(int)kingSq, (int)from];
+            }
+            while (moves != 0)
+            {
+                Square to = Bitboard.PopLsb(ref moves);
+                list.Add(new Move(from, to, MoveType.Quiet));
+            }
+        }
+
+        // 9. Pawn Quiet Moves (Pushes only, no promotions)
+        if (us == Color.White)
+        {
+            ulong pawns = board.Pawns & ourPieces;
+            while (pawns != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pawns);
+                int r = (int)from.Rank();
+                if (r == 6) continue;
+
+                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
+                ulong allowedMask = isPinned ? (quietTargetMask & Bitboard.Line[(int)kingSq, (int)from]) : quietTargetMask;
+
+                Square to1 = (Square)((int)from + 8);
+                ulong to1Bit = 1UL << (int)to1;
+                if ((occupied & to1Bit) == 0)
+                {
+                    if ((to1Bit & allowedMask) != 0)
+                    {
+                        list.Add(new Move(from, to1, MoveType.Quiet));
+                    }
+
+                    if (r == 1)
+                    {
+                        Square to2 = (Square)((int)from + 16);
+                        ulong to2Bit = to1Bit << 8;
+                        if ((occupied & to2Bit) == 0 && ((to2Bit & allowedMask) != 0))
+                        {
+                            list.Add(new Move(from, to2, MoveType.DoublePawnPush));
+                        }
+                    }
+                }
+            }
+        }
+        else // Black Pawns
+        {
+            ulong pawns = board.Pawns & ourPieces;
+            while (pawns != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pawns);
+                int r = (int)from.Rank();
+                if (r == 1) continue;
+
+                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
+                ulong allowedMask = isPinned ? (quietTargetMask & Bitboard.Line[(int)kingSq, (int)from]) : quietTargetMask;
+
+                Square to1 = (Square)((int)from - 8);
+                ulong to1Bit = 1UL << (int)to1;
+                if ((occupied & to1Bit) == 0)
+                {
+                    if ((to1Bit & allowedMask) != 0)
+                    {
+                        list.Add(new Move(from, to1, MoveType.Quiet));
+                    }
+
+                    if (r == 6)
+                    {
+                        Square to2 = (Square)((int)from - 16);
+                        ulong to2Bit = to1Bit >> 8;
+                        if ((occupied & to2Bit) == 0 && ((to2Bit & allowedMask) != 0))
+                        {
+                            list.Add(new Move(from, to2, MoveType.DoublePawnPush));
+                        }
                     }
                 }
             }
@@ -484,7 +710,7 @@ public static class MoveGenerator
         while (kingTargets != 0)
         {
             Square to = Bitboard.PopLsb(ref kingTargets);
-            if (!IsSquareAttackedCustom(board, to, them, occWithoutKing, enemyPieces, enemyPawns, enemyKnights, enemyKingBb, enemyBq, enemyRq))
+            if (!IsSquareAttackedCustom(to, occWithoutKing, enemyKnights, enemyBq, enemyRq))
             {
                 list.Add(new Move(kingSq, to, MoveType.Capture));
             }
@@ -510,7 +736,7 @@ public static class MoveGenerator
         {
             Square pinnerSq = Bitboard.PopLsb(ref pinners);
             ulong blockers = Bitboard.Between[(int)kingSq, (int)pinnerSq] & occupied;
-            if (blockers != 0 && (blockers & (blockers - 1)) == 0 && (blockers & ourPieces) != 0)
+            if (BitOperations.IsPow2(blockers))
             {
                 pinnedPieces |= blockers;
             }
@@ -572,7 +798,6 @@ public static class MoveGenerator
                 Square from = Bitboard.PopLsb(ref pawns);
                 bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
                 int r = (int)from.Rank();
-                int f = (int)from.File();
 
                 // Promotions on single push (rank 7 -> 8)
                 if (r == 6)
@@ -594,43 +819,24 @@ public static class MoveGenerator
                 ulong allowedCapMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
 
                 // Captures
-                // West capture: file > 0 (from + 7)
-                if (f > 0)
+                ulong attacks = Bitboard.WhitePawnAttacks[(int)from] & enemyPieces & allowedCapMask;
+                if (r == 6) // Promotion Capture
                 {
-                    Square capWest = (Square)((int)from + 7);
-                    if (((1UL << (int)capWest) & enemyPieces & allowedCapMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 6) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capWest, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capWest, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.RookPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
                     }
                 }
-
-                // East capture: file < 7 (from + 9)
-                if (f < 7)
+                else
                 {
-                    Square capEast = (Square)((int)from + 9);
-                    if (((1UL << (int)capEast) & enemyPieces & allowedCapMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 6) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capEast, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capEast, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.Capture));
                     }
                 }
             }
@@ -668,7 +874,6 @@ public static class MoveGenerator
                 Square from = Bitboard.PopLsb(ref pawns);
                 bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
                 int r = (int)from.Rank();
-                int f = (int)from.File();
 
                 // Promotions on single push (rank 2 -> 1)
                 if (r == 1)
@@ -690,43 +895,24 @@ public static class MoveGenerator
                 ulong allowedCapMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
 
                 // Captures
-                // West capture: file > 0 (from - 9)
-                if (f > 0)
+                ulong attacks = Bitboard.BlackPawnAttacks[(int)from] & enemyPieces & allowedCapMask;
+                if (r == 1) // Promotion Capture
                 {
-                    Square capWest = (Square)((int)from - 9);
-                    if (((1UL << (int)capWest) & enemyPieces & allowedCapMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 1) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capWest, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capWest, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capWest, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.RookPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
+                        list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
                     }
                 }
-
-                // East capture: file < 7 (from - 7)
-                if (f < 7)
+                else
                 {
-                    Square capEast = (Square)((int)from - 7);
-                    if (((1UL << (int)capEast) & enemyPieces & allowedCapMask) != 0)
+                    while (attacks != 0)
                     {
-                        if (r == 1) // Promotion Capture
-                        {
-                            list.Add(new Move(from, capEast, MoveType.QueenPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.RookPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.BishopPromotionCapture));
-                            list.Add(new Move(from, capEast, MoveType.KnightPromotionCapture));
-                        }
-                        else
-                        {
-                            list.Add(new Move(from, capEast, MoveType.Capture));
-                        }
+                        Square to = Bitboard.PopLsb(ref attacks);
+                        list.Add(new Move(from, to, MoveType.Capture));
                     }
                 }
             }
@@ -798,27 +984,15 @@ public static class MoveGenerator
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static bool IsSquareAttackedCustom(
-        in Board board,
         Square sq,
-        Color attackerColor,
         ulong occ,
-        ulong attackerPieces,
-        ulong enemyPawns,
         ulong enemyKnights,
-        ulong enemyKingBb,
         ulong enemyBq,
         ulong enemyRq)
     {
         int s = (byte)sq;
 
-        ulong pawnAttacks = attackerColor == Color.White
-            ? Bitboard.BlackPawnAttacks[s]
-            : Bitboard.WhitePawnAttacks[s];
-        if ((pawnAttacks & enemyPawns) != 0) return true;
-
-        if ((Bitboard.KnightAttacks[s] & enemyKnights) != 0) return true;
-
-        if ((Bitboard.KingAttacks[s] & enemyKingBb) != 0) return true;
+        if (enemyKnights != 0 && (Bitboard.KnightAttacks[s] & enemyKnights) != 0) return true;
 
         if (enemyBq != 0 && (MagicBitboards.GetBishopAttacks(sq, occ) & enemyBq) != 0) return true;
 

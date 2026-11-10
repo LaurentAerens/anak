@@ -675,6 +675,18 @@ public struct Board : IEquatable<Board>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GenerateLegalCaptures(ref MoveList moveList)
+    {
+        MoveGenerator.GenerateLegalCaptures(in this, ref moveList);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void GenerateLegalQuiets(ref MoveList moveList)
+    {
+        MoveGenerator.GenerateLegalQuiets(in this, ref moveList);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public MoveList GenerateLegalMoves()
     {
         MoveList list = default;
@@ -919,7 +931,9 @@ public struct Board : IEquatable<Board>
             case PieceType.Queen:
                 {
                     if (move.IsPromotion || move.IsEnPassant) return false;
-                    ulong qAttacks = MagicBitboards.GetBishopAttacks(from, occupied) | MagicBitboards.GetRookAttacks(from, occupied);
+                    ulong qAttacks = (from.Rank() == to.Rank() || from.File() == to.File())
+                        ? MagicBitboards.GetRookAttacks(from, occupied)
+                        : MagicBitboards.GetBishopAttacks(from, occupied);
                     if ((qAttacks & toBit) == 0) return false;
                     if (isCaptureDest != move.IsCapture) return false;
                     break;

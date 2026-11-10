@@ -484,6 +484,31 @@
         14,
         6
       ]
+    },
+    "v1.0.21": {
+      "version": "v1.0.21",
+      "date": "2026-11-10",
+      "estimated_elo": 2670,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.0.20 (Known Elo: 2669)",
+      "score": "4015 / 8000",
+      "wins": 2903,
+      "losses": 2873,
+      "draws": 2224,
+      "perf_percent": 50.19,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.20_20261110_133540.pgn",
+      "notes": "Movegen throughput: hardware intrinsic BitOperations.IsPow2, branchless pawn attacks, shift reuses, and queen ray alignment (+14.1% search NPS, +1.05 nElo / +1.30 Elo over v1.0.20 in 8,000 games)",
+      "nelo": 1.05,
+      "nelo_margin": 5.38,
+      "draw_rate": 0.278,
+      "pentanomial": [
+        175,
+        391,
+        857,
+        395,
+        182
+      ]
     }
   }
 }
