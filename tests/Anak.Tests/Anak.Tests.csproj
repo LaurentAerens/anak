@@ -25,6 +25,7 @@
     <ProjectReference Include="..\..\src\Anak.Search\Anak.Search.csproj" />
     <ProjectReference Include="..\..\src\Anak.Data\Anak.Data.csproj" />
     <ProjectReference Include="..\..\src\Anak.Protocol\Anak.Protocol.csproj" />
+    <ProjectReference Include="..\..\src\Zanak\Zanak.csproj" />
   </ItemGroup>
 
   <ItemGroup>

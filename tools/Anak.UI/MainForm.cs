@@ -3,11 +3,14 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
+using System.Text;
 using System.Windows.Forms;
 using Anak.Core;
 using Anak.Data.PolyGlot;
 using Anak.Protocol.Uci;
 using Anak.Search;
+using Zanak.Search;
 using ChessColor = Anak.Core.Color;
 using ChessMove = Anak.Core.Move;
 using DrawingColor = System.Drawing.Color;
@@ -137,15 +140,21 @@ public sealed class MainForm : Form
 
     private readonly AlphaBetaEngine _alphaBetaEngine;
     private MCTSEngine? _mctsEngine;
+    private ZapSearchEngine? _zapEngine;
     private ISearchEngine _engine;
     private readonly ComboBox _engineCombo;
     private readonly IEvaluator _evaluator;
     private readonly PolyGlotBook _book = new();
     private CancellationTokenSource? _searchCts;
     private bool _isSearching;
+    private readonly List<ChessMove> _gameMoves = [];
+    private string _startingFen = Fen.StartPosition;
 
     public MainForm()
     {
+        ClientSize = new Size(1180, 820);
+        MinimumSize = new Size(1020, 720);
+
         _board = Fen.Parse(Fen.StartPosition);
         _evaluator = UciEngineAdapter.CreateEvaluator();
         string evalTag = _evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive
@@ -165,8 +174,8 @@ public sealed class MainForm : Form
             Padding = new Padding(12)
         };
         mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 28)); // Eval bar
-        mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 58)); // Board
-        mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 42)); // Side controls
+        mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100)); // Board
+        mainLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 400)); // Side controls
 
         // 1. Eval Bar
         _evalBar = new EvalBarControl
@@ -213,7 +222,7 @@ public sealed class MainForm : Form
             Font = new Font("Segoe UI", 8.5f, FontStyle.Italic),
             ForeColor = DrawingColor.FromArgb(100, 100, 115),
             Location = new Point(4, y),
-            Size = new Size(360, 32)
+            Size = new Size(384, 32)
         };
         rightPanel.Controls.Add(creditsLabel);
         y += 36;
@@ -222,7 +231,7 @@ public sealed class MainForm : Form
         var clockContainer = new TableLayoutPanel
         {
             Location = new Point(4, y),
-            Size = new Size(360, 44),
+            Size = new Size(384, 44),
             ColumnCount = 2,
             RowCount = 1
         };
@@ -299,7 +308,7 @@ public sealed class MainForm : Form
             Font = new Font("Segoe UI", 9f, FontStyle.Regular),
             ForeColor = DrawingColor.FromArgb(70, 70, 80),
             Location = new Point(4, y),
-            Size = new Size(360, 46)
+            Size = new Size(384, 46)
         };
         rightPanel.Controls.Add(_searchStatsLabel);
         y += 50;
@@ -321,7 +330,7 @@ public sealed class MainForm : Form
             Multiline = true,
             ScrollBars = ScrollBars.Vertical,
             Location = new Point(4, y),
-            Size = new Size(360, 44),
+            Size = new Size(384, 44),
             Font = new Font("Consolas", 9f)
         };
         rightPanel.Controls.Add(_pvTextBox);
@@ -341,7 +350,7 @@ public sealed class MainForm : Form
         _topMovesListView = new ListView
         {
             Location = new Point(4, y),
-            Size = new Size(360, 112),
+            Size = new Size(384, 112),
             View = View.Details,
             FullRowSelect = true,
             GridLines = true,
@@ -352,7 +361,7 @@ public sealed class MainForm : Form
         _topMovesListView.Columns.Add("Move", 50);
         _topMovesListView.Columns.Add("Score", 82);
         _topMovesListView.Columns.Add("Win%", 46);
-        _topMovesListView.Columns.Add("PV Line", 150);
+        _topMovesListView.Columns.Add("PV Line", 176);
         _topMovesListView.ItemSelectionChanged += OnTopMoveSelected;
         rightPanel.Controls.Add(_topMovesListView);
         y += 118;
@@ -371,7 +380,7 @@ public sealed class MainForm : Form
         _historyListBox = new ListBox
         {
             Location = new Point(4, y),
-            Size = new Size(360, 90),
+            Size = new Size(384, 90),
             Font = new Font("Consolas", 9.5f)
         };
         rightPanel.Controls.Add(_historyListBox);
@@ -381,7 +390,7 @@ public sealed class MainForm : Form
         var optionsPanel = new FlowLayoutPanel
         {
             Location = new Point(4, y),
-            Size = new Size(360, 116),
+            Size = new Size(384, 116),
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = true
         };
@@ -390,10 +399,10 @@ public sealed class MainForm : Form
         _engineCombo = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 145,
+            Width = 140,
             Margin = new Padding(0, 2, 8, 0)
         };
-        _engineCombo.Items.AddRange(["Alpha-Beta Minimax", "MCTS"]);
+        _engineCombo.Items.AddRange(["Alpha-Beta Minimax", "MCTS", "Zanak (ZAP)"]);
         _engineCombo.SelectedIndex = 0; // Default: Alpha-Beta Minimax
         _engineCombo.SelectedIndexChanged += (_, _) => OnEngineSelectionChanged();
         optionsPanel.Controls.Add(_engineCombo);
@@ -402,7 +411,7 @@ public sealed class MainForm : Form
         _timeControlCombo = new ComboBox
         {
             DropDownStyle = ComboBoxStyle.DropDownList,
-            Width = 125,
+            Width = 120,
             Margin = new Padding(0, 2, 6, 0)
         };
         _timeControlCombo.Items.AddRange(["5m + 2s (Blitz)", "3m + 2s (Blitz)", "1m + 1s (Bullet)", "10m + 5s (Rapid)", "Fixed Time (ms)"]);
@@ -417,7 +426,7 @@ public sealed class MainForm : Form
             Maximum = 30000,
             Value = 500,
             Increment = 100,
-            Width = 60,
+            Width = 55,
             Enabled = false
         };
         optionsPanel.Controls.Add(_thinkTimeNumeric);
@@ -481,11 +490,11 @@ public sealed class MainForm : Form
         rightPanel.Controls.Add(optionsPanel);
         y += 122;
 
-        // Action Buttons Row 1
+        // Action Buttons Row 1: Game controls
         var btnPanel1 = new FlowLayoutPanel
         {
             Location = new Point(4, y),
-            Size = new Size(360, 34),
+            Size = new Size(384, 34),
             FlowDirection = FlowDirection.LeftToRight
         };
 
@@ -508,16 +517,35 @@ public sealed class MainForm : Form
         rightPanel.Controls.Add(btnPanel1);
         y += 38;
 
+        // Action Buttons Row 2: PGN Export & Clipboard
+        var btnPanel2 = new FlowLayoutPanel
+        {
+            Location = new Point(4, y),
+            Size = new Size(384, 34),
+            FlowDirection = FlowDirection.LeftToRight
+        };
+
+        var copyPgnBtn = new Button { Text = "Copy PGN", AutoSize = true };
+        copyPgnBtn.Click += (_, _) => CopyPgnToClipboard();
+        btnPanel2.Controls.Add(copyPgnBtn);
+
+        var exportPgnBtn = new Button { Text = "Export PGN...", AutoSize = true };
+        exportPgnBtn.Click += (_, _) => ExportPgnToFile();
+        btnPanel2.Controls.Add(exportPgnBtn);
+
+        rightPanel.Controls.Add(btnPanel2);
+        y += 38;
+
         // FEN Input row
         var fenPanel = new Panel
         {
             Location = new Point(4, y),
-            Size = new Size(360, 30)
+            Size = new Size(384, 30)
         };
         _fenTextBox = new TextBox
         {
             Location = new Point(0, 2),
-            Size = new Size(220, 24),
+            Size = new Size(236, 24),
             Text = Fen.StartPosition,
             Font = new Font("Consolas", 8.5f)
         };
@@ -526,8 +554,8 @@ public sealed class MainForm : Form
         var loadFenBtn = new Button
         {
             Text = "Load FEN",
-            Location = new Point(226, 0),
-            Size = new Size(70, 26)
+            Location = new Point(242, 0),
+            Size = new Size(74, 26)
         };
         loadFenBtn.Click += (_, _) => LoadFen(_fenTextBox.Text);
         fenPanel.Controls.Add(loadFenBtn);
@@ -535,8 +563,8 @@ public sealed class MainForm : Form
         var copyFenBtn = new Button
         {
             Text = "Copy",
-            Location = new Point(300, 0),
-            Size = new Size(56, 26)
+            Location = new Point(320, 0),
+            Size = new Size(60, 26)
         };
         copyFenBtn.Click += (_, _) =>
         {
@@ -578,13 +606,21 @@ public sealed class MainForm : Form
             _openingVarietyCheckBox.Enabled = false;
             _searchStatsLabel.Text = "Engine: Alpha-Beta Minimax (Idle)";
         }
-        else
+        else if (_engineCombo.SelectedIndex == 1)
         {
             _mctsEngine ??= new MCTSEngine(_evaluator, defaultHashMb: 32, arenaCapacity: 1_000_000);
             _engine = _mctsEngine;
             _moveRandomnessNumeric.Enabled = true;
             _openingVarietyCheckBox.Enabled = true;
             _searchStatsLabel.Text = "Engine: MCTS (Idle)";
+        }
+        else
+        {
+            _zapEngine ??= new ZapSearchEngine(evaluator: _evaluator);
+            _engine = _zapEngine;
+            _moveRandomnessNumeric.Enabled = false;
+            _openingVarietyCheckBox.Enabled = false;
+            _searchStatsLabel.Text = "Engine: Zanak (ZAP Anytime) (Idle)";
         }
     }
 
@@ -596,6 +632,10 @@ public sealed class MainForm : Form
         _mctsEngine?.TranspositionTable.Clear();
         _mctsEngine?.Arena.Reset();
         _mctsEngine?.ClearHistory();
+        _zapEngine?.Clear();
+        _startingFen = Fen.StartPosition;
+        _gameMoves.Clear();
+        if (_zapEngine != null) _zapEngine.LastMove = ChessMove.Null;
         ResetTimeControl();
         _board = Fen.Parse(Fen.StartPosition);
         _boardPanel.Board = _board;
@@ -619,6 +659,9 @@ public sealed class MainForm : Form
             _searchCts?.Cancel();
             _selfPlayTimer.Stop();
             _board = Fen.Parse(fen.Trim());
+            _startingFen = fen.Trim();
+            _gameMoves.Clear();
+            if (_zapEngine != null) _zapEngine.LastMove = ChessMove.Null;
             _boardPanel.Board = _board;
             _boardPanel.LastMove = ChessMove.Null;
             _boardPanel.BestMove = ChessMove.Null;
@@ -663,6 +706,13 @@ public sealed class MainForm : Form
 
     private void ApplyMove(ChessMove move)
     {
+        ChessMove legalMove = UciEngineAdapter.ParseAndMatchMove(ref _board, move.ToUci());
+        if (legalMove.IsNull)
+        {
+            return;
+        }
+        move = legalMove;
+
         long turnElapsed = _turnStopwatch.ElapsedMilliseconds;
         _turnStopwatch.Restart();
 
@@ -682,6 +732,11 @@ public sealed class MainForm : Form
 
         string moveUci = move.ToUci();
         _board.MakeMove(move, out _);
+        _gameMoves.Add(move);
+        if (_engine is ZapSearchEngine zapEngine)
+        {
+            zapEngine.LastMove = move;
+        }
         _boardPanel.Board = _board;
         _boardPanel.LastMove = move;
         _boardPanel.BestMove = ChessMove.Null;
@@ -749,6 +804,7 @@ public sealed class MainForm : Form
 
         _isSearching = true;
         _engineCombo.Enabled = false;
+        _boardPanel.Enabled = false;
         _searchCts = new CancellationTokenSource();
 
         SearchLimits limits;
@@ -776,6 +832,11 @@ public sealed class MainForm : Form
         }
 
         Board searchBoard = _board;
+
+        if (_engine is ZapSearchEngine zap)
+        {
+            zap.LastMove = _boardPanel.LastMove;
+        }
 
         // Exploration temperature for opening moves if Opening Variety is checked (MCTS only)
         MCTSEngine? activeMcts = _engine as MCTSEngine;
@@ -827,6 +888,7 @@ public sealed class MainForm : Form
                 activeMcts.Parameters.Temperature = originalTemp;
             }
             _engineCombo.Enabled = true;
+            _boardPanel.Enabled = true;
             _isSearching = false;
         }
     }
@@ -1047,6 +1109,238 @@ public sealed class MainForm : Form
                 _statusLabel.ForeColor = DrawingColor.DarkRed;
             }
         }
+    }
+
+    private void CopyPgnToClipboard()
+    {
+        string pgn = GeneratePgn();
+        Clipboard.SetText(pgn);
+        MessageBox.Show("PGN copied to clipboard!", "Anak Visualizer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+    }
+
+    private void ExportPgnToFile()
+    {
+        using var sfd = new SaveFileDialog
+        {
+            Filter = "PGN files (*.pgn)|*.pgn|All files (*.*)|*.*",
+            FileName = $"anak_game_{DateTime.Now:yyyyMMdd_HHmmss}.pgn",
+            DefaultExt = "pgn"
+        };
+
+        if (sfd.ShowDialog(this) == DialogResult.OK)
+        {
+            System.IO.File.WriteAllText(sfd.FileName, GeneratePgn());
+            MessageBox.Show($"Game saved to {System.IO.Path.GetFileName(sfd.FileName)}", "Anak Visualizer", MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+    }
+
+    private string GeneratePgn()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[Event \"Anak Casual Game\"]");
+        sb.AppendLine("[Site \"Local\"]");
+        sb.AppendLine($"[Date \"{DateTime.Now:yyyy.MM.dd}\"]");
+        sb.AppendLine("[Round \"1\"]");
+        sb.AppendLine($"[White \"{GetPlayerName(ChessColor.White)}\"]");
+        sb.AppendLine($"[Black \"{GetPlayerName(ChessColor.Black)}\"]");
+
+        string result = "*";
+        if (_board.IsGameOver(out GameResult gr))
+        {
+            if (gr == GameResult.Checkmate)
+            {
+                result = _board.SideToMove == ChessColor.White ? "0-1" : "1-0";
+            }
+            else if (gr is GameResult.Stalemate or GameResult.ThreefoldRepetition or GameResult.FiftyMoveRule or GameResult.InsufficientMaterial)
+            {
+                result = "1/2-1/2";
+            }
+        }
+        sb.AppendLine($"[Result \"{result}\"]");
+
+        if (!string.Equals(_startingFen.Trim(), Fen.StartPosition.Trim(), StringComparison.Ordinal))
+        {
+            sb.AppendLine("[SetUp \"1\"]");
+            sb.AppendLine($"[FEN \"{_startingFen}\"]");
+        }
+        sb.AppendLine();
+
+        Board replayBoard = Fen.Parse(_startingFen);
+        var moveTokens = new List<string>();
+
+        for (int i = 0; i < _gameMoves.Count; i++)
+        {
+            ChessMove m = _gameMoves[i];
+            string san = MoveToSan(ref replayBoard, m);
+            replayBoard.MakeMove(m, out _);
+
+            if (replayBoard.SideToMove == ChessColor.Black)
+            {
+                int moveNumber = (i / 2) + 1;
+                moveTokens.Add($"{moveNumber}. {san}");
+            }
+            else
+            {
+                if (i == 0)
+                {
+                    int moveNumber = 1;
+                    moveTokens.Add($"{moveNumber}... {san}");
+                }
+                else
+                {
+                    moveTokens.Add(san);
+                }
+            }
+        }
+
+        moveTokens.Add(result);
+
+        int currentLineLength = 0;
+        for (int i = 0; i < moveTokens.Count; i++)
+        {
+            string token = moveTokens[i];
+            if (currentLineLength + token.Length + 1 > 80 && currentLineLength > 0)
+            {
+                sb.AppendLine();
+                currentLineLength = 0;
+            }
+            else if (currentLineLength > 0)
+            {
+                sb.Append(' ');
+                currentLineLength++;
+            }
+            sb.Append(token);
+            currentLineLength += token.Length;
+        }
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    private string GetPlayerName(ChessColor color)
+    {
+        bool isEngine = color == ChessColor.White ? _engineWhiteCheckBox.Checked : _engineBlackCheckBox.Checked;
+        if (!isEngine) return "Human";
+        return _engineCombo.SelectedItem?.ToString() ?? "Anak Engine";
+    }
+
+    private static string MoveToSan(ref Board board, ChessMove move)
+    {
+        if (move.IsCastling)
+        {
+            string castling = move.Type == MoveType.KingCastle ? "O-O" : "O-O-O";
+            Board testBoard = board;
+            testBoard.MakeMove(move, out _);
+            if (testBoard.IsInCheck())
+            {
+                MoveList replies = default;
+                testBoard.GenerateLegalMoves(ref replies);
+                return replies.Count == 0 ? castling + "#" : castling + "+";
+            }
+            return castling;
+        }
+
+        Piece movingPiece = board.GetPieceAt(move.From);
+        PieceType pieceType = movingPiece.Type();
+        bool isCapture = move.IsCapture;
+        string dest = move.To.ToString().ToLowerInvariant();
+
+        string san;
+        if (pieceType == PieceType.Pawn)
+        {
+            if (isCapture)
+            {
+                char fileChar = (char)('a' + (int)move.From.File());
+                san = $"{fileChar}x{dest}";
+            }
+            else
+            {
+                san = dest;
+            }
+
+            if (move.IsPromotion)
+            {
+                char promoChar = move.PromotionPieceType switch
+                {
+                    PieceType.Queen => 'Q',
+                    PieceType.Rook => 'R',
+                    PieceType.Bishop => 'B',
+                    PieceType.Knight => 'N',
+                    _ => 'Q'
+                };
+                san += $"={promoChar}";
+            }
+        }
+        else
+        {
+            char pieceChar = pieceType switch
+            {
+                PieceType.Knight => 'N',
+                PieceType.Bishop => 'B',
+                PieceType.Rook => 'R',
+                PieceType.Queen => 'Q',
+                PieceType.King => 'K',
+                _ => ' '
+            };
+
+            string disambig = "";
+            if (pieceType != PieceType.King)
+            {
+                MoveList legalMoves = default;
+                board.GenerateLegalMoves(ref legalMoves);
+                bool needDisambig = false;
+                bool diffFile = true;
+                bool diffRank = true;
+
+                for (int i = 0; i < legalMoves.Count; i++)
+                {
+                    ChessMove other = legalMoves[i];
+                    if (other.Equals(move)) continue;
+                    if (other.To != move.To) continue;
+                    if (board.GetPieceAt(other.From).Type() != pieceType) continue;
+
+                    needDisambig = true;
+                    if (other.From.File() == move.From.File())
+                    {
+                        diffFile = false;
+                    }
+                    if (other.From.Rank() == move.From.Rank())
+                    {
+                        diffRank = false;
+                    }
+                }
+
+                if (needDisambig)
+                {
+                    if (diffFile)
+                    {
+                        disambig = ((char)('a' + (int)move.From.File())).ToString();
+                    }
+                    else if (diffRank)
+                    {
+                        disambig = ((char)('1' + (int)move.From.Rank())).ToString();
+                    }
+                    else
+                    {
+                        disambig = $"{(char)('a' + (int)move.From.File())}{(char)('1' + (int)move.From.Rank())}";
+                    }
+                }
+            }
+
+            string captureChar = isCapture ? "x" : "";
+            san = $"{pieceChar}{disambig}{captureChar}{dest}";
+        }
+
+        Board after = board;
+        after.MakeMove(move, out _);
+        if (after.IsInCheck())
+        {
+            MoveList replies = default;
+            after.GenerateLegalMoves(ref replies);
+            san += replies.Count == 0 ? "#" : "+";
+        }
+
+        return san;
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

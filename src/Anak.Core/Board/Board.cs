@@ -548,8 +548,9 @@ public struct Board : IEquatable<Board>
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool IsThreefoldRepetition()
+    public readonly int RepetitionCount()
     {
+        if (HalfmoveClock < 4) return 0;
         int count = 0;
         int start = Math.Max(0, (_gamePly - 1) - HalfmoveClock);
         for (int i = _gamePly - 3; i >= start; i -= 2)
@@ -557,10 +558,15 @@ public struct Board : IEquatable<Board>
             if (_history[i] == ZobristKey)
             {
                 count++;
-                if (count >= 2) return true;
             }
         }
-        return false;
+        return count;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly bool IsThreefoldRepetition()
+    {
+        return RepetitionCount() >= 2;
     }
 
     /// <summary>

@@ -239,7 +239,7 @@ public sealed class ChessBoardPanel : Control
                 }
 
                 // Check highlight on king
-                if (_board.IsInCheck() && _board.GetPieceAt(sq) == PieceExtensions.Create(_board.SideToMove, PieceType.King))
+                if (_board.IsInCheck() && (_board.Kings & (1UL << (int)sq)) != 0 && _board.GetPieceAt(sq) == PieceExtensions.Create(_board.SideToMove, PieceType.King))
                 {
                     squareColor = BlendColors(squareColor, _checkColor);
                 }
@@ -285,9 +285,13 @@ public sealed class ChessBoardPanel : Control
 
         for (int sqIdx = 0; sqIdx < 64; sqIdx++)
         {
+            ulong sqBit = 1UL << sqIdx;
+            if ((_board.Occupied & sqBit) == 0) continue;
+
             Square sq = (Square)sqIdx;
             Piece piece = _board.GetPieceAt(sq);
             if (piece == Piece.None) continue;
+            if (piece.Type() == PieceType.King && (_board.Kings & sqBit) == 0) continue;
 
             Point pt = SquareToCoordinates(sq);
             RectangleF rect = new(pt.X, pt.Y, sqSize, sqSize);

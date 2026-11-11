@@ -484,6 +484,43 @@ HISTORY_PRUNING_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
+# Zanak Time Management Parameters (Aggressive tuning steps and wider margins)
+ZANAK_TIME_PARAMETERS: List[SpsaParam] = [
+    SpsaParam("HyperBulletBaseDepth", default=2.0, min_val=1.0, max_val=6.0, c=1.0, a=20.0),
+    SpsaParam("HyperBulletMaxHorizon", default=5.0, min_val=2.0, max_val=10.0, c=1.0, a=20.0),
+    SpsaParam("FastBulletBaseDepth", default=2.0, min_val=1.0, max_val=8.0, c=1.0, a=25.0),
+    SpsaParam("FastBulletMaxHorizon", default=6.0, min_val=3.0, max_val=14.0, c=1.0, a=25.0),
+    SpsaParam("BulletBaseDepth", default=3.0, min_val=2.0, max_val=10.0, c=1.0, a=25.0),
+    SpsaParam("BulletMaxHorizon", default=7.0, min_val=4.0, max_val=16.0, c=1.0, a=25.0),
+    SpsaParam("BlitzBaseDepth", default=5.0, min_val=2.0, max_val=12.0, c=1.0, a=25.0),
+    SpsaParam("BlitzMaxHorizon", default=12.0, min_val=5.0, max_val=20.0, c=2.0, a=40.0),
+    SpsaParam("RapidBaseDepth", default=7.0, min_val=3.0, max_val=14.0, c=1.0, a=25.0),
+    SpsaParam("RapidMaxHorizon", default=14.0, min_val=6.0, max_val=24.0, c=2.0, a=40.0),
+    SpsaParam("AbsoluteMinBaseDepth", default=2.0, min_val=1.0, max_val=5.0, c=1.0, a=15.0),
+    SpsaParam("AbsoluteMinMaxHorizon", default=3.0, min_val=2.0, max_val=8.0, c=1.0, a=15.0),
+    SpsaParam("SuddenDeathDivisor", default=25.0, min_val=10.0, max_val=60.0, c=4.0, a=60.0),
+    SpsaParam("SuddenDeathIncFactor", default=72.0, min_val=25.0, max_val=95.0, c=6.0, a=80.0),
+    SpsaParam("HardLimitMultiplier", default=27.0, min_val=12.0, max_val=55.0, c=4.0, a=50.0),
+]
+
+# Zanak Search Exploration & Crosspoint Parameters (Aggressive tuning steps and wider margins)
+ZANAK_SEARCH_PARAMETERS: List[SpsaParam] = [
+    SpsaParam("ShockThreshold", default=75.0, min_val=20.0, max_val=250.0, c=10.0, a=150.0),
+    SpsaParam("DeadStemMargin", default=250.0, min_val=80.0, max_val=600.0, c=30.0, a=350.0),
+    SpsaParam("HardAspirationMargin", default=100.0, min_val=25.0, max_val=350.0, c=15.0, a=180.0),
+    SpsaParam("ContenderPromotionMargin", default=50.0, min_val=10.0, max_val=200.0, c=10.0, a=120.0),
+    SpsaParam("WorkerPruneMargin", default=200.0, min_val=60.0, max_val=500.0, c=25.0, a=300.0),
+    SpsaParam("AdaptiveShockBase", default=50.0, min_val=15.0, max_val=150.0, c=8.0, a=100.0),
+    SpsaParam("AdaptiveShockSlope", default=12.0, min_val=1.0, max_val=40.0, c=3.0, a=30.0),
+    SpsaParam("RecaptureBonus", default=2500.0, min_val=400.0, max_val=8000.0, c=350.0, a=4000.0),
+    SpsaParam("EnPriseThreatPenalty", default=4000.0, min_val=800.0, max_val=12000.0, c=500.0, a=6000.0),
+    SpsaParam("SpineAbandonThreshold", default=250.0, min_val=80.0, max_val=600.0, c=30.0, a=350.0),
+    SpsaParam("CrosspointRootBiasWeight", default=25.0, min_val=5.0, max_val=80.0, c=6.0, a=70.0),
+    SpsaParam("MaxSiblingExploration", default=8.0, min_val=2.0, max_val=20.0, c=2.0, a=20.0),
+]
+
+ZANAK_ALL_PARAMETERS: List[SpsaParam] = ZANAK_TIME_PARAMETERS + ZANAK_SEARCH_PARAMETERS
+
 
 def find_default_paths() -> Tuple[Path, Path, Path]:
     """Auto-detects repository root and default binaries."""
@@ -515,7 +552,18 @@ def find_default_paths() -> Tuple[Path, Path, Path]:
     # Openings suite
     openings_file = repo_root / "tools" / "fastchess" / "openings.epd"
 
-    return repo_root, fastchess_bin, anak_bin, openings_file
+    # Zanak engine
+    zanak_candidates = [
+        repo_root / "src" / "Zanak" / "bin" / "Release" / "net11.0" / ("zanak.exe" if os.name == "nt" else "zanak"),
+        repo_root / "tools" / "fastchess" / "bin" / "zanak" / ("zanak.exe" if os.name == "nt" else "zanak"),
+    ]
+    zanak_bin = zanak_candidates[0]
+    for c in zanak_candidates:
+        if c.is_file():
+            zanak_bin = c
+            break
+
+    return repo_root, fastchess_bin, anak_bin, openings_file, zanak_bin
 
 
 def generate_csharp_snippet(params: Dict[str, float]) -> str:
@@ -604,6 +652,37 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
         lines.append(f"public const int TunedSyzygyProbeDepth = {int(round(params['SyzygyProbeDepth']))};")
     if "QsCheckDepth" in params:
         lines.append(f"public const int TunedQsCheckDepth = {int(round(params['QsCheckDepth']))};")
+
+    # Zanak Search & Time Parameters
+    zanak_search_keys = ["ShockThreshold", "DeadStemMargin", "HardAspirationMargin", "ContenderPromotionMargin",
+                         "WorkerPruneMargin", "AdaptiveShockBase", "AdaptiveShockSlope", "RecaptureBonus",
+                         "EnPriseThreatPenalty", "SpineAbandonThreshold", "CrosspointRootBiasWeight", "MaxSiblingExploration"]
+    has_zanak_search = any(k in params for k in zanak_search_keys)
+    if has_zanak_search:
+        lines.append("")
+        lines.append("// In src/Zanak/Search/ZapParams.cs:")
+        for k in zanak_search_keys:
+            if k in params:
+                lines.append(f"public int {k} {{ get; set; }} = {int(round(params[k]))};")
+
+    zanak_time_keys = ["HyperBulletBaseDepth", "HyperBulletMaxHorizon", "FastBulletBaseDepth", "FastBulletMaxHorizon",
+                      "BulletBaseDepth", "BulletMaxHorizon", "BlitzBaseDepth", "BlitzMaxHorizon",
+                      "RapidBaseDepth", "RapidMaxHorizon", "AbsoluteMinBaseDepth", "AbsoluteMinMaxHorizon",
+                      "SuddenDeathDivisor", "SuddenDeathIncFactor", "HardLimitMultiplier"]
+    has_zanak_time = any(k in params for k in zanak_time_keys)
+    if has_zanak_time:
+        lines.append("")
+        lines.append("// In src/Zanak/Time/TimeParams.cs:")
+        for k in zanak_time_keys:
+            if k in params:
+                if k == "SuddenDeathDivisor":
+                    lines.append(f"public double {k} {{ get; set; }} = {params[k]:.1f};")
+                elif k == "SuddenDeathIncFactor":
+                    lines.append(f"public double {k} {{ get; set; }} = {params[k] / 100.0:.2f};")
+                elif k == "HardLimitMultiplier":
+                    lines.append(f"public double {k} {{ get; set; }} = {params[k] / 10.0:.1f};")
+                else:
+                    lines.append(f"public int {k} {{ get; set; }} = {int(round(params[k]))};")
 
     lines.append("// =========================================================================")
     return "\n".join(lines)
@@ -1041,8 +1120,11 @@ def parse_args():
     parser.add_argument("--resume", action="store_true", default=False, help="Resume previous SPSA session from JSON progress file")
     parser.add_argument("--fastchess", type=str, default=None, help="Path to fastchess binary")
     parser.add_argument("--anak", type=str, default=None, help="Path to Anak binary")
-    parser.add_argument("--batch", type=str, choices=["core", "b", "corr", "time", "search", "bcd", "all", "micro", "weakness", "history_pruning"], default="core",
-                        help="Parameter batch to tune ('core' for 6 search heuristics, 'b' for history dynamics, 'corr' for CorrHistDivisor and CorrHistMax, 'time' for 9 dynamic time management constants, 'search' for all 12 search heuristics, 'bcd' for hidden constants, 'all' for full set, 'micro' for Micro budget, 'weakness' for remediation, 'history_pruning' for HistoryPruningThreshold)")
+    parser.add_argument("--engine", type=str, choices=["anak", "zanak"], default="anak",
+                        help="Engine to tune: 'anak' (default) or 'zanak'")
+    parser.add_argument("--zanak", type=str, default=None, help="Path to Zanak binary")
+    parser.add_argument("--batch", type=str, choices=["core", "b", "corr", "time", "search", "bcd", "all", "micro", "weakness", "history_pruning", "zanak_time", "zanak_search", "zanak_all"], default="core",
+                        help="Parameter batch to tune ('core', 'b', 'corr', 'time', 'search', 'bcd', 'all', 'micro', 'weakness', 'history_pruning', 'zanak_time', 'zanak_search', 'zanak_all')")
     parser.add_argument("--param", type=str, default=None, help="Tune a single parameter by name (e.g. --param HistoryPruningThreshold)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
@@ -1054,20 +1136,32 @@ def parse_args():
 
 def main():
     args = parse_args()
-    repo_root, default_fastchess, default_anak, default_openings = find_default_paths()
+    repo_root, default_fastchess, default_anak, default_openings, default_zanak = find_default_paths()
 
     fastchess_path = Path(args.fastchess) if args.fastchess else default_fastchess
-    anak_path = Path(args.anak) if args.anak else default_anak
+    if args.engine == "zanak":
+        target_engine_path = Path(args.zanak) if args.zanak else default_zanak
+        default_progress_name = "spsa_progress_zanak.json"
+    else:
+        target_engine_path = Path(args.anak) if args.anak else default_anak
+        default_progress_name = "spsa_progress.json"
+
     openings_path = Path(args.openings) if args.openings else default_openings
-    progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / "spsa_progress.json")
+    progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / default_progress_name)
 
     if args.param:
-        all_known = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS + WEAKNESS_PARAMETERS + HISTORY_PRUNING_PARAMETERS
+        all_known = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS + WEAKNESS_PARAMETERS + HISTORY_PRUNING_PARAMETERS + ZANAK_ALL_PARAMETERS
         matched = [p for p in all_known if p.name.lower() == args.param.lower()]
         if not matched:
             print(f"[!] Error: Parameter '{args.param}' not recognized.")
             sys.exit(1)
         param_set = [matched[0]]
+    elif args.batch == "zanak_time":
+        param_set = ZANAK_TIME_PARAMETERS
+    elif args.batch == "zanak_search":
+        param_set = ZANAK_SEARCH_PARAMETERS
+    elif args.batch == "zanak_all":
+        param_set = ZANAK_ALL_PARAMETERS
     elif args.batch == "core":
         param_set = CORE_PARAMETERS
     elif args.batch == "b":
@@ -1098,7 +1192,7 @@ def main():
         hash_mb=args.hash,
         threads=args.threads,
         fastchess_path=fastchess_path,
-        anak_path=anak_path,
+        anak_path=target_engine_path,
         openings_path=openings_path,
         progress_file=progress_file,
         dry_run=args.dry_run,

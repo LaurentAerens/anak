@@ -115,6 +115,22 @@ dotnet run --project src/Anak.Protocol -c Release -- --perft 5
 
 ---
 
+## Experimental Sub-Projects: Zanak (ZAP Engine)
+
+**Zanak** (Zap-Anak) is an experimental standalone sub-project located in [`src/Zanak/`](src/Zanak/) exploring the **ZAP** (Zero-branching Accelerated Probe) search paradigm as an alternative to recursive alpha-beta minimax trees.
+
+- **Zero-Branching Linear Probing**: Fast $O(D)$ greedy spine traces across all legal root moves for instantaneous anytime evaluation.
+- **Retrospective Discrepancy Branching**: Shock detection along trajectories that dynamically focuses search worker threads on refutations and tactical opportunities.
+- **Independent Executable**: Runs as a standalone UCI engine (`zanak`) or interactively within the `Anak.UI` developer visualizer.
+- **Pre-Releases**: Standalone binaries are published as pre-releases on the [Releases page](https://github.com/laerens/anak/releases) tagged with `zanak-v*` without affecting Anak release milestones.
+
+```bash
+# Build and run Zanak UCI executable
+dotnet run --project src/Zanak -c Release
+```
+
+---
+
 ## Bundled Assets
 
 Anak ships ready-to-play with tournament-grade assets out-of-the-box:

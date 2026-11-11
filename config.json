@@ -22,7 +22,7 @@
         "enabled": false
     },
     "opening": {
-        "file": "tools\\fastchess\\openings.epd",
+        "file": "C:\\Users\\laerens\\source\\repos\\Personal\\anak\\tools\\fastchess\\openings.epd",
         "format": 0,
         "order": 0,
         "plies": -1,
@@ -32,7 +32,7 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "tools\\fastchess\\results\\anak_dev_vs_v1.0.16_20261109_214311.pgn",
+        "file": "",
         "notation": 0,
         "append_file": true,
         "track_nodes": false,
@@ -51,16 +51,16 @@
         "append_file": true
     },
     "sprt": {
-        "alpha": 0.05,
-        "beta": 0.05,
+        "alpha": 0.0,
+        "beta": 0.0,
         "elo0": 0.0,
-        "elo1": 3.0,
+        "elo1": 0.0,
         "model": "normalized",
-        "enabled": true
+        "enabled": false
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 3536494717234807912,
+    "seed": 9834094335983145393,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -69,8 +69,8 @@
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 4000,
-    "concurrency": 10,
+    "rounds": 20,
+    "concurrency": 16,
     "force_concurrency": false,
     "recover": false,
     "noswap": false,
@@ -89,23 +89,67 @@
     },
     "engines": [
         {
-            "name": "Anak-Dev",
-            "dir": "tools\\fastchess\\bin\\anak",
-            "cmd": "anak.exe",
+            "name": "Anak-Plus",
+            "dir": "",
+            "cmd": "src\\Zanak\\bin\\Release\\net11.0\\zanak.exe",
             "args": "",
             "restart": false,
             "options": [
+                [
+                    "Hash",
+                    "16"
+                ],
                 [
                     "Threads",
                     "1"
                 ],
                 [
-                    "Hash",
-                    "64"
+                    "ShockThreshold",
+                    "66"
                 ],
                 [
-                    "SyzygyPath",
-                    "C:\\Users\\laurent aerens\\source\\repos\\anak\\syzygy"
+                    "DeadStemMargin",
+                    "227"
+                ],
+                [
+                    "HardAspirationMargin",
+                    "88"
+                ],
+                [
+                    "ContenderPromotionMargin",
+                    "57"
+                ],
+                [
+                    "WorkerPruneMargin",
+                    "184"
+                ],
+                [
+                    "AdaptiveShockBase",
+                    "58"
+                ],
+                [
+                    "AdaptiveShockSlope",
+                    "15"
+                ],
+                [
+                    "RecaptureBonus",
+                    "2741"
+                ],
+                [
+                    "EnPriseThreatPenalty",
+                    "3656"
+                ],
+                [
+                    "SpineAbandonThreshold",
+                    "271"
+                ],
+                [
+                    "CrosspointRootBiasWeight",
+                    "27"
+                ],
+                [
+                    "MaxSiblingExploration",
+                    "4"
                 ]
             ],
             "limit": {
@@ -122,23 +166,67 @@
             "variant": 0
         },
         {
-            "name": "Anak-v1.0.16",
-            "dir": "tools\\fastchess\\baselines\\v1.0.16",
-            "cmd": "anak.exe",
+            "name": "Anak-Minus",
+            "dir": "",
+            "cmd": "src\\Zanak\\bin\\Release\\net11.0\\zanak.exe",
             "args": "",
             "restart": false,
             "options": [
+                [
+                    "Hash",
+                    "16"
+                ],
                 [
                     "Threads",
                     "1"
                 ],
                 [
-                    "Hash",
-                    "64"
+                    "ShockThreshold",
+                    "80"
                 ],
                 [
-                    "SyzygyPath",
-                    "C:\\Users\\laurent aerens\\source\\repos\\anak\\syzygy"
+                    "DeadStemMargin",
+                    "268"
+                ],
+                [
+                    "HardAspirationMargin",
+                    "109"
+                ],
+                [
+                    "ContenderPromotionMargin",
+                    "44"
+                ],
+                [
+                    "WorkerPruneMargin",
+                    "219"
+                ],
+                [
+                    "AdaptiveShockBase",
+                    "47"
+                ],
+                [
+                    "AdaptiveShockSlope",
+                    "11"
+                ],
+                [
+                    "RecaptureBonus",
+                    "2259"
+                ],
+                [
+                    "EnPriseThreatPenalty",
+                    "4345"
+                ],
+                [
+                    "SpineAbandonThreshold",
+                    "230"
+                ],
+                [
+                    "CrosspointRootBiasWeight",
+                    "19"
+                ],
+                [
+                    "MaxSiblingExploration",
+                    "7"
                 ]
             ],
             "limit": {
@@ -156,16 +244,16 @@
         }
     ],
     "stats": {
-        "Anak-Dev vs Anak-v1.0.16": {
-            "wins": 1104,
-            "losses": 807,
-            "draws": 771,
-            "penta_WW": 215,
-            "penta_WD": 326,
-            "penta_WL": 348,
-            "penta_DD": 114,
-            "penta_LD": 217,
-            "penta_LL": 121
+        "Anak-Plus vs Anak-Minus": {
+            "wins": 19,
+            "losses": 17,
+            "draws": 4,
+            "penta_WW": 4,
+            "penta_WD": 2,
+            "penta_WL": 9,
+            "penta_DD": 0,
+            "penta_LD": 2,
+            "penta_LL": 3
         }
     }
 }
