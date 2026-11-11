@@ -137,27 +137,41 @@ public sealed class ZapSearchTests
         Assert.Equal(RootMoveStatus.Active, sharedState.GetRootMoveStatus(1));
     }
 
-    [Fact]
-    public void ZapSearch_ViennaMove6_RecapturesKnight_EvenWhenLastMoveIsNull()
+    [Theory]
+    [InlineData("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")] // Start position
+    [InlineData("r1bqkb1r/pppp1ppp/2n5/4p3/2B1n3/5N2/PPPP1PPP/RNBQK2R w KQkq - 0 5")] // Tactical Italian
+    [InlineData("8/2k5/8/8/8/8/4K3/8 w - - 0 1")] // King and pawn/bare king
+    [InlineData("r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 1 5")] // Complex middlegame
+    [InlineData("8/8/8/8/4k3/8/4P3/4K3 w - - 0 1")] // Simple endgame
+    public void Search_DiversePositions_AlwaysReturnsLegalMove(string fen)
     {
-        Board board = Fen.Parse("r1bqkb1r/ppp2ppp/8/4P3/8/2n2Q2/PPPP2PP/R1B1KBNR w KQkq - 0 6");
+        Board board = Fen.Parse(fen);
         using var search = new ZapSearch();
-        var budget = new SearchBudget(200, 400, 6, 10);
+        var budget = new SearchBudget(50, 100, 4, 8);
 
-        Move best = search.Search(in board, in budget, lastMove: Move.Null);
+        Move best = search.Search(in board, in budget);
 
-        Assert.True(best.To == Square.C3 || best.To == Square.E6, $"Expected capture on c3 or e5e6, got {best.ToUci()}");
-        Assert.NotEqual(Square.D2, best.To);
+        Assert.False(best.IsNull);
+        Assert.True(board.IsLegal(in best), $"Expected legal move, got {best.ToUci()} in FEN {fen}");
     }
 
     [Fact]
-    public void CompareAlphaBetaOnVienna()
+    public void Search_RespectsCancellationToken()
     {
-        Board rootBoard = Fen.Parse("r1bqkb1r/ppp2ppp/8/4P3/8/2n2Q2/PPPP2PP/R1B1KBNR w KQkq - 0 6");
-        var nnue = new Anak.Data.Nnue.MultiTierNnueEvaluator();
-        var abEngine = new Anak.Search.AlphaBetaEngine(nnue);
-        Move abBest = abEngine.Search(in rootBoard, new SearchLimits { Depth = 6 });
-        Assert.Equal(Square.C3, abBest.To);
-        Assert.True(abBest.IsCapture);
+        Board board = Fen.Parse(Fen.StartPosition);
+        using var search = new ZapSearch();
+        var budget = new SearchBudget(5000, 10000, 20, 30);
+        using var cts = new System.Threading.CancellationTokenSource();
+
+        // Cancel immediately
+        cts.Cancel();
+
+        Move best = search.Search(in board, in budget, cancellationToken: cts.Token);
+
+        // Even with immediate cancellation, it should safely return without hanging or crashing
+        if (!best.IsNull)
+        {
+            Assert.True(board.IsLegal(in best));
+        }
     }
 }

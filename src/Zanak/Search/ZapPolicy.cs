@@ -117,140 +117,301 @@ public sealed class ZapPolicy
     }
 
     /// <summary>
-    /// Attempts to find a single high-quality greedy move for the given board state.
-    /// Prioritizes LVA recaptures, check evasions, TT hits, winning captures, and quiet heuristics.
+    /// <summary>
+    /// Attempts to find a single high-quality greedy move for the given board state using
+    /// a lightweight, bitboard-first priority ladder without general move generation:
+    /// Check 1: In check -> King safe square / King move / block or capture checker.
+    /// Check 2: Can take enemy Queen? -> Take it.
+    /// Check 3: Can enemy take my Queen? -> Evade to safe square.
+    /// Check 4: Can take enemy Rook? -> Take it.
+    /// Check 5: Can enemy take my Rook? -> Evade to safe square.
+    /// Check 6: Can take enemy Bishop? -> Take it.
+    /// Check 7: Can enemy take my Bishop? -> Evade to safe square.
+    /// Check 8: Knight -> Can take enemy Knight? Take it. Can enemy take my Knight? Evade.
+    /// Check 9: Can I give a check?
+    /// Check 10: Can take enemy Pawn? -> Take it.
+    /// Check 11: Can enemy take my Pawn? -> Push or capture with it.
+    /// Check 12: Can I push a pawn?
+    /// Fallback: Pick first legal move.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public bool TryGetQuickMove(in Board board, int ply, Move lastMove, out Move move)
     {
-        // Priority 0: Immediate Recapture Check via Least Valuable Aggressor (LVA)
-        if (TryGetLvaRecapture(in board, lastMove, out Move lvaRecapture) && !AllowsMateIn1(in board, lvaRecapture))
-        {
-            move = lvaRecapture;
-            return true;
-        }
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+        ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong theirPieces = them == Color.White ? board.White : board.Black;
 
-        // Priority 1: Check Evasions (when moving king is in check)
+        // Check 1: Am I in check?
+        // Yes => Move king. Can't move king => block or capture checker.
         if (board.IsInCheck())
         {
-            MoveList evasions = default;
-            MoveGenerator.GenerateLegalMoves(in board, ref evasions);
-            if (evasions.Count == 0)
+            ulong kingBb = board.Kings & ourPieces;
+            if (kingBb != 0)
             {
-                move = Move.Null;
-                return false; // Checkmate!
-            }
+                Square kingSq = Bitboard.Lsb(kingBb);
+                ulong kingAttacks = Bitboard.KingAttacks[(byte)kingSq] & ~ourPieces;
 
-            Move bestEvasion = evasions[0];
-            int bestEvasionScore = int.MinValue;
-
-            for (int i = 0; i < evasions.Count; i++)
-            {
-                Move ev = evasions[i];
-                int score = ScoreEvasion(in board, ev);
-                if (AllowsMateIn1(in board, ev)) score -= 30000;
-                else if (AllowsDecisiveLoss(in board, ev)) score -= 15000;
-
-                if (score > bestEvasionScore)
+                // 1a: Try safe squares (not attacked by enemy)
+                ulong safeKingSquares = kingAttacks;
+                while (safeKingSquares != 0)
                 {
-                    bestEvasionScore = score;
-                    bestEvasion = ev;
+                    Square to = (Square)BitOperations.TrailingZeroCount(safeKingSquares);
+                    safeKingSquares &= safeKingSquares - 1;
+                    if (!board.IsSquareAttacked(to, them))
+                    {
+                        bool isCap = (theirPieces & (1UL << (byte)to)) != 0;
+                        Move km = new Move(kingSq, to, isCap ? MoveType.Capture : MoveType.Quiet);
+                        if (board.IsLegal(in km))
+                        {
+                            move = km;
+                            return true;
+                        }
+                    }
+                }
+
+                // 1b: Try any king move (e.g. capturing checking piece directly)
+                while (kingAttacks != 0)
+                {
+                    Square to = (Square)BitOperations.TrailingZeroCount(kingAttacks);
+                    kingAttacks &= kingAttacks - 1;
+                    bool isCap = (theirPieces & (1UL << (byte)to)) != 0;
+                    Move km = new Move(kingSq, to, isCap ? MoveType.Capture : MoveType.Quiet);
+                    if (board.IsLegal(in km))
+                    {
+                        move = km;
+                        return true;
+                    }
                 }
             }
 
-            move = bestEvasion;
-            return true;
-        }
-
-        // Priority 1.5: Immediate Winning Checkmate (if we can deliver checkmate in 1, play it immediately!)
-        if (TryGetImmediateMateIn1(in board, out Move winningMate))
-        {
-            move = winningMate;
-            return true;
-        }
-
-        // Priority 2: Transposition Table hit
-        if (_tt != null && _tt.TryGet(board.ZobristKey, out ZapTTEntry entry) && !entry.BestMove.IsNull)
-        {
-            if (board.IsLegal(in entry.BestMove))
+            // 1c: King cannot move => block check or capture checker
+            MoveList evasions = default;
+            MoveGenerator.GenerateLegalMoves(in board, ref evasions);
+            if (evasions.Count > 0)
             {
-                move = entry.BestMove;
+                move = evasions[0];
+                return true;
+            }
+
+            // Checkmate!
+            move = Move.Null;
+            return false;
+        }
+
+        // Priority 0: Immediate Recapture locality (if lastMove was a capture, resolve immediate recapture on that square)
+        if (!lastMove.IsNull && lastMove.IsCapture)
+        {
+            if (TryGetLvaCapture(in board, lastMove.To, out Move recapMove))
+            {
+                move = recapMove;
                 return true;
             }
         }
 
-        // Detect if any friendly major/minor piece is en prise
-        int threatenedValue = GetMaxThreatenedPiece(in board, out Square threatenedSquare);
-
-        // Priority 3: Winning & Equal Tactical Captures
-        // (Guards against hung pieces: if a piece is en prise, only allows captures that rescue the piece,
-        // take the attacker, or capture an equal/higher-value opponent piece like their Queen!)
-        if (TryGetWinningCapture(in board, lastMove, threatenedValue, threatenedSquare, out Move tacticalCapture) && !AllowsMateIn1(in board, tacticalCapture))
+        // Check 2: Can any of my pieces take enemy Queen? => Take it!
+        ulong enemyQueens = board.Queens & theirPieces;
+        while (enemyQueens != 0)
         {
-            move = tacticalCapture;
-            return true;
-        }
-
-        // Priority 3.5: Rescue En-Prise Major / Minor Piece!
-        if (threatenedValue > 0 && TryFindSafeMoveForPiece(in board, threatenedSquare, board.SideToMove.Opponent(), out Move rescueMove) && !AllowsMateIn1(in board, rescueMove))
-        {
-            move = rescueMove;
-            return true;
-        }
-
-        // Priority 4: Threat Evasion & Positional Quiet Move Heuristics
-        MoveList legal = default;
-        MoveGenerator.GenerateLegalMoves(in board, ref legal);
-        if (legal.Count == 0)
-        {
-            move = Move.Null;
-            return false; // Stalemate
-        }
-
-        Move bestQuiet = Move.Null;
-        Span<int> scores = legal.Count <= 64 ? stackalloc int[legal.Count] : new int[legal.Count];
-        for (int i = 0; i < legal.Count; i++)
-        {
-            scores[i] = ScoreMove(in board, legal[i], ply, lastMove);
-        }
-
-        // Select the highest-scoring candidate that does not suicidally allow an immediate mate-in-1
-        while (true)
-        {
-            int topIdx = -1;
-            int topScore = int.MinValue;
-            for (int i = 0; i < legal.Count; i++)
+            Square eqSq = (Square)BitOperations.TrailingZeroCount(enemyQueens);
+            enemyQueens &= enemyQueens - 1;
+            if (TryGetLvaCapture(in board, eqSq, out Move capMove))
             {
-                if (scores[i] > topScore)
+                move = capMove;
+                return true;
+            }
+        }
+
+        // Check 3: Can any of their pieces take my Queen? => Move it somewhere (first safe square)
+        ulong ourQueens = board.Queens & ourPieces;
+        while (ourQueens != 0)
+        {
+            Square myQueenSq = (Square)BitOperations.TrailingZeroCount(ourQueens);
+            ourQueens &= ourQueens - 1;
+            if (board.IsSquareAttacked(myQueenSq, them))
+            {
+                if (TryEvadePiece(in board, myQueenSq, PieceType.Queen, out Move evadeMove))
                 {
-                    topScore = scores[i];
-                    topIdx = i;
+                    move = evadeMove;
+                    return true;
                 }
             }
-
-            if (topIdx < 0 || topScore <= -20000)
-            {
-                break;
-            }
-
-            Move candidate = legal[topIdx];
-            if (!AllowsDecisiveLoss(in board, candidate))
-            {
-                bestQuiet = candidate;
-                break;
-            }
-
-            // Suicidal move allowing opponent to checkmate us or deliver decisive loss in 1: penalize and pick next
-            scores[topIdx] = -25000;
         }
 
-        if (bestQuiet.IsNull)
+        // Check 4: Can any of my pieces take enemy Rook? => Take it!
+        ulong enemyRooks = board.Rooks & theirPieces;
+        // Prioritize lastMove.To if enemy just captured on that square
+        if (!lastMove.IsNull && (enemyRooks & (1UL << (byte)lastMove.To)) != 0)
         {
-            bestQuiet = legal[0];
+            if (TryGetLvaCapture(in board, lastMove.To, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
+        }
+        while (enemyRooks != 0)
+        {
+            Square erSq = (Square)BitOperations.TrailingZeroCount(enemyRooks);
+            enemyRooks &= enemyRooks - 1;
+            if (TryGetLvaCapture(in board, erSq, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
         }
 
-        move = bestQuiet;
-        return true;
+        // Check 5: Can any of their pieces take my Rook? => Move it somewhere (first safe square)
+        ulong ourRooks = board.Rooks & ourPieces;
+        while (ourRooks != 0)
+        {
+            Square myRookSq = (Square)BitOperations.TrailingZeroCount(ourRooks);
+            ourRooks &= ourRooks - 1;
+            if (board.IsSquareAttacked(myRookSq, them))
+            {
+                if (TryEvadePiece(in board, myRookSq, PieceType.Rook, out Move evadeMove))
+                {
+                    move = evadeMove;
+                    return true;
+                }
+            }
+        }
+
+        // Check 6: Can any of my pieces take enemy Bishop? => Take it!
+        ulong enemyBishops = board.Bishops & theirPieces;
+        if (!lastMove.IsNull && (enemyBishops & (1UL << (byte)lastMove.To)) != 0)
+        {
+            if (TryGetLvaCapture(in board, lastMove.To, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
+        }
+        while (enemyBishops != 0)
+        {
+            Square ebSq = (Square)BitOperations.TrailingZeroCount(enemyBishops);
+            enemyBishops &= enemyBishops - 1;
+            if (TryGetLvaCapture(in board, ebSq, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
+        }
+
+        // Check 7: Can any of their pieces take my Bishop? => Move it somewhere (first safe square)
+        ulong ourBishops = board.Bishops & ourPieces;
+        while (ourBishops != 0)
+        {
+            Square myBishopSq = (Square)BitOperations.TrailingZeroCount(ourBishops);
+            ourBishops &= ourBishops - 1;
+            if (board.IsSquareAttacked(myBishopSq, them))
+            {
+                if (TryEvadePiece(in board, myBishopSq, PieceType.Bishop, out Move evadeMove))
+                {
+                    move = evadeMove;
+                    return true;
+                }
+            }
+        }
+
+        // Check 8a: Can any of my pieces take enemy Knight? => Take it!
+        ulong enemyKnights = board.Knights & theirPieces;
+        if (!lastMove.IsNull && (enemyKnights & (1UL << (byte)lastMove.To)) != 0)
+        {
+            if (TryGetLvaCapture(in board, lastMove.To, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
+        }
+        while (enemyKnights != 0)
+        {
+            Square enSq = (Square)BitOperations.TrailingZeroCount(enemyKnights);
+            enemyKnights &= enemyKnights - 1;
+            if (TryGetLvaCapture(in board, enSq, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
+        }
+
+        // Check 8b: Can any of their pieces take my Knight? => Move it somewhere (first safe square)
+        ulong ourKnights = board.Knights & ourPieces;
+        while (ourKnights != 0)
+        {
+            Square myKnightSq = (Square)BitOperations.TrailingZeroCount(ourKnights);
+            ourKnights &= ourKnights - 1;
+            if (board.IsSquareAttacked(myKnightSq, them))
+            {
+                if (TryEvadePiece(in board, myKnightSq, PieceType.Knight, out Move evadeMove))
+                {
+                    move = evadeMove;
+                    return true;
+                }
+            }
+        }
+
+        // Check 9: Can I give a check?
+        if (TryGetCheckMove(in board, out Move checkMove))
+        {
+            move = checkMove;
+            return true;
+        }
+
+        // Check 10: Can any of my pieces take enemy Pawn? => Take it!
+        ulong enemyPawns = board.Pawns & theirPieces;
+        if (!lastMove.IsNull && (enemyPawns & (1UL << (byte)lastMove.To)) != 0)
+        {
+            if (TryGetLvaCapture(in board, lastMove.To, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
+        }
+        while (enemyPawns != 0)
+        {
+            Square epSq = (Square)BitOperations.TrailingZeroCount(enemyPawns);
+            enemyPawns &= enemyPawns - 1;
+            if (TryGetLvaCapture(in board, epSq, out Move capMove))
+            {
+                move = capMove;
+                return true;
+            }
+        }
+
+        // Check 11: Can any of their pieces take my Pawn? => Push or capture with it!
+        ulong ourPawns = board.Pawns & ourPieces;
+        while (ourPawns != 0)
+        {
+            Square myPawnSq = (Square)BitOperations.TrailingZeroCount(ourPawns);
+            ourPawns &= ourPawns - 1;
+            if (board.IsSquareAttacked(myPawnSq, them))
+            {
+                if (TryEvadePawn(in board, myPawnSq, out Move evadeMove))
+                {
+                    move = evadeMove;
+                    return true;
+                }
+            }
+        }
+
+        // Check 12: Can I push a pawn?
+        if (TryGetPawnPush(in board, out Move pushMove))
+        {
+            move = pushMove;
+            return true;
+        }
+
+        // Fallback: Pick first legal move
+        MoveList legal = default;
+        MoveGenerator.GenerateLegalMoves(in board, ref legal);
+        if (legal.Count > 0)
+        {
+            move = legal[0];
+            return true;
+        }
+
+        move = Move.Null;
+        return false;
     }
 
     /// <summary>
@@ -609,8 +770,17 @@ public sealed class ZapPolicy
             return false;
         }
 
-        Square to = lastMove.To;
-        byte toByte = (byte)to;
+        return TryGetLvaCapture(in board, lastMove.To, out move);
+    }
+
+    /// <summary>
+    /// Finds the least valuable friendly attacker that can legally capture on <paramref name="targetSq"/>.
+    /// Order: Pawn -> Knight -> Bishop -> Rook -> Queen -> King.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool TryGetLvaCapture(in Board board, Square targetSq, out Move move)
+    {
+        byte toByte = (byte)targetSq;
         Color us = board.SideToMove;
         ulong friendly = us == Color.White ? board.White : board.Black;
         ulong occ = board.Occupied;
@@ -623,10 +793,10 @@ public sealed class ZapPolicy
         while (pawnAttackers != 0)
         {
             Square from = (Square)BitOperations.TrailingZeroCount(pawnAttackers);
-            int rank = (int)to / 8;
+            int rank = (int)targetSq / 8;
             Move m = (rank == 7 || rank == 0)
-                ? new Move(from, to, MoveType.QueenPromotionCapture)
-                : new Move(from, to, MoveType.Capture);
+                ? new Move(from, targetSq, MoveType.QueenPromotionCapture)
+                : new Move(from, targetSq, MoveType.Capture);
 
             if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
             {
@@ -641,7 +811,7 @@ public sealed class ZapPolicy
         while (knightAttackers != 0)
         {
             Square from = (Square)BitOperations.TrailingZeroCount(knightAttackers);
-            Move m = new Move(from, to, MoveType.Capture);
+            Move m = new Move(from, targetSq, MoveType.Capture);
             if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
             {
                 move = m;
@@ -651,11 +821,11 @@ public sealed class ZapPolicy
         }
 
         // 3. Bishop
-        ulong bishopAttackers = MagicBitboards.GetBishopAttacks(to, occ) & board.Bishops & friendly;
+        ulong bishopAttackers = MagicBitboards.GetBishopAttacks(targetSq, occ) & board.Bishops & friendly;
         while (bishopAttackers != 0)
         {
             Square from = (Square)BitOperations.TrailingZeroCount(bishopAttackers);
-            Move m = new Move(from, to, MoveType.Capture);
+            Move m = new Move(from, targetSq, MoveType.Capture);
             if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
             {
                 move = m;
@@ -665,11 +835,11 @@ public sealed class ZapPolicy
         }
 
         // 4. Rook
-        ulong rookAttackers = MagicBitboards.GetRookAttacks(to, occ) & board.Rooks & friendly;
+        ulong rookAttackers = MagicBitboards.GetRookAttacks(targetSq, occ) & board.Rooks & friendly;
         while (rookAttackers != 0)
         {
             Square from = (Square)BitOperations.TrailingZeroCount(rookAttackers);
-            Move m = new Move(from, to, MoveType.Capture);
+            Move m = new Move(from, targetSq, MoveType.Capture);
             if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
             {
                 move = m;
@@ -679,11 +849,11 @@ public sealed class ZapPolicy
         }
 
         // 5. Queen
-        ulong queenAttackers = MagicBitboards.GetQueenAttacks(to, occ) & board.Queens & friendly;
+        ulong queenAttackers = (MagicBitboards.GetBishopAttacks(targetSq, occ) | MagicBitboards.GetRookAttacks(targetSq, occ)) & board.Queens & friendly;
         while (queenAttackers != 0)
         {
             Square from = (Square)BitOperations.TrailingZeroCount(queenAttackers);
-            Move m = new Move(from, to, MoveType.Capture);
+            Move m = new Move(from, targetSq, MoveType.Capture);
             if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
             {
                 move = m;
@@ -697,11 +867,331 @@ public sealed class ZapPolicy
         if (kingAttackers != 0)
         {
             Square from = (Square)BitOperations.TrailingZeroCount(kingAttackers);
-            Move m = new Move(from, to, MoveType.Capture);
+            Move m = new Move(from, targetSq, MoveType.Capture);
             if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
             {
                 move = m;
                 return true;
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Evades an attacked piece by moving it to the first safe (unattacked) square, or any legal square.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryEvadePiece(in Board board, Square fromSq, PieceType pt, out Move move)
+    {
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+        ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong theirPieces = them == Color.White ? board.White : board.Black;
+        ulong occ = board.Occupied;
+
+        ulong destMask = pt switch
+        {
+            PieceType.Queen => (MagicBitboards.GetBishopAttacks(fromSq, occ) | MagicBitboards.GetRookAttacks(fromSq, occ)) & ~ourPieces,
+            PieceType.Rook => MagicBitboards.GetRookAttacks(fromSq, occ) & ~ourPieces,
+            PieceType.Bishop => MagicBitboards.GetBishopAttacks(fromSq, occ) & ~ourPieces,
+            PieceType.Knight => Bitboard.KnightAttacks[(byte)fromSq] & ~ourPieces,
+            _ => 0
+        };
+
+        // First pass: look for a safe square (not attacked by enemy)
+        ulong safeSquares = destMask;
+        while (safeSquares != 0)
+        {
+            Square to = (Square)BitOperations.TrailingZeroCount(safeSquares);
+            safeSquares &= safeSquares - 1;
+            if (!board.IsSquareAttacked(to, them))
+            {
+                bool isCap = (theirPieces & (1UL << (byte)to)) != 0;
+                Move m = new Move(fromSq, to, isCap ? MoveType.Capture : MoveType.Quiet);
+                if (board.IsLegal(in m))
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        // Second pass: try any destination square
+        while (destMask != 0)
+        {
+            Square to = (Square)BitOperations.TrailingZeroCount(destMask);
+            destMask &= destMask - 1;
+            bool isCap = (theirPieces & (1UL << (byte)to)) != 0;
+            Move m = new Move(fromSq, to, isCap ? MoveType.Capture : MoveType.Quiet);
+            if (board.IsLegal(in m))
+            {
+                move = m;
+                return true;
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Finds a checking move directed at the enemy King using piece attack bitboards.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryGetCheckMove(in Board board, out Move move)
+    {
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+        ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong theirPieces = them == Color.White ? board.White : board.Black;
+        ulong enemyKingBb = board.Kings & theirPieces;
+        if (enemyKingBb == 0)
+        {
+            move = Move.Null;
+            return false;
+        }
+        Square kSq = Bitboard.Lsb(enemyKingBb);
+        ulong occ = board.Occupied;
+
+        // 1. Knight checks
+        ulong knightCheckSqs = Bitboard.KnightAttacks[(byte)kSq] & ~ourPieces;
+        while (knightCheckSqs != 0)
+        {
+            Square to = (Square)BitOperations.TrailingZeroCount(knightCheckSqs);
+            knightCheckSqs &= knightCheckSqs - 1;
+
+            ulong attackers = Bitboard.KnightAttacks[(byte)to] & board.Knights & ourPieces;
+            while (attackers != 0)
+            {
+                Square from = (Square)BitOperations.TrailingZeroCount(attackers);
+                attackers &= attackers - 1;
+                bool isCap = (theirPieces & (1UL << (byte)to)) != 0;
+                Move m = new Move(from, to, isCap ? MoveType.Capture : MoveType.Quiet);
+                if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        // 2. Bishop & Queen diagonal checks
+        ulong bishopCheckSqs = MagicBitboards.GetBishopAttacks(kSq, occ) & ~ourPieces;
+        while (bishopCheckSqs != 0)
+        {
+            Square to = (Square)BitOperations.TrailingZeroCount(bishopCheckSqs);
+            bishopCheckSqs &= bishopCheckSqs - 1;
+
+            ulong attackers = MagicBitboards.GetBishopAttacks(to, occ) & (board.Bishops | board.Queens) & ourPieces;
+            while (attackers != 0)
+            {
+                Square from = (Square)BitOperations.TrailingZeroCount(attackers);
+                attackers &= attackers - 1;
+                bool isCap = (theirPieces & (1UL << (byte)to)) != 0;
+                Move m = new Move(from, to, isCap ? MoveType.Capture : MoveType.Quiet);
+                if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        // 3. Rook & Queen orthogonal checks
+        ulong rookCheckSqs = MagicBitboards.GetRookAttacks(kSq, occ) & ~ourPieces;
+        while (rookCheckSqs != 0)
+        {
+            Square to = (Square)BitOperations.TrailingZeroCount(rookCheckSqs);
+            rookCheckSqs &= rookCheckSqs - 1;
+
+            ulong attackers = MagicBitboards.GetRookAttacks(to, occ) & (board.Rooks | board.Queens) & ourPieces;
+            while (attackers != 0)
+            {
+                Square from = (Square)BitOperations.TrailingZeroCount(attackers);
+                attackers &= attackers - 1;
+                bool isCap = (theirPieces & (1UL << (byte)to)) != 0;
+                Move m = new Move(from, to, isCap ? MoveType.Capture : MoveType.Quiet);
+                if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        // 4. Pawn checks
+        ulong pawnCheckSqs = (them == Color.White ? Bitboard.BlackPawnAttacks[(byte)kSq] : Bitboard.WhitePawnAttacks[(byte)kSq]) & ~ourPieces;
+        while (pawnCheckSqs != 0)
+        {
+            Square to = (Square)BitOperations.TrailingZeroCount(pawnCheckSqs);
+            pawnCheckSqs &= pawnCheckSqs - 1;
+            Square fromPush = us == Color.White ? (Square)((int)to - 8) : (Square)((int)to + 8);
+            if ((int)fromPush >= 0 && (int)fromPush < 64 && ((board.Pawns & ourPieces) & (1UL << (byte)fromPush)) != 0 && (occ & (1UL << (byte)to)) == 0)
+            {
+                Move m = new Move(fromPush, to, (int)to / 8 == 7 || (int)to / 8 == 0 ? MoveType.QueenPromotion : MoveType.Quiet);
+                if (board.IsLegal(in m) && StaticExchangeEvaluator.Evaluate(in board, m) >= 0)
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Evades an attacked pawn by capturing an enemy piece or pushing forward.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryEvadePawn(in Board board, Square pawnSq, out Move move)
+    {
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+        ulong occ = board.Occupied;
+        ulong theirPieces = them == Color.White ? board.White : board.Black;
+        int from = (int)pawnSq;
+        int file = from % 8;
+
+        if (us == Color.White)
+        {
+            if (file > 0)
+            {
+                Square toCapLeft = (Square)(from + 7);
+                if ((theirPieces & (1UL << (byte)toCapLeft)) != 0)
+                {
+                    Move m = new Move(pawnSq, toCapLeft, (int)toCapLeft / 8 == 7 ? MoveType.QueenPromotionCapture : MoveType.Capture);
+                    if (board.IsLegal(in m)) { move = m; return true; }
+                }
+            }
+            if (file < 7)
+            {
+                Square toCapRight = (Square)(from + 9);
+                if ((theirPieces & (1UL << (byte)toCapRight)) != 0)
+                {
+                    Move m = new Move(pawnSq, toCapRight, (int)toCapRight / 8 == 7 ? MoveType.QueenPromotionCapture : MoveType.Capture);
+                    if (board.IsLegal(in m)) { move = m; return true; }
+                }
+            }
+            Square toPush = (Square)(from + 8);
+            if ((occ & (1UL << (byte)toPush)) == 0)
+            {
+                Move m = new Move(pawnSq, toPush, (int)toPush / 8 == 7 ? MoveType.QueenPromotion : MoveType.Quiet);
+                if (board.IsLegal(in m)) { move = m; return true; }
+            }
+        }
+        else
+        {
+            if (file > 0)
+            {
+                Square toCapLeft = (Square)(from - 9);
+                if ((theirPieces & (1UL << (byte)toCapLeft)) != 0)
+                {
+                    Move m = new Move(pawnSq, toCapLeft, (int)toCapLeft / 8 == 0 ? MoveType.QueenPromotionCapture : MoveType.Capture);
+                    if (board.IsLegal(in m)) { move = m; return true; }
+                }
+            }
+            if (file < 7)
+            {
+                Square toCapRight = (Square)(from - 7);
+                if ((theirPieces & (1UL << (byte)toCapRight)) != 0)
+                {
+                    Move m = new Move(pawnSq, toCapRight, (int)toCapRight / 8 == 0 ? MoveType.QueenPromotionCapture : MoveType.Capture);
+                    if (board.IsLegal(in m)) { move = m; return true; }
+                }
+            }
+            Square toPush = (Square)(from - 8);
+            if ((occ & (1UL << (byte)toPush)) == 0)
+            {
+                Move m = new Move(pawnSq, toPush, (int)toPush / 8 == 0 ? MoveType.QueenPromotion : MoveType.Quiet);
+                if (board.IsLegal(in m)) { move = m; return true; }
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Finds a legal pawn push (single or double push).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryGetPawnPush(in Board board, out Move move)
+    {
+        Color us = board.SideToMove;
+        ulong occ = board.Occupied;
+        ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong pawns = board.Pawns & ourPieces;
+
+        if (us == Color.White)
+        {
+            // Single pushes
+            ulong singlePushes = (pawns << 8) & ~occ;
+            ulong pushBits = singlePushes;
+            while (pushBits != 0)
+            {
+                Square to = (Square)BitOperations.TrailingZeroCount(pushBits);
+                pushBits &= pushBits - 1;
+                Square from = (Square)((int)to - 8);
+                Move m = new Move(from, to, (int)to / 8 == 7 ? MoveType.QueenPromotion : MoveType.Quiet);
+                if (board.IsLegal(in m))
+                {
+                    move = m;
+                    return true;
+                }
+            }
+
+            // Double pushes: from Rank 2 through Rank 3 to Rank 4
+            ulong singlePushesOnRank3 = ((pawns & 0x000000000000FF00UL) << 8) & ~occ;
+            ulong doublePushes = (singlePushesOnRank3 << 8) & ~occ;
+            while (doublePushes != 0)
+            {
+                Square to = (Square)BitOperations.TrailingZeroCount(doublePushes);
+                doublePushes &= doublePushes - 1;
+                Square from = (Square)((int)to - 16);
+                Move m = new Move(from, to, MoveType.Quiet);
+                if (board.IsLegal(in m))
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+        else
+        {
+            // Black single pushes
+            ulong singlePushes = (pawns >> 8) & ~occ;
+            ulong pushBits = singlePushes;
+            while (pushBits != 0)
+            {
+                Square to = (Square)BitOperations.TrailingZeroCount(pushBits);
+                pushBits &= pushBits - 1;
+                Square from = (Square)((int)to + 8);
+                Move m = new Move(from, to, (int)to / 8 == 0 ? MoveType.QueenPromotion : MoveType.Quiet);
+                if (board.IsLegal(in m))
+                {
+                    move = m;
+                    return true;
+                }
+            }
+
+            // Black double pushes: from Rank 7 through Rank 6 to Rank 5
+            ulong singlePushesOnRank6 = ((pawns & 0x00FF000000000000UL) >> 8) & ~occ;
+            ulong doublePushes = (singlePushesOnRank6 >> 8) & ~occ;
+            while (doublePushes != 0)
+            {
+                Square to = (Square)BitOperations.TrailingZeroCount(doublePushes);
+                doublePushes &= doublePushes - 1;
+                Square from = (Square)((int)to + 16);
+                Move m = new Move(from, to, MoveType.Quiet);
+                if (board.IsLegal(in m))
+                {
+                    move = m;
+                    return true;
+                }
             }
         }
 
