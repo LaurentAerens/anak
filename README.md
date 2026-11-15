@@ -1,12 +1,12 @@
 # Anak
 
-[![CI](https://github.com/laerens/anak/actions/workflows/ci.yml/badge.svg)](https://github.com/laerens/anak/actions/workflows/ci.yml)
-[![Release](https://github.com/laerens/anak/actions/workflows/release.yml/badge.svg)](https://github.com/laerens/anak/actions/workflows/release.yml)
+[![CI](https://github.com/LaurentAerens/anak/actions/workflows/ci.yml/badge.svg)](https://github.com/LaurentAerens/anak/actions/workflows/ci.yml)
+[![Release](https://github.com/LaurentAerens/anak/actions/workflows/release.yml/badge.svg)](https://github.com/LaurentAerens/anak/actions/workflows/release.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-11.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![Elo Rating](https://img.shields.io/badge/CCRL%20%2F%20SPRT%20Elo-2557%2B-brightgreen.svg)](BENCHMARKS.md)
+[![Elo Rating](https://img.shields.io/badge/CCRL%20%2F%20SPRT%20Elo-2677%2B-brightgreen.svg)](BENCHMARKS.md)
 
-**Anak** is an ultra-high-performance chess engine authored by **Laurent Aerens** (Belgium), architected for the `.NET 11` runtime (`net11.0`). It combines modern hardware SIMD intrinsics, zero-GC allocation discipline, Magic Bitboards, a tournament-grade **Alpha-Beta (Negamax / PVS)** search engine with Lazy SMP, an alternative **Monte Carlo Tree Search (MCTS)** engine, pure managed **Syzygy endgame tablebase probing**, a **PolyGlot opening book reader**, and a **Multi-Tier NNUE evaluation pipeline**.
+**Anak** is a high-performance UCI chess engine authored by **Laurent Aerens** (Belgium), architected for `.NET 11` (`net11.0`) and compiled with NativeAOT. It combines hardware SIMD intrinsics, zero-GC allocation discipline, Magic Bitboards, an **Alpha-Beta (Negamax / PVS)** search engine with Lazy SMP, pure managed **Syzygy endgame tablebase probing**, a **PolyGlot opening book reader**, and a **Unified Shared-FT Mixture-of-Experts (MoE) NNUE** evaluation pipeline.
 
 ---
 
@@ -15,8 +15,8 @@
 ```mermaid
 flowchart TD
     Protocol["Anak.Protocol<br/><i>UCI Loop · Bench · Analysis CLI</i>"]
-    Search["Anak.Search<br/><i>Alpha-Beta PVS · MCTS · Lazy SMP · Transposition Table</i>"]
-    Data["Anak.Data<br/><i>Multi-Tier NNUE · Syzygy EGTB · PolyGlot Book</i>"]
+    Search["Anak.Search<br/><i>Alpha-Beta PVS · Lazy SMP · 20-byte TTEntry</i>"]
+    Data["Anak.Data<br/><i>Shared-FT MoE NNUE · Syzygy EGTB · PolyGlot Book</i>"]
     Core["Anak.Core<br/><i>Bitboards · Magic MoveGen · SEE · Zobrist · Pawn Topology</i>"]
 
     Protocol --> Search
@@ -25,19 +25,17 @@ flowchart TD
     Data --> Core
 ```
 
-- **Dual Search Architectures**:
-  - **Alpha-Beta (Minimax/PVS)** (*Default*): Fail-soft Negamax with Iterative Deepening, Aspiration Windows, Reverse Futility Pruning (RFP), Null Move Pruning (NMP), Singular/Check Extensions, Late Move Reductions (LMR), staged MovePicker with SEE, Continuation History, and lock-free Lazy SMP.
-  - **Monte Carlo Tree Search (MCTS)** (*Alternative*): PUCT exploration, progressive widening, transposition DAG subtree reuse, and adaptive visit distribution.
-- **Multi-Tier NNUE Evaluation**: Dynamic evaluation routing using pawn topology and position volatility across specialized quantized neural networks (`open.nnue`, `closed.nnue`, and ultra-fast `micro.nnue` / `volatility.nnue` watchdogs) evaluated via AVX2 / AVX-512 SIMD dot products.
+- **Alpha-Beta (Negamax / PVS) Search**: Fail-soft Negamax with Iterative Deepening, Aspiration Windows, Reverse Futility Pruning (RFP), Null Move Pruning (NMP), Singular/Check Extensions, Late Move Reductions (LMR), staged MovePicker with SEE, Continuation History, compact 20-byte `TTEntry` (3 entries per cluster), and lock-free Lazy SMP.
+- **Unified Shared-FT MoE NNUE (`anak.nnue`)**: Shared feature-transformer Mixture-of-Experts neural network with 6 specialized expert heads (`Open`, `Closed`, `Endgame`, `Queenless`, `Imbalance`, `Attack`), smooth `Open`/`Closed` blend-zone interpolation, and AVX2 / AVX-512 SIMD dot products.
 - **Zero-GC Allocation Discipline**: Move generation and search loops run with zero heap allocations, leveraging C# `InlineArray`, compact 16-bit structs, and pre-allocated arenas.
 - **Pure Managed Syzygy Tablebases**: Probing of 3-to-6 piece Syzygy WDL and DTZ tablebases implemented in 100% pure managed C# without native C/C++ dependencies. Shipped with complete 3-piece and 4-piece tables.
-- **PolyGlot Opening Book Support**: Built-in `.bin` opening book reader with weighted-random, best-move, and uniform-random selection modes. Shipped with the master opening book `Performance.bin`.
+- **PolyGlot Opening Book Support**: Built-in `.bin` opening book reader with weighted-random, best-move, and uniform-random selection modes. Shipped with `book.bin` (based on `Performance.bin`).
 
 ---
 
 ## Downloads & CPU Architecture Selection Guide
 
-Precompiled native single-file binaries are available on the [Releases](https://github.com/laerens/anak/releases) page for Windows, Linux, and macOS:
+Precompiled native single-file binaries are available on the [Releases](https://github.com/LaurentAerens/anak/releases) page for Windows, Linux, and macOS:
 
 | Binary Asset | Architecture Target | Recommended Hardware |
 |---|---|---|
@@ -62,8 +60,7 @@ Anak communicates using the standard Universal Chess Interface (UCI) protocol an
 |---|---|---|---|
 | `Hash` | spin | `64` | Transposition Table size in megabytes (1 to 65,536 MB). |
 | `Threads` | spin | `1` | Number of concurrent search worker threads (1 to 256). |
-| `SearchAlgorithm` | combo | `Minimax` | Search algorithm: `Minimax` (Alpha-Beta / PVS) or `Mcts` (Monte Carlo Tree Search). |
-| `UseNnue` | check | `true` | Enables Multi-Tier NNUE neural network evaluation. |
+| `UseNnue` | check | `true` | Enables Unified Shared-FT MoE NNUE neural network evaluation. |
 | `NnuePath` | string | `"./networks"` | Directory containing NNUE network files. |
 | `OwnBook` | check | `true` | Enables PolyGlot opening book probing. |
 | `BookFile` | string | `"book.bin"` | Path to PolyGlot `.bin` opening book file. |
@@ -115,23 +112,12 @@ dotnet run --project src/Anak.Protocol -c Release -- --perft 5
 
 ---
 
-## Experimental Sub-Projects: Zanak (ZAP Engine)
+## Experimental Sub-Project: Zanak
 
-### Search visualization movies
+**Zanak** ([`src/Zanak/README.md`](src/Zanak/README.md)) is a fun experimental side-project in this repository built around **ZAP (Zero-branching Accelerated Probe)**—combining zero-branching greedy probes with **Principal Variation Search (PVS) / null-window-style refutation** and **Proof-Number Search (PNS)-style priority expansion**.
 
-The [Search Movie tool](tools/search_movie/README.md) runs Anak and Zanak on a FEN at a chosen depth and exports a side-by-side MP4 or looping GIF. The default view uses real UCI reports for animated boards, reported-PV trees, and evaluation history. Optional `--all-lines` records one search thread per engine and replays its actual chronological visits as one persistent, growing tree without boards or page switches. Independent per-engine clocks can limit work at any requested depth; `--same-speed` aligns recorded search times so the faster engine visibly finishes first. Tracing is disabled during normal engine use.
-
-**Zanak** (Zap-Anak) is an experimental standalone sub-project located in [`src/Zanak/`](src/Zanak/) exploring the **ZAP** (Zero-branching Accelerated Probe) search paradigm as an alternative to recursive alpha-beta minimax trees.
-
-- **Zero-Branching Linear Probing**: Fast $O(D)$ greedy spine traces across all legal root moves for instantaneous anytime evaluation.
-- **Retrospective Discrepancy Branching**: Shock detection along trajectories that dynamically focuses search worker threads on refutations and tactical opportunities.
-- **Independent Executable**: Runs as a standalone UCI engine (`zanak`) or interactively within the `Anak.UI` developer visualizer.
-- **Pre-Releases**: Standalone binaries are published as pre-releases on the [Releases page](https://github.com/laerens/anak/releases) tagged with `zanak-v*` without affecting Anak release milestones.
-
-```bash
-# Build and run Zanak UCI executable
-dotnet run --project src/Zanak -c Release
-```
+- Runs as a standalone UCI engine (`dotnet run --project src/Zanak -c Release`) and is published as pre-releases on the [Releases page](https://github.com/LaurentAerens/anak/releases) tagged with `zanak-v*`.
+- Includes the [Search Movie tool](tools/search_movie/README.md) for side-by-side Anak vs. Zanak search visualizations.
 
 ---
 

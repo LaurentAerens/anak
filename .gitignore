@@ -121,6 +121,11 @@ temp/
 *.swp
 *~
 *.duckdb
+*.log
+diag.txt
+diag.*.txt
+weakness_report.html
+weakness_report.md
 
 ## OS-generated files
 .DS_Store
