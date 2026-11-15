@@ -122,10 +122,14 @@ temp/
 *~
 *.duckdb
 *.log
+*.bat
+run_*.ps1
 diag.txt
 diag.*.txt
 weakness_report.html
 weakness_report.md
+campaign_state.json
+*spsa_progress*.json
 
 ## OS-generated files
 .DS_Store
