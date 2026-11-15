@@ -1,6 +1,6 @@
 # Zanak v0.0.1 — Experimental Release
 
-**Zanak** is a fun, experimental side-project in the Anak repository. Rather than aiming to beat traditional engines or be a breakthrough, it's a playground for exploring a different way to structure search—combining ideas from **Principal Variation Search (PVS) / null-window-style refutation** and **Proof-Number Search (PNS)-style priority expansion** along greedy principal lines (nicknamed **ZAP**).
+**Zanak** is a fun, experimental side-project in the Anak repository built around **ZAP (Zero-branching Accelerated Probe)**. Rather than aiming to be a breakthrough or replace traditional engines, it's a playground for exploring a different way to structure search—using zero-branching greedy probes as the backbone, combined with **Principal Variation Search (PVS) / null-window-style refutation** and **Proof-Number Search (PNS)-style priority expansion** along those lines.
 
 ---
 

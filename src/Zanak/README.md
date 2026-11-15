@@ -1,10 +1,10 @@
-# Zanak Chess Engine (ZAP Experiment)
+# Zanak Chess Engine — ZAP (Zero-branching Accelerated Probe)
 
 ![Zanak Search Demo](../../docs/zanak-v0.0.1-demo.gif)
 
 ## 1. Executive Summary & Philosophy
 
-**Zanak** is a fun experimental chess engine developed within the Anak repository, exploring a search structure that combines ideas from **Principal Variation Search (PVS) / null-window-style refutation** and **Proof-Number Search (PNS)-style priority expansion** along greedy principal lines (nicknamed **ZAP**).
+**Zanak** is a fun experimental chess engine developed within the Anak repository around **ZAP (Zero-branching Accelerated Probe)**—using zero-branching greedy probes as the backbone, combined with **Principal Variation Search (PVS) / null-window-style refutation** and **Proof-Number Search (PNS)-style priority expansion** along those lines.
 
 Traditional chess engines construct explosive game trees using minimax, alpha-beta pruning, null-move pruning, late move reductions (LMR), and principal variation search (PVS). While highly refined over four decades, tree-based minimax search suffers from combinatorial branch explosion, high synchronization overhead across multi-core systems, and horizon effects.
 
