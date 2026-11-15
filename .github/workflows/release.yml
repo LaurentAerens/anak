@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup .NET SDK 11
         uses: actions/setup-dotnet@v6
@@ -30,15 +32,15 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Restore dependencies
-        run: dotnet restore
+        run: dotnet restore tests/Anak.Tests/Anak.Tests.csproj
 
       - name: Build solution in Release mode
-        run: dotnet build -c Release --no-restore
+        run: dotnet build tests/Anak.Tests/Anak.Tests.csproj -c Release --no-restore
 
       - name: Run unit & regression tests
         run: |
           mkdir -p diagnostics
-          dotnet test -c Release --no-build --verbosity normal | tee diagnostics/test_results.txt
+          dotnet test tests/Anak.Tests/Anak.Tests.csproj -c Release --no-build --verbosity normal | tee diagnostics/test_results.txt
 
       - name: Run Perft sanity check
         run: |
@@ -133,6 +135,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - name: Setup .NET SDK 11
         uses: actions/setup-dotnet@v6
@@ -253,6 +257,7 @@ jobs:
       - name: Checkout code (with history for changelog)
         uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Fetch all git tags

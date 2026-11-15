@@ -119,7 +119,7 @@ public sealed class ZapIncrementalNnueTests
     [InlineData("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", NnueExpertType.Closed, false)]
     [InlineData("rnbqkb1r/pp2pppp/2p2n2/3p4/2PP4/2N5/PP2PPPP/R1BQKBNR w KQkq - 0 4", NnueExpertType.Closed, false)]
     [InlineData("r1bqkbnr/pp1ppppp/2n5/8/3NP3/8/PPP2PPP/RNBQKB1R b KQkq - 0 4", NnueExpertType.Open, true)]
-    [InlineData("rnbqkbnr/ppp2ppp/8/3p4/3PP3/8/PP3PPP/RNBQKBNR w KQkq - 0 3", NnueExpertType.Closed, true)]
+    [InlineData("rnbqkbnr/ppp2ppp/8/3p4/3PP3/8/1PP2PPP/RNBQKBNR w KQkq - 0 3", NnueExpertType.Closed, true)]
     [InlineData("4k3/pp3ppp/8/8/8/8/PP3PPP/4K3 w - - 0 30", NnueExpertType.Endgame, false)]
     [InlineData("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1", NnueExpertType.Queenless, false)]
     [InlineData("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", NnueExpertType.Imbalance, false)]

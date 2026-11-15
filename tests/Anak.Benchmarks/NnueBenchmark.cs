@@ -22,7 +22,7 @@ public unsafe class NnueBenchmark
 
         string anakPath = Path.Combine(networksDir, "anak.nnue");
         string openPath = Path.Combine(networksDir, "open.nnue");
-        string loadPath = File.Exists(anakPath) ? anakPath : openPath;
+        string loadPath = System.IO.File.Exists(anakPath) ? anakPath : openPath;
 
         _standardWeights = NnueWeights.LoadFromFile(loadPath) ?? throw new FileNotFoundException(loadPath);
 
