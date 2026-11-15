@@ -6,18 +6,20 @@ using Anak.Core;
 namespace Anak.Search;
 
 /// <summary>
-/// Cacheline-aligned (64-byte) bucket containing two 32-byte TT entries.
+/// Cacheline-aligned (64-byte) bucket containing three 20-byte TT entries.
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Size = 64)]
 public struct TTCluster
 {
     public TTEntry Entry0;
     public TTEntry Entry1;
+    public TTEntry Entry2;
+    private readonly uint _pad;
 }
 
 /// <summary>
 /// High-performance lock-free Transposition Table with 64-byte cacheline alignment,
-/// dynamic resizing, DAG subtree reuse for MCTS, and depth-preferred replacement for Minimax.
+/// dynamic resizing, and depth/age-preferred replacement for Alpha-Beta search.
 /// </summary>
 public sealed unsafe class TranspositionTable : IDisposable
 {
@@ -30,7 +32,7 @@ public sealed unsafe class TranspositionTable : IDisposable
 
     public int SizeMb => (int)((_clusterCount * 64) / (1024 * 1024));
     public ulong ClusterCount => _clusterCount;
-    public ulong EntryCount => _clusterCount * 2;
+    public ulong EntryCount => _clusterCount * 3;
     public byte CurrentAge => _currentAge;
 
     /// <summary>
@@ -156,6 +158,12 @@ public sealed unsafe class TranspositionTable : IDisposable
             return true;
         }
 
+        if (cluster.Entry2.Key == key && cluster.Entry2.IsValid)
+        {
+            entry = cluster.Entry2;
+            return true;
+        }
+
         entry = default;
         return false;
     }
@@ -168,7 +176,7 @@ public sealed unsafe class TranspositionTable : IDisposable
     {
         ref TTCluster cluster = ref GetCluster(key);
 
-        // 1. If key matches either entry in the cluster, update in-place
+        // 1. If key matches any entry in the cluster, update in-place
         if (cluster.Entry0.Key == key)
         {
             UpdateMinimaxEntry(ref cluster.Entry0, key, bestMove, depth, score, age, flags, expertId, staticEval);
@@ -181,8 +189,13 @@ public sealed unsafe class TranspositionTable : IDisposable
             return;
         }
 
-        // 2. Replacement strategy:
-        // Prefer uninitialized / invalid slot
+        if (cluster.Entry2.Key == key)
+        {
+            UpdateMinimaxEntry(ref cluster.Entry2, key, bestMove, depth, score, age, flags, expertId, staticEval);
+            return;
+        }
+
+        // 2. Replacement strategy: prefer uninitialized / invalid slot
         if (!cluster.Entry0.IsValid)
         {
             cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
@@ -195,54 +208,43 @@ public sealed unsafe class TranspositionTable : IDisposable
             return;
         }
 
-        // Prefer replacing slot with older age
-        if (cluster.Entry0.Age != age && cluster.Entry1.Age == age)
+        if (!cluster.Entry2.IsValid)
         {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
+            cluster.Entry2 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
             return;
         }
 
-        if (cluster.Entry1.Age != age && cluster.Entry0.Age == age)
+        // 3. Score each slot by replacement priority (lower = better to replace):
+        //    older age < different expert < shallower depth
+        int s0 = ReplacementScore(in cluster.Entry0, age, expertId);
+        int s1 = ReplacementScore(in cluster.Entry1, age, expertId);
+        int s2 = ReplacementScore(in cluster.Entry2, age, expertId);
+
+        if (s0 <= s1 && s0 <= s2)
+        {
+            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
+        }
+        else if (s1 <= s2)
         {
             cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
-            return;
-        }
-
-        // If both slots are from older searches, prefer replacing slot from a different expert
-        if (cluster.Entry0.Age != age && cluster.Entry1.Age != age)
-        {
-            if (cluster.Entry0.ExpertId != expertId && cluster.Entry1.ExpertId == expertId)
-            {
-                cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
-                return;
-            }
-
-            if (cluster.Entry1.ExpertId != expertId && cluster.Entry0.ExpertId == expertId)
-            {
-                cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
-                return;
-            }
-        }
-
-        // Prefer replacing slot with shallower depth
-        if (cluster.Entry0.Depth <= cluster.Entry1.Depth)
-        {
-            cluster.Entry0 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
         }
         else
         {
-            cluster.Entry1 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
+            cluster.Entry2 = new TTEntry(key, bestMove, depth, score, age, flags, expertId, staticEval);
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int ReplacementScore(in TTEntry entry, byte age, byte expertId)
+    {
+        int ageBonus = entry.Age == age ? 512 : 0;
+        int expertBonus = entry.ExpertId == expertId ? 256 : 0;
+        return ageBonus + expertBonus + entry.Depth;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void UpdateMinimaxEntry(ref TTEntry existing, ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId, short staticEval)
     {
-        // Overwrite score and depth if:
-        // - New entry is Exact, OR
-        // - New search depth is >= existing depth, OR
-        // - Existing entry is from an older search generation, OR
-        // - Existing entry is from a different expert
         if (flags == TTFlags.Exact || depth >= existing.Depth || existing.Age != age || existing.ExpertId != expertId)
         {
             existing.Key = key;
@@ -251,7 +253,6 @@ public sealed unsafe class TranspositionTable : IDisposable
             existing.Flags = flags;
             existing.Age = age;
             existing.ExpertId = expertId;
-            existing.Visits = Math.Max(1u, (uint)depth);
         }
 
         if (bestMove != Move.Null)
@@ -263,98 +264,6 @@ public sealed unsafe class TranspositionTable : IDisposable
         {
             existing.StaticEval = staticEval;
         }
-    }
-
-    /// <summary>
-    /// Stores or merges an entry into the Transposition Table with DAG transposition reuse (MCTS).
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public void Store(ulong key, Move bestMove, uint visits, float value, float prior, byte age, TTFlags flags = TTFlags.Exact)
-    {
-        ref TTCluster cluster = ref GetCluster(key);
-
-        // DAG Transposition Reuse: Check if either entry matches the key
-        if (cluster.Entry0.Key == key)
-        {
-            UpdateMctsEntry(ref cluster.Entry0, key, bestMove, visits, value, prior, age, flags);
-            return;
-        }
-
-        if (cluster.Entry1.Key == key)
-        {
-            UpdateMctsEntry(ref cluster.Entry1, key, bestMove, visits, value, prior, age, flags);
-            return;
-        }
-
-        // Replacement strategy:
-        // 1. Prefer uninitialized / empty slot
-        if (!cluster.Entry0.IsValid)
-        {
-            cluster.Entry0 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
-            return;
-        }
-
-        if (!cluster.Entry1.IsValid)
-        {
-            cluster.Entry1 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
-            return;
-        }
-
-        // 2. Prefer replacing slot with older age
-        if (cluster.Entry0.Age != age && cluster.Entry1.Age == age)
-        {
-            cluster.Entry0 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
-            return;
-        }
-
-        if (cluster.Entry1.Age != age && cluster.Entry0.Age == age)
-        {
-            cluster.Entry1 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
-            return;
-        }
-
-        // 3. Prefer replacing slot with fewer visits (least explored subtree)
-        if (cluster.Entry0.Visits <= cluster.Entry1.Visits)
-        {
-            cluster.Entry0 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
-        }
-        else
-        {
-            cluster.Entry1 = new TTEntry(key, bestMove, visits, value, prior, age, flags);
-        }
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static void UpdateMctsEntry(ref TTEntry existing, ulong key, Move bestMove, uint visits, float value, float prior, byte age, TTFlags flags)
-    {
-        // DAG merge: blend values weighted by visit counts and take maximum visits
-        uint oldVisits = existing.Visits;
-        float oldValue = existing.Value;
-
-        if (oldVisits > 0 && visits > 0)
-        {
-            // Weighted average of value estimates across converging paths
-            float total = oldVisits + visits;
-            existing.Value = (oldValue * oldVisits + value * visits) / total;
-            existing.Visits = Math.Max(oldVisits, visits);
-        }
-        else
-        {
-            existing.Value = value;
-            existing.Visits = visits;
-        }
-
-        existing.Key = key;
-        if (bestMove != Move.Null)
-        {
-            existing.BestMove = bestMove;
-        }
-        if (prior > 0.0f)
-        {
-            existing.Prior = prior;
-        }
-        existing.Age = age;
-        existing.Flags = flags;
     }
 
     /// <summary>
@@ -372,8 +281,9 @@ public sealed unsafe class TranspositionTable : IDisposable
             ref readonly TTCluster cluster = ref _clusters[i];
             if (cluster.Entry0.IsValid && cluster.Entry0.Age == _currentAge) usedEntries++;
             if (cluster.Entry1.IsValid && cluster.Entry1.Age == _currentAge) usedEntries++;
+            if (cluster.Entry2.IsValid && cluster.Entry2.Age == _currentAge) usedEntries++;
         }
 
-        return (int)((usedEntries * 1000L) / (sampleCount * 2));
+        return (int)((usedEntries * 1000L) / (sampleCount * 3));
     }
 }

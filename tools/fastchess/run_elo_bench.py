@@ -44,6 +44,8 @@ BENCHMARKS_MD = REPO_ROOT / "BENCHMARKS.md"
 OPENINGS_FILE = SCRIPT_DIR / "openings.epd"
 ANAK_PUBLISH_DIR = BIN_DIR / "anak"
 ANAK_EXE = ANAK_PUBLISH_DIR / ("anak.exe" if os.name == "nt" else "anak")
+ZANAK_PUBLISH_DIR = BIN_DIR / "zanak"
+ZANAK_EXE = ZANAK_PUBLISH_DIR / ("zanak.exe" if os.name == "nt" else "zanak")
 FASTCHESS_EXE = BIN_DIR / ("fastchess.exe" if os.name == "nt" else "fastchess")
 STOCKFISH_EXE = BIN_DIR / ("stockfish.exe" if os.name == "nt" else "stockfish")
 
@@ -240,32 +242,61 @@ def ensure_stockfish():
         raise RuntimeError("Please install Stockfish on non-Windows platforms or place stockfish binary in tools/fastchess/bin/")
 
 
-def ensure_anak(skip_build: bool = False, profile: str = None):
-    if skip_build and ANAK_EXE.exists():
-        return
+def ensure_candidate(candidate: str = "anak", skip_build: bool = False, profile: str = None):
+    if candidate == "zanak":
+        if skip_build and ZANAK_EXE.exists():
+            return
 
-    print(f"[+] Building and publishing Anak in Release configuration{(f' (profile: {profile})') if profile else ''} ...")
-    cmd = [
-        "dotnet",
-        "publish",
-        str(REPO_ROOT / "src" / "Anak.Protocol" / "Anak.Protocol.csproj"),
-        "-c",
-        "Release",
-    ]
-    if profile:
-        cmd.append(f"-p:PublishProfile={profile}")
-    cmd.extend([
-        "-o",
-        str(ANAK_PUBLISH_DIR),
-    ])
-    res = subprocess.run(cmd, cwd=str(REPO_ROOT))
-    if res.returncode != 0:
-        raise RuntimeError("Failed to build Anak. Please ensure .NET SDK is installed.")
-    print(f"[+] Anak executable ready: {ANAK_EXE}")
+        print(f"[+] Building and publishing Zanak in Release configuration{(f' (profile: {profile})') if profile else ''} ...")
+        cmd = [
+            "dotnet",
+            "publish",
+            str(REPO_ROOT / "src" / "Zanak" / "Zanak.csproj"),
+            "-c",
+            "Release",
+        ]
+        if profile:
+            cmd.append(f"-p:PublishProfile={profile}")
+        cmd.extend([
+            "-o",
+            str(ZANAK_PUBLISH_DIR),
+        ])
+        res = subprocess.run(cmd, cwd=str(REPO_ROOT))
+        if res.returncode != 0:
+            raise RuntimeError("Failed to build Zanak. Please ensure .NET SDK is installed.")
+        print(f"[+] Zanak executable ready: {ZANAK_EXE}")
+    else:
+        if skip_build and ANAK_EXE.exists():
+            return
+
+        print(f"[+] Building and publishing Anak in Release configuration{(f' (profile: {profile})') if profile else ''} ...")
+        cmd = [
+            "dotnet",
+            "publish",
+            str(REPO_ROOT / "src" / "Anak.Protocol" / "Anak.Protocol.csproj"),
+            "-c",
+            "Release",
+        ]
+        if profile:
+            cmd.append(f"-p:PublishProfile={profile}")
+        cmd.extend([
+            "-o",
+            str(ANAK_PUBLISH_DIR),
+        ])
+        res = subprocess.run(cmd, cwd=str(REPO_ROOT))
+        if res.returncode != 0:
+            raise RuntimeError("Failed to build Anak. Please ensure .NET SDK is installed.")
+        print(f"[+] Anak executable ready: {ANAK_EXE}")
+
+
+def ensure_anak(skip_build: bool = False, profile: str = None):
+    ensure_candidate("anak", skip_build=skip_build, profile=profile)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Anak Chess Engine — Fast-Chess Elo Benchmark Runner")
+    parser.add_argument("--candidate", type=str, choices=["anak", "zanak"], default="anak",
+                        help="Candidate engine to benchmark ('anak' or 'zanak', default: 'anak')")
     parser.add_argument("--opponent", type=str, choices=["baseline", "stockfish", "reference"], default=None,
                         help="Benchmark opponent type ('baseline', 'stockfish', or 'reference'). Defaults to 'baseline' if a baseline is archived, else 'stockfish'.")
     parser.add_argument("--engine", "--reference-engine", dest="reference_engine", type=str, default=None,
@@ -403,10 +434,14 @@ def main():
     else:
         opponent_label = f"Stockfish 19 (Calibrated Elo: {args.elo})"
 
+    cand_label = "Zanak" if args.candidate == "zanak" else "Anak"
+    cand_name = "Zanak-Dev" if args.candidate == "zanak" else "Anak-Dev"
+    cand_exe = ZANAK_EXE if args.candidate == "zanak" else ANAK_EXE
+
     print("=" * 70)
     print("                    ANAK ELO BENCHMARK RUNNER")
     print("=" * 70)
-    print(f"  Candidate:            Anak (Current Dev Build)")
+    print(f"  Candidate:            {cand_label} (Current Dev Build)")
     print(f"  Opponent:             {opponent_label}")
     print(f"  Rounds:               {args.rounds} opening pairs ({total_games} total games)")
     print(f"  Time Control:         {args.tc} (seconds + increment)")
@@ -416,16 +451,17 @@ def main():
     print("=" * 70)
 
     # Ensure required binaries
-    ensure_anak(skip_build=args.no_build, profile=args.profile)
+    ensure_candidate(candidate=args.candidate, skip_build=args.no_build, profile=args.profile)
     ensure_fastchess()
     if args.opponent == "stockfish":
         ensure_stockfish()
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     timestamp = time.strftime("%Y%m%d_%H%M%S")
+    cand_slug = args.candidate
     
     if args.opponent == "baseline":
-        pgn_output = RESULTS_DIR / f"anak_dev_vs_{baseline_tag}_{timestamp}.pgn"
+        pgn_output = RESULTS_DIR / f"{cand_slug}_dev_vs_{baseline_tag}_{timestamp}.pgn"
         opp_name = f"Anak-{baseline_tag}"
         opp_cmd = baseline_exe.name
         opp_dir = str(os.path.relpath(baseline_exe.parent, REPO_ROOT))
@@ -437,7 +473,7 @@ def main():
         ]
     elif args.opponent == "reference":
         clean_slug = re.sub(r"[^a-zA-Z0-9_]", "_", ref_engine["name"].lower())
-        pgn_output = RESULTS_DIR / f"anak_vs_{clean_slug}_{timestamp}.pgn"
+        pgn_output = RESULTS_DIR / f"{cand_slug}_vs_{clean_slug}_{timestamp}.pgn"
         opp_name = ref_engine["name"]
         opp_cmd = ref_installed.name
         opp_dir = str(os.path.relpath(ref_installed.parent, REPO_ROOT))
@@ -447,7 +483,7 @@ def main():
         for k, v in ref_engine.get("options", {}).items():
             opp_options.append(f"option.{k}={v}")
     else:
-        pgn_output = RESULTS_DIR / f"anak_vs_sf{args.elo}_{timestamp}.pgn"
+        pgn_output = RESULTS_DIR / f"{cand_slug}_vs_sf{args.elo}_{timestamp}.pgn"
         opp_name = f"Stockfish-{args.elo}"
         opp_cmd = STOCKFISH_EXE.name
         opp_dir = str(os.path.relpath(STOCKFISH_EXE.parent, REPO_ROOT))
@@ -459,31 +495,31 @@ def main():
         ]
 
     fastchess_cmd = str(os.path.relpath(FASTCHESS_EXE, REPO_ROOT))
-    anak_cmd = ANAK_EXE.name
-    anak_dir = str(os.path.relpath(ANAK_EXE.parent, REPO_ROOT))
+    cand_cmd = cand_exe.name
+    cand_dir = str(os.path.relpath(cand_exe.parent, REPO_ROOT))
     openings_path = str(os.path.relpath(OPENINGS_FILE, REPO_ROOT))
     pgn_path = str(os.path.relpath(pgn_output, REPO_ROOT))
 
     # Build fast-chess command
     syzygy_abs = str((REPO_ROOT / "syzygy").resolve())
-    anak_dev_options = [
+    candidate_options = [
         "-engine",
-        f"cmd={anak_cmd}",
-        f"dir={anak_dir}",
-        "name=Anak-Dev",
+        f"cmd={cand_cmd}",
+        f"dir={cand_dir}",
+        f"name={cand_name}",
         f"option.Threads={args.threads}",
         f"option.Hash={args.hash}",
         f"option.SyzygyPath={syzygy_abs}",
     ]
     if args.candidate_nnue_dir:
         cand_dir_abs = os.path.abspath(args.candidate_nnue_dir)
-        anak_dev_options.append(f"option.NnuePath={cand_dir_abs}")
+        candidate_options.append(f"option.NnuePath={cand_dir_abs}")
 
     each_limit = f"nodes={args.nodes}" if args.nodes else f"tc={args.tc}"
 
     cmd = [
         fastchess_cmd,
-    ] + anak_dev_options + [
+    ] + candidate_options + [
         "-engine",
         f"cmd={opp_cmd}",
         f"dir={opp_dir}",
@@ -576,7 +612,7 @@ def main():
     err_margin = None
 
     print("\n" + "=" * 70)
-    print("                    ANAK ELO EVALUATION REPORT")
+    print(f"                    {cand_label.upper()} ELO EVALUATION REPORT")
     print("=" * 70)
     print(f"  Reference Opponent:       {opponent_label}")
 
@@ -584,7 +620,7 @@ def main():
     elo_res = None
     if pgn_output.exists():
         try:
-            elo_res = elo_kit.parse_fastchess_pgn(pgn_output, "Anak-Dev")
+            elo_res = elo_kit.parse_fastchess_pgn(pgn_output, cand_name)
             w, l, d = elo_res.wins, elo_res.losses, elo_res.draws
             pts = w + (0.5 * d)
             g = elo_res.games
@@ -619,7 +655,7 @@ def main():
         print(f"  Normalized Elo (nElo):    {delta_nelo:+0.2f} +/- {err_nelo:.2f} (95% CI)")
         print(f"  Logistic Elo:             {delta_log:+0.2f} +/- {err_log:.2f} (95% CI)")
         print("  " + "-" * 66)
-        print(f"  >>> ESTIMATED ANAK ELO:   {estimated_elo} +/- {err_margin} ({args.model}) <<<")
+        print(f"  >>> ESTIMATED {cand_label.upper()} ELO:   {estimated_elo} +/- {err_margin} ({args.model}) <<<")
         print("  " + "-" * 66)
     elif elo_match:
         delta_elo, err = elo_match
@@ -627,7 +663,7 @@ def main():
         estimated_elo = round(reference_elo + delta_elo)
         print(f"  Elo Difference:           {delta_elo:+0.1f} +/- {err:.1f} (95% CI)")
         print("  " + "-" * 66)
-        print(f"  >>> ESTIMATED ANAK ELO:   {estimated_elo} +/- {err_margin} <<<")
+        print(f"  >>> ESTIMATED {cand_label.upper()} ELO:   {estimated_elo} +/- {err_margin} <<<")
         print("  " + "-" * 66)
     else:
         print("  Elo Rating:               Calculated in tournament log above")

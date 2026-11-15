@@ -10,8 +10,8 @@ import shutil
 import time
 import torch
 
-from model import StandardNNUE, MicroNNUE
-from export import export_standard, export_micro
+from model import StandardNNUE, SharedMoENNUE
+from export import export_standard, export_moe
 
 
 def find_repo_root():
@@ -55,17 +55,16 @@ def deploy_model(model_type: str, checkpoint_path: str, output_path: str):
     """Loads checkpoint, quantizes, and writes .nnue binary."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
 
-    if model_type in ("micro", "small", "volatility"):
-        net = MicroNNUE()
-        raw = torch.load(checkpoint_path, map_location="cpu")
-        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+    raw = torch.load(checkpoint_path, map_location="cpu")
+    sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+
+    if model_type == "moe":
+        net = SharedMoENNUE()
         net.load_state_dict(sd)
         net.eval()
-        export_micro(net, output_path)
+        export_moe(net, output_path)
     else:
         net = StandardNNUE()
-        raw = torch.load(checkpoint_path, map_location="cpu")
-        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
         net.load_state_dict(sd)
         net.eval()
         export_standard(net, output_path)
@@ -78,7 +77,7 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        choices=["all", "open", "closed", "endgame", "queenless", "imbalance", "attack", "micro", "small", "volatility"],
+        choices=["all", "moe", "open", "closed", "endgame", "queenless", "imbalance", "attack"],
         default="all",
         help="Model to deploy (default: all)",
     )
@@ -102,29 +101,27 @@ def main():
     ]
 
     print("\n" + "=" * 70)
-    print("   ANAK MULTI-EXPERT 8-MODEL NNUE DEPLOYMENT")
+    print("   ANAK UNIFIED MoE & EXPERT NNUE DEPLOYMENT")
     print("=" * 70)
     print(f"Checkpoint folders searched: {', '.join(checkpoint_dirs) if checkpoint_dirs else 'None found'}")
     print(f"Networks target:             {os.path.abspath(networks_dir)}")
     print("-" * 70)
 
     models_to_check = [
+        ("moe", ["moe_best.pt", "moe_latest.pt"], "anak.nnue", "Unified Shared-FT MoE NNUE"),
         ("open", ["open_best.pt", "open_latest.pt"], "open.nnue", "Standard Open-NNUE"),
         ("closed", ["closed_best.pt", "closed_latest.pt"], "closed.nnue", "Standard Closed-NNUE"),
         ("endgame", ["endgame_best.pt", "endgame_latest.pt"], "endgame.nnue", "Standard Endgame-NNUE"),
         ("queenless", ["queenless_best.pt", "queenless_latest.pt"], "queenless.nnue", "Standard Queenless-NNUE"),
         ("imbalance", ["imbalance_best.pt", "imbalance_latest.pt"], "imbalance.nnue", "Standard Imbalance-NNUE"),
         ("attack", ["attack_best.pt", "attack_latest.pt"], "attack.nnue", "Standard Attack-NNUE"),
-        ("micro", ["small_best.pt", "micro_best.pt", "small_latest.pt", "micro_latest.pt"], "micro.nnue", "Small/Micro Tactical Watchdog"),
-        ("volatility", ["volatility_best.pt", "volatility_latest.pt"], "volatility.nnue", "Micro Volatility Predictor"),
     ]
 
     deployed_count = 0
 
     for m_type, candidate_names, out_filename, display_name in models_to_check:
         if args.model != "all":
-            selected = "micro" if args.model == "small" else args.model
-            if m_type != selected:
+            if m_type != args.model:
                 continue
 
         # Find best and newest available checkpoint across searched directories

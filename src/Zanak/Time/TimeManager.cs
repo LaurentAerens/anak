@@ -13,6 +13,7 @@ public sealed class TimeManager
     private readonly Stopwatch _stopwatch = new();
     private int _stableDominanceCount;
     private int _lastLeaderMoveRaw;
+    private int _lastDominanceDepth;
 
     public TimeParams Parameters => _params;
     public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
@@ -27,6 +28,7 @@ public sealed class TimeManager
     {
         _stableDominanceCount = 0;
         _lastLeaderMoveRaw = 0;
+        _lastDominanceDepth = 0;
         _stopwatch.Restart();
     }
 
@@ -103,8 +105,9 @@ public sealed class TimeManager
 
         if (depthLimit > 0)
         {
-            targetBaseDepth = Math.Max(_params.AbsoluteMinBaseDepth, depthLimit - 4);
-            maxDepthHorizon = Math.Max(targetBaseDepth + 2, depthLimit);
+            // UCI "go depth N" replaces the depth the clock would choose; the time limits stay as computed.
+            targetBaseDepth = Math.Max(_params.AbsoluteMinBaseDepth, depthLimit);
+            maxDepthHorizon = targetBaseDepth;
         }
         else if (infinite)
         {
@@ -113,44 +116,14 @@ public sealed class TimeManager
         }
         else
         {
-            double allocatedSeconds = softMs / 1000.0;
-            if (allocatedSeconds < 0.15)
-            {
-                targetBaseDepth = _params.HyperBulletBaseDepth;
-                maxDepthHorizon = _params.HyperBulletMaxHorizon;
-            }
-            else if (allocatedSeconds < 0.50)
-            {
-                targetBaseDepth = _params.FastBulletBaseDepth;
-                maxDepthHorizon = _params.FastBulletMaxHorizon;
-            }
-            else if (allocatedSeconds < 1.0)
-            {
-                targetBaseDepth = _params.BulletBaseDepth;
-                maxDepthHorizon = _params.BulletMaxHorizon;
-            }
-            else if (allocatedSeconds <= 5.0)
-            {
-                targetBaseDepth = _params.BlitzBaseDepth;
-                maxDepthHorizon = _params.BlitzMaxHorizon;
-            }
-            else if (allocatedSeconds <= 30.0)
-            {
-                targetBaseDepth = _params.RapidBaseDepth;
-                maxDepthHorizon = _params.RapidMaxHorizon;
-            }
-            else
-            {
-                int scaled = _params.ClassicalBaseDepthOffset + (int)Math.Floor(_params.ClassicalLogScale * Math.Log10(Math.Max(1.0, allocatedSeconds)));
-                targetBaseDepth = Math.Clamp(scaled, _params.ClassicalBaseDepthOffset, _params.ClassicalMaxBaseDepth);
-                maxDepthHorizon = targetBaseDepth + _params.ClassicalHorizonOffset;
-            }
-
-            targetBaseDepth = Math.Max(targetBaseDepth, _params.AbsoluteMinBaseDepth);
-            maxDepthHorizon = Math.Max(maxDepthHorizon, _params.AbsoluteMinMaxHorizon);
+            double logMs = Math.Log10(Math.Max(1.0, softMs));
+            int scaledBase = (int)Math.Round(1.0 + 3.2 * logMs);
+            targetBaseDepth = Math.Clamp(scaledBase, 1, _params.ClassicalMaxBaseDepth);
+            int horizonDelta = Math.Clamp((int)Math.Round(1.5 + 1.5 * logMs), 2, _params.ClassicalHorizonOffset);
+            maxDepthHorizon = targetBaseDepth + horizonDelta;
         }
 
-        return new SearchBudget(softMs, hardMs, targetBaseDepth, maxDepthHorizon);
+        return new SearchBudget(softMs, hardMs, targetBaseDepth, maxDepthHorizon, ExtendHorizonWithTime: depthLimit <= 0);
     }
 
     /// <summary>
@@ -189,6 +162,8 @@ public sealed class TimeManager
     public bool CheckStableDominance(int currentDepth, int leaderScore, int contenderScore, int leaderMoveRaw)
     {
         if (currentDepth < _params.StableDominanceMinDepth) return false;
+        if (currentDepth <= _lastDominanceDepth) return false;
+        _lastDominanceDepth = currentDepth;
 
         int scoreLead = leaderScore - contenderScore;
         if (scoreLead >= _params.StableDominanceLeadCp && leaderMoveRaw != 0)

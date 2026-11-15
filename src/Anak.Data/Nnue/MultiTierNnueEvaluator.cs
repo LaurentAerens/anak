@@ -12,20 +12,21 @@ using Path = System.IO.Path;
 namespace Anak.Data.Nnue;
 
 /// <summary>
-/// Multi-Expert &amp; Multi-Tier NNUE evaluator integrating 6 specialized full experts
-/// (Open, Closed, Endgame, Queenless, Imbalance, Attack), smooth Open/Closed boundary interpolation,
-/// Micro-NNUE tactical watchdog and volatility networks, Syzygy tablebases, and fallback to DefaultEvaluator.
+/// Multi-Expert NNUE evaluator supporting both:
+/// 1. Unified Shared-FT Multi-Head MoE (<c>ArchMoE 0x0003</c>, <c>anak.nnue</c>) with zero-cost leaf-level
+///    expert routing across all 6 heads and smooth Open/Closed boundary interpolation.
+/// 2. Legacy 6-network expert routing (<c>open.nnue</c>, <c>closed.nnue</c>, <c>endgame.nnue</c>,
+///    <c>queenless.nnue</c>, <c>imbalance.nnue</c>, <c>attack.nnue</c>), with fallback to DefaultEvaluator.
 /// </summary>
 public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrementalEvaluator, IDisposable
 {
+    private NnueWeights? _moeWeights;
     private NnueWeights? _openWeights;
     private NnueWeights? _closedWeights;
     private NnueWeights? _endgameWeights;
     private NnueWeights? _queenlessWeights;
     private NnueWeights? _imbalanceWeights;
     private NnueWeights? _attackWeights;
-    private NnueWeights? _microWeights;
-    private NnueWeights? _volatilityWeights;
     private NnueWeights? _activeFullWeights;
     private readonly DefaultEvaluator _fallbackEvaluator;
     private readonly short[] _stackWhite = new short[256 * 512];
@@ -47,19 +48,17 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     private MultiTierNnueEvaluator(MultiTierNnueEvaluator parent)
     {
         _ownsWeights = false;
+        _moeWeights = parent._moeWeights;
         _openWeights = parent._openWeights;
         _closedWeights = parent._closedWeights;
         _endgameWeights = parent._endgameWeights;
         _queenlessWeights = parent._queenlessWeights;
         _imbalanceWeights = parent._imbalanceWeights;
         _attackWeights = parent._attackWeights;
-        _microWeights = parent._microWeights;
-        _volatilityWeights = parent._volatilityWeights;
         _activeFullWeights = parent._activeFullWeights;
         _fallbackEvaluator = parent._fallbackEvaluator;
         UseNnue = parent.UseNnue;
         NnueDirectory = parent.NnueDirectory;
-        BlunderWatchdog = parent.BlunderWatchdog;
         Tablebase = parent.Tablebase;
         ActiveRootExpert = parent.ActiveRootExpert;
         Routing = parent.Routing;
@@ -68,7 +67,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
     public bool UseNnue { get; set; } = true;
     public string NnueDirectory { get; set; } = "./networks";
-    public bool BlunderWatchdog { get; set; } = false;
     public SyzygyTablebase? Tablebase { get; set; }
 
     /// <summary>
@@ -80,16 +78,17 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
     public NnueExpertType ActiveRootExpert { get; private set; } = NnueExpertType.Closed;
 
-    public bool HasOpenModel => _openWeights != null;
-    public bool HasClosedModel => _closedWeights != null;
-    public bool HasEndgameModel => _endgameWeights != null;
-    public bool HasQueenlessModel => _queenlessWeights != null;
-    public bool HasImbalanceModel => _imbalanceWeights != null;
-    public bool HasAttackModel => _attackWeights != null;
-    public bool HasMicroModel => _microWeights != null;
-    public bool HasVolatilityModel => _volatilityWeights != null;
+    public bool IsUnifiedMoE => _moeWeights != null;
+    public bool HasMoeModel => _moeWeights != null;
+    public bool HasOpenModel => _moeWeights != null || _openWeights != null;
+    public bool HasClosedModel => _moeWeights != null || _closedWeights != null;
+    public bool HasEndgameModel => _moeWeights != null || _endgameWeights != null;
+    public bool HasQueenlessModel => _moeWeights != null || _queenlessWeights != null;
+    public bool HasImbalanceModel => _moeWeights != null || _imbalanceWeights != null;
+    public bool HasAttackModel => _moeWeights != null || _attackWeights != null;
 
     public bool IsActive => UseNnue && (
+        _moeWeights != null ||
         _openWeights != null ||
         _closedWeights != null ||
         _endgameWeights != null ||
@@ -97,7 +96,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         _imbalanceWeights != null ||
         _attackWeights != null);
 
-    public NnueWeights? ActiveWeights => _activeFullWeights ?? _openWeights ?? _closedWeights ?? _endgameWeights ?? _queenlessWeights ?? _imbalanceWeights ?? _attackWeights;
+    public NnueWeights? ActiveWeights => _moeWeights ?? _activeFullWeights ?? _openWeights ?? _closedWeights ?? _endgameWeights ?? _queenlessWeights ?? _imbalanceWeights ?? _attackWeights;
 
 
     public MultiTierNnueEvaluator(string? networkDir = null)
@@ -108,7 +107,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     }
 
     /// <summary>
-    /// Loads all available expert and micro .nnue networks from the specified directory,
+    /// Loads the unified ArchMoE network (<c>anak.nnue</c>) or legacy expert <c>.nnue</c> networks from the specified directory,
     /// falling back to embedded resources for any models not found on disk.
     /// Returns true if at least one model was successfully loaded.
     /// </summary>
@@ -119,44 +118,78 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         {
             NnueDirectory = resolvedDir;
 
-            TryLoadModel(resolvedDir, "open.nnue", ref _openWeights);
-            TryLoadModel(resolvedDir, "closed.nnue", ref _closedWeights);
-            TryLoadModel(resolvedDir, "endgame.nnue", ref _endgameWeights);
-            TryLoadModel(resolvedDir, "queenless.nnue", ref _queenlessWeights);
-            TryLoadModel(resolvedDir, "imbalance.nnue", ref _imbalanceWeights);
-            TryLoadModel(resolvedDir, "attack.nnue", ref _attackWeights);
-
-            // If a generic anak.nnue exists, load it as fallback for both open/closed
-            string genericPath = Path.Combine(resolvedDir, "anak.nnue");
-            if (_openWeights == null && _closedWeights == null && File.Exists(genericPath))
+            // Prefer unified Shared-FT Multi-Expert network (anak.nnue / moe.nnue)
+            string anakPath = Path.Combine(resolvedDir, "anak.nnue");
+            if (File.Exists(anakPath))
             {
-                _openWeights = NnueWeights.LoadFromFile(genericPath);
-                _closedWeights = _openWeights;
+                NnueWeights? loaded = NnueWeights.LoadFromFile(anakPath);
+                if (loaded != null)
+                {
+                    if (loaded.IsMoE)
+                    {
+                        _moeWeights?.Dispose();
+                        _moeWeights = loaded;
+                    }
+                    else if (_openWeights == null && _closedWeights == null)
+                    {
+                        _openWeights = loaded;
+                        _closedWeights = loaded;
+                    }
+                    else
+                    {
+                        loaded.Dispose();
+                    }
+                }
             }
 
-            TryLoadModel(resolvedDir, "micro.nnue", ref _microWeights);
-            TryLoadModel(resolvedDir, "volatility.nnue", ref _volatilityWeights);
+            if (_moeWeights == null)
+            {
+                TryLoadModel(resolvedDir, "open.nnue", ref _openWeights);
+                TryLoadModel(resolvedDir, "closed.nnue", ref _closedWeights);
+                TryLoadModel(resolvedDir, "endgame.nnue", ref _endgameWeights);
+                TryLoadModel(resolvedDir, "queenless.nnue", ref _queenlessWeights);
+                TryLoadModel(resolvedDir, "imbalance.nnue", ref _imbalanceWeights);
+                TryLoadModel(resolvedDir, "attack.nnue", ref _attackWeights);
+            }
         }
 
-        // Fall back to embedded network weights for any models that were not loaded from disk
-        TryLoadEmbeddedModel("open.nnue", ref _openWeights);
-        TryLoadEmbeddedModel("closed.nnue", ref _closedWeights);
-        TryLoadEmbeddedModel("endgame.nnue", ref _endgameWeights);
-        TryLoadEmbeddedModel("queenless.nnue", ref _queenlessWeights);
-        TryLoadEmbeddedModel("imbalance.nnue", ref _imbalanceWeights);
-        TryLoadEmbeddedModel("attack.nnue", ref _attackWeights);
-        TryLoadEmbeddedModel("micro.nnue", ref _microWeights);
-        TryLoadEmbeddedModel("volatility.nnue", ref _volatilityWeights);
+        // Fall back to embedded network weights
+        if (_moeWeights == null)
+        {
+            NnueWeights? embeddedMoE = null;
+            TryLoadEmbeddedModel("anak.nnue", ref embeddedMoE);
+            if (embeddedMoE != null)
+            {
+                if (embeddedMoE.IsMoE)
+                {
+                    _moeWeights = embeddedMoE;
+                }
+                else
+                {
+                    embeddedMoE.Dispose();
+                }
+            }
+        }
 
-        if (resolvedDir == null && (IsActive || _microWeights != null || _volatilityWeights != null))
+        if (_moeWeights == null)
+        {
+            TryLoadEmbeddedModel("open.nnue", ref _openWeights);
+            TryLoadEmbeddedModel("closed.nnue", ref _closedWeights);
+            TryLoadEmbeddedModel("endgame.nnue", ref _endgameWeights);
+            TryLoadEmbeddedModel("queenless.nnue", ref _queenlessWeights);
+            TryLoadEmbeddedModel("imbalance.nnue", ref _imbalanceWeights);
+            TryLoadEmbeddedModel("attack.nnue", ref _attackWeights);
+        }
+
+        if (resolvedDir == null && IsActive)
         {
             NnueDirectory = "<embedded>";
         }
 
         // Active model will be locked at root when search begins via SetRootTopology / InitSearch
-        _activeFullWeights = null;
+        _activeFullWeights = _moeWeights;
 
-        return IsActive || _microWeights != null || _volatilityWeights != null;
+        return IsActive;
     }
 
     private static void TryLoadEmbeddedModel(string fileName, ref NnueWeights? targetSlot)
@@ -243,13 +276,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         for (int i = 0; i < 6 && parent != null; i++)
         {
             candidate = Path.Combine(parent, "networks");
-            if (Directory.Exists(candidate) && (File.Exists(Path.Combine(candidate, "open.nnue")) || File.Exists(Path.Combine(candidate, "closed.nnue"))))
+            if (Directory.Exists(candidate) && (File.Exists(Path.Combine(candidate, "anak.nnue")) || File.Exists(Path.Combine(candidate, "open.nnue")) || File.Exists(Path.Combine(candidate, "closed.nnue"))))
             {
                 return Path.GetFullPath(candidate);
             }
 
             candidate = Path.Combine(parent, "training", "networks");
-            if (Directory.Exists(candidate) && (File.Exists(Path.Combine(candidate, "open.nnue")) || File.Exists(Path.Combine(candidate, "closed.nnue"))))
+            if (Directory.Exists(candidate) && (File.Exists(Path.Combine(candidate, "anak.nnue")) || File.Exists(Path.Combine(candidate, "open.nnue")) || File.Exists(Path.Combine(candidate, "closed.nnue"))))
             {
                 return Path.GetFullPath(candidate);
             }
@@ -306,11 +339,12 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
     /// <summary>
     /// Evaluates the root board's topology and phase once and records the active root expert.
+    /// In unified ArchMoE mode, locks <see cref="_activeFullWeights"/> to the shared-FT MoE weights.
     /// </summary>
     public void SetRootTopology(in Board rootBoard)
     {
         ActiveRootExpert = PawnTopology.ClassifyExpert(in rootBoard, _routing);
-        _activeFullWeights = GetExpertWeights(ActiveRootExpert, in rootBoard);
+        _activeFullWeights = _moeWeights ?? GetExpertWeights(ActiveRootExpert, in rootBoard);
     }
 
     /// <summary>
@@ -448,6 +482,33 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         return NnueInference.Evaluate(whiteAcc, blackAcc, weights, board.SideToMove);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private int EvaluateMoEForBoard(short* whiteAcc, short* blackAcc, NnueWeights moeWeights, in Board board)
+    {
+        NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board, _routing);
+        if (leafExpert is NnueExpertType.Open or NnueExpertType.Closed)
+        {
+            int thresholdPct = (int)MathF.Round(_routing.OpenThreshold * 100.0f);
+            int low = thresholdPct - 8;
+            int high = thresholdPct + 8;
+            int opennessPct = PawnTopology.CalculateOpennessPercent(in board);
+            if (opennessPct > low && opennessPct < high)
+            {
+                int alpha256 = ((opennessPct - low) * 256) / 16;
+                return NnueInference.EvaluateMoEBlended(
+                    whiteAcc,
+                    blackAcc,
+                    moeWeights,
+                    board.SideToMove,
+                    (int)NnueExpertType.Closed,
+                    (int)NnueExpertType.Open,
+                    alpha256);
+            }
+        }
+
+        return NnueInference.EvaluateMoE(whiteAcc, blackAcc, moeWeights, board.SideToMove, (int)leafExpert);
+    }
+
     public Value Evaluate(in Board board)
     {
         if (!UseNnue)
@@ -455,7 +516,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             return _fallbackEvaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
         }
 
-        // Fast incremental evaluation path during active search (1 SIMD dot product)
+        // Fast incremental evaluation path during active search
         if (_stackDepth >= 0 && _activeFullWeights != null && _stackKeys[_stackDepth] == board.ZobristKey)
         {
             NnueWeights weights = _activeFullWeights;
@@ -465,12 +526,24 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             {
                 short* wAcc = wPtr + offset;
                 short* bAcc = bPtr + offset;
-                int scoreCp = NnueInference.Evaluate(wAcc, bAcc, weights, board.SideToMove);
+                int scoreCp = ReferenceEquals(weights, _moeWeights)
+                    ? EvaluateMoEForBoard(wAcc, bAcc, weights, in board)
+                    : NnueInference.Evaluate(wAcc, bAcc, weights, board.SideToMove);
                 return new Value(scoreCp);
             }
         }
 
-        // Root Expert Consistency: always evaluate with _activeFullWeights if non-null (no thrashing across experts or blending during search)
+        // Unified Shared-FT MoE full-eval fallback (outside active search or after stack miss)
+        if (_moeWeights != null)
+        {
+            int dim = _moeWeights.HiddenDim;
+            short* whiteAcc = stackalloc short[dim];
+            short* blackAcc = stackalloc short[dim];
+            NnueAccumulator.ComputeFull(in board, _moeWeights, whiteAcc, blackAcc);
+            return new Value(EvaluateMoEForBoard(whiteAcc, blackAcc, _moeWeights, in board));
+        }
+
+        // Legacy Root Expert Consistency: always evaluate with _activeFullWeights if non-null
         if (_activeFullWeights != null)
         {
             int cp = EvaluateWithWeights(in board, _activeFullWeights);
@@ -528,82 +601,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         return Evaluate(in board);
     }
 
-    /// <summary>
-    /// Evaluates the board position using the ultra-fast Micro-NNUE model (1 SIMD register)
-    /// for fast blunder and trap checking.
-    /// </summary>
-    public Value EvaluateMicro(in Board board)
-    {
-        if (!UseNnue || _microWeights == null)
-        {
-            return Evaluate(in board, ReadOnlySpan<Move>.Empty);
-        }
-
-        const int dim = NnueConstants.MicroHiddenDim;
-        short* whiteAcc = stackalloc short[dim];
-        short* blackAcc = stackalloc short[dim];
-
-        NnueAccumulator.ComputeFull(in board, _microWeights, whiteAcc, blackAcc);
-        short* oAcc = board.SideToMove == Color.White ? whiteAcc : blackAcc;
-        short* tAcc = board.SideToMove == Color.White ? blackAcc : whiteAcc;
-
-        int cp = NnueInference.EvaluateMicro(oAcc, tAcc, _microWeights);
-        return new Value(cp);
-    }
-
-    /// <summary>
-    /// Evaluates the tactical sharpness / volatility of the board position in [0, 1000].
-    /// Uses volatility.nnue when loaded, or a fast zero-allocation bitboard tension/attack estimator as fallback.
-    /// </summary>
-    public Value EvaluateVolatility(in Board board)
-    {
-        if (UseNnue && _volatilityWeights != null)
-        {
-            int dim = _volatilityWeights.HiddenDim;
-            short* whiteAcc = stackalloc short[dim];
-            short* blackAcc = stackalloc short[dim];
-
-            NnueAccumulator.ComputeFull(in board, _volatilityWeights, whiteAcc, blackAcc);
-            int cp = NnueInference.Evaluate(whiteAcc, blackAcc, _volatilityWeights, board.SideToMove);
-            return new Value(Math.Clamp(Math.Abs(cp), 0, 1000));
-        }
-
-        return new Value(ComputeBitboardVolatility(in board));
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int ComputeBitboardVolatility(in Board board)
-    {
-        ulong whitePawns = board.White & board.Pawns;
-        ulong blackPawns = board.Black & board.Pawns;
-
-        // 1. Pawn tension (mutually attacking pawns)
-        ulong whitePawnAttacks = ((whitePawns << 7) & ~Bitboard.FileH) | ((whitePawns << 9) & ~Bitboard.FileA);
-        ulong blackPawnAttacks = ((blackPawns >> 9) & ~Bitboard.FileH) | ((blackPawns >> 7) & ~Bitboard.FileA);
-        int pawnTension = BitOperations.PopCount(whitePawnAttacks & blackPawns);
-
-        // 2. Non-pawn pieces attacked by enemy pawns
-        ulong whiteNonPawns = board.White & ~board.Pawns & ~board.Kings;
-        ulong blackNonPawns = board.Black & ~board.Pawns & ~board.Kings;
-        int pawnThreatenedPieces = BitOperations.PopCount(blackPawnAttacks & whiteNonPawns)
-            + BitOperations.PopCount(whitePawnAttacks & blackNonPawns);
-
-        // 3. Opposite-side castling / mutual king attack factor
-        int kingAttackBonus = PawnTopology.IsOppositeSideCastling(in board) ? 120 : 0;
-
-        // 4. In-check bonus
-        int checkBonus = board.IsInCheck() ? 180 : 0;
-
-        int score = (pawnTension * 60) + (pawnThreatenedPieces * 110) + kingAttackBonus + checkBonus;
-        return Math.Clamp(score, 0, 1000);
-    }
-
     public void Dispose()
     {
         if (!_disposed)
         {
             if (_ownsWeights)
             {
+                _moeWeights?.Dispose();
                 _openWeights?.Dispose();
                 if (!ReferenceEquals(_closedWeights, _openWeights))
                 {
@@ -613,8 +617,6 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
                 _queenlessWeights?.Dispose();
                 _imbalanceWeights?.Dispose();
                 _attackWeights?.Dispose();
-                _microWeights?.Dispose();
-                _volatilityWeights?.Dispose();
             }
             _disposed = true;
         }

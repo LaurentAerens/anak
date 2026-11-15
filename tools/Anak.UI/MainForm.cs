@@ -120,12 +120,11 @@ public sealed class MainForm : Form
     private readonly ListBox _historyListBox;
     private readonly TextBox _fenTextBox;
     private readonly NumericUpDown _thinkTimeNumeric;
-    private readonly NumericUpDown _moveRandomnessNumeric;
     private readonly CheckBox _engineBlackCheckBox;
     private readonly CheckBox _engineWhiteCheckBox;
     private readonly CheckBox _useBookCheckBox;
-    private readonly CheckBox _openingVarietyCheckBox;
     private readonly ComboBox _timeControlCombo;
+    private readonly ComboBox _engineCombo;
     private readonly Panel _whiteClockPanel;
     private readonly Panel _blackClockPanel;
     private readonly Label _whiteClockLabel;
@@ -139,10 +138,8 @@ public sealed class MainForm : Form
     private double _incrementMs = 2_000;
 
     private readonly AlphaBetaEngine _alphaBetaEngine;
-    private MCTSEngine? _mctsEngine;
     private ZapSearchEngine? _zapEngine;
     private ISearchEngine _engine;
-    private readonly ComboBox _engineCombo;
     private readonly IEvaluator _evaluator;
     private readonly PolyGlotBook _book = new();
     private CancellationTokenSource? _searchCts;
@@ -402,7 +399,7 @@ public sealed class MainForm : Form
             Width = 140,
             Margin = new Padding(0, 2, 8, 0)
         };
-        _engineCombo.Items.AddRange(["Alpha-Beta Minimax", "MCTS", "Zanak (ZAP)"]);
+        _engineCombo.Items.AddRange(["Alpha-Beta Minimax", "Zanak (ZAP)"]);
         _engineCombo.SelectedIndex = 0; // Default: Alpha-Beta Minimax
         _engineCombo.SelectedIndexChanged += (_, _) => OnEngineSelectionChanged();
         optionsPanel.Controls.Add(_engineCombo);
@@ -457,35 +454,6 @@ public sealed class MainForm : Form
             Margin = new Padding(0, 4, 8, 0)
         };
         optionsPanel.Controls.Add(_useBookCheckBox);
-
-        _openingVarietyCheckBox = new CheckBox
-        {
-            Text = "Opening Variety",
-            AutoSize = true,
-            Checked = true,
-            Enabled = false,
-            Margin = new Padding(0, 4, 6, 0)
-        };
-        optionsPanel.Controls.Add(_openingVarietyCheckBox);
-
-        optionsPanel.Controls.Add(new Label { Text = "Rand (%):", AutoSize = true, Margin = new Padding(0, 6, 2, 0) });
-        _moveRandomnessNumeric = new NumericUpDown
-        {
-            Minimum = 0,
-            Maximum = 100,
-            Value = 10,
-            Increment = 5,
-            Width = 48,
-            Enabled = false
-        };
-        _moveRandomnessNumeric.ValueChanged += (_, _) =>
-        {
-            if (_engine is MCTSEngine mcts)
-            {
-                mcts.Parameters.MoveRandomness = (int)_moveRandomnessNumeric.Value;
-            }
-        };
-        optionsPanel.Controls.Add(_moveRandomnessNumeric);
 
         rightPanel.Controls.Add(optionsPanel);
         y += 122;
@@ -602,24 +570,12 @@ public sealed class MainForm : Form
         if (_engineCombo.SelectedIndex == 0)
         {
             _engine = _alphaBetaEngine;
-            _moveRandomnessNumeric.Enabled = false;
-            _openingVarietyCheckBox.Enabled = false;
             _searchStatsLabel.Text = "Engine: Alpha-Beta Minimax (Idle)";
-        }
-        else if (_engineCombo.SelectedIndex == 1)
-        {
-            _mctsEngine ??= new MCTSEngine(_evaluator, defaultHashMb: 32, arenaCapacity: 1_000_000);
-            _engine = _mctsEngine;
-            _moveRandomnessNumeric.Enabled = true;
-            _openingVarietyCheckBox.Enabled = true;
-            _searchStatsLabel.Text = "Engine: MCTS (Idle)";
         }
         else
         {
             _zapEngine ??= new ZapSearchEngine(evaluator: _evaluator);
             _engine = _zapEngine;
-            _moveRandomnessNumeric.Enabled = false;
-            _openingVarietyCheckBox.Enabled = false;
             _searchStatsLabel.Text = "Engine: Zanak (ZAP Anytime) (Idle)";
         }
     }
@@ -629,9 +585,8 @@ public sealed class MainForm : Form
         _searchCts?.Cancel();
         _selfPlayTimer.Stop();
         _alphaBetaEngine.TranspositionTable.Clear();
-        _mctsEngine?.TranspositionTable.Clear();
-        _mctsEngine?.Arena.Reset();
-        _mctsEngine?.ClearHistory();
+        _alphaBetaEngine.ClearHistory();
+        _alphaBetaEngine.ResetLastRootExpert();
         _zapEngine?.Clear();
         _startingFen = Fen.StartPosition;
         _gameMoves.Clear();
@@ -838,19 +793,6 @@ public sealed class MainForm : Form
             zap.LastMove = _boardPanel.LastMove;
         }
 
-        // Exploration temperature for opening moves if Opening Variety is checked (MCTS only)
-        MCTSEngine? activeMcts = _engine as MCTSEngine;
-        float originalTemp = 0.0f;
-        bool applyVariety = _openingVarietyCheckBox.Checked && _historyListBox.Items.Count < 6;
-        if (activeMcts != null)
-        {
-            originalTemp = activeMcts.Parameters.Temperature;
-            if (applyVariety)
-            {
-                activeMcts.Parameters.Temperature = 0.35f;
-            }
-        }
-
         try
         {
             ChessMove bestMove = await Task.Run(() =>
@@ -883,10 +825,6 @@ public sealed class MainForm : Form
         }
         finally
         {
-            if (activeMcts != null && applyVariety)
-            {
-                activeMcts.Parameters.Temperature = originalTemp;
-            }
             _engineCombo.Enabled = true;
             _boardPanel.Enabled = true;
             _isSearching = false;

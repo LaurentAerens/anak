@@ -40,6 +40,7 @@ This document tracks the estimated Elo rating progression of Anak releases and p
 | [**v1.0.19**](https://github.com/laerens/anak/releases/tag/v1.0.19) | 2026-11-09 | **2630** | &plusmn;9 | Anak v1.0.16 (Known Elo: 2611) | 1490.5 / 2683 (55.55%) | 1105 / 807 / 771 | 1+0.01 | [`anak_dev_vs_v1.0.16_20261109_214311.pgn`](tools/fastchess/results/anak_dev_vs_v1.0.16_20261109_214311.pgn) |
 | [**v1.0.20**](https://github.com/laerens/anak/releases/tag/v1.0.20) | 2026-11-09 | **2669** | &plusmn;49 | Anak v1.0.19 (Known Elo: 2630) | 57.5 / 100 (57.5%) | 39 / 24 / 37 | 5+0.05 | [`anak_dev_vs_v1.0.19_20261109_224127.pgn`](tools/fastchess/results/anak_dev_vs_v1.0.19_20261109_224127.pgn) |
 | [**v1.0.21**](https://github.com/laerens/anak/releases/tag/v1.0.21) | 2026-11-10 | **2670** | &plusmn;5 | Anak v1.0.20 (Known Elo: 2669) | 4015.0 / 8000 (50.19%) | 2903 / 2873 / 2224 | 1+0.01 | [`anak_dev_vs_v1.0.20_20261110_133540.pgn`](tools/fastchess/results/anak_dev_vs_v1.0.20_20261110_133540.pgn) |
+| [**v1.0.22**](https://github.com/laerens/anak/releases/tag/v1.0.22) | 2026-11-15 | **2677** | &plusmn;5 | Anak v1.0.21 (Known Elo: 2670) | 4068.5 / 8000 (50.86%) | 3086 / 2949 / 1965 | 1+0.01 | [`anak_dev_vs_v1.0.21_20261114_183430.pgn`](tools/fastchess/results/anak_dev_vs_v1.0.21_20261114_183430.pgn) |
 
 ## ⚔️ Self-Benchmarking (Candidate vs Baseline)
 

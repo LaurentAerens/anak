@@ -3,7 +3,7 @@ using Anak.Core;
 namespace Anak.Search;
 
 /// <summary>
-/// Unified contract for chess search engines (Alpha-Beta and MCTS).
+/// Unified contract for chess search engines.
 /// </summary>
 public interface ISearchEngine
 {

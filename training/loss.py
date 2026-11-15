@@ -3,12 +3,12 @@ Loss functions for Anak NNUE training.
 Features:
 - ModernNNUELoss: Stockfish-style win-probability BCE loss blending search evaluations and WDL.
 - TcecBlendedLoss: Smooth-L1 Huber + BCE WDL loss for backward compatibility.
-- BlunderLoss: Asymmetric 5x gradient penalty watchdog loss for Micro-NNUE.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from typing import Optional
 
 
 class ModernNNUELoss(nn.Module):
@@ -59,31 +59,3 @@ class TcecBlendedLoss(nn.Module):
         pred_scaled = torch.tanh(pred / 4.0)
         l_eval = self.eval_loss(pred_scaled, scaled_eval)
         return (self.lambda_wdl * l_wdl) + ((1.0 - self.lambda_wdl) * l_eval)
-
-
-class BlunderLoss(nn.Module):
-    """
-    Asymmetric loss function specifically tailored for the Micro-NNUE watchdog.
-    Penalizes false negatives on tactical swings (both missing a severe blunder when
-    target <= -2.0 pawns and failing to recognize a winning refutation when target >= +2.0 pawns)
-    with a 5x higher gradient weight.
-    """
-    def __init__(self, blunder_weight: float = 5.0):
-        super().__init__()
-        self.blunder_weight = blunder_weight
-        self.base_loss = nn.SmoothL1Loss(reduction="none")
-
-    def forward(self, pred: torch.Tensor, target_eval: torch.Tensor) -> torch.Tensor:
-        pred_scaled = torch.tanh(pred / 4.0)
-        target_scaled = torch.tanh(target_eval / 4.0)
-
-        element_loss = self.base_loss(pred_scaled, target_scaled)
-
-        # Heavy penalty mask for severe tactical swings (|target| >= 2.0 pawns, i.e., |tanh| >= 0.46)
-        # where the prediction misses the severity or sign of the blunder
-        missed_losing_blunder = (target_scaled <= -0.46) & (pred_scaled > target_scaled + 0.15)
-        missed_winning_refutation = (target_scaled >= 0.46) & (pred_scaled < target_scaled - 0.15)
-        blunder_mask = missed_losing_blunder | missed_winning_refutation
-
-        weights = torch.where(blunder_mask, self.blunder_weight, 1.0)
-        return (element_loss * weights).mean()

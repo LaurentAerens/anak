@@ -1,15 +1,15 @@
 {
     "resign": {
-        "move_count": 3,
-        "score": 600,
+        "move_count": 1,
+        "score": 0,
         "twosided": false,
-        "enabled": true
+        "enabled": false
     },
     "draw": {
-        "move_number": 40,
-        "move_count": 8,
-        "score": 8,
-        "enabled": true
+        "move_number": 0,
+        "move_count": 1,
+        "score": 0,
+        "enabled": false
     },
     "maxmoves": {
         "move_count": 1,
@@ -32,9 +32,9 @@
         "additional_lines_rgx": [],
         "event_name": "Fastchess Tournament",
         "site": "?",
-        "file": "",
+        "file": "C:\\Users\\laerens\\.copilot\\session-state\\857a85b0-4cfa-4467-9b01-71d73471f071\\files\\spine-pickup-evaluation\\sprt.pgn",
         "notation": 0,
-        "append_file": true,
+        "append_file": false,
         "track_nodes": false,
         "track_seldepth": false,
         "track_nps": false,
@@ -51,16 +51,16 @@
         "append_file": true
     },
     "sprt": {
-        "alpha": 0.0,
-        "beta": 0.0,
+        "alpha": 0.05,
+        "beta": 0.05,
         "elo0": 0.0,
-        "elo1": 0.0,
+        "elo1": 3.0,
         "model": "normalized",
-        "enabled": false
+        "enabled": true
     },
     "config_name": "config.json",
     "output": 0,
-    "seed": 9834094335983145393,
+    "seed": 8578581,
     "variant": 0,
     "type": 0,
     "gauntlet_seeds": 1,
@@ -69,8 +69,8 @@
     "wait": 0,
     "autosaveinterval": 20,
     "games": 2,
-    "rounds": 20,
-    "concurrency": 16,
+    "rounds": 4000,
+    "concurrency": 8,
     "force_concurrency": false,
     "recover": false,
     "noswap": false,
@@ -89,67 +89,31 @@
     },
     "engines": [
         {
-            "name": "Anak-Plus",
-            "dir": "",
-            "cmd": "src\\Zanak\\bin\\Release\\net11.0\\zanak.exe",
+            "name": "Candidate",
+            "dir": "C:\\Users\\laerens\\.copilot\\session-state\\857a85b0-4cfa-4467-9b01-71d73471f071\\files\\spine-pickup-candidate",
+            "cmd": "C:\\Users\\laerens\\.copilot\\session-state\\857a85b0-4cfa-4467-9b01-71d73471f071\\files\\spine-pickup-candidate\\zanak.exe",
             "args": "",
             "restart": false,
             "options": [
-                [
-                    "Hash",
-                    "16"
-                ],
                 [
                     "Threads",
                     "1"
                 ],
                 [
-                    "ShockThreshold",
-                    "66"
-                ],
-                [
-                    "DeadStemMargin",
-                    "227"
-                ],
-                [
-                    "HardAspirationMargin",
-                    "88"
-                ],
-                [
-                    "ContenderPromotionMargin",
-                    "57"
-                ],
-                [
-                    "WorkerPruneMargin",
-                    "184"
-                ],
-                [
-                    "AdaptiveShockBase",
-                    "58"
-                ],
-                [
-                    "AdaptiveShockSlope",
-                    "15"
-                ],
-                [
-                    "RecaptureBonus",
-                    "2741"
-                ],
-                [
-                    "EnPriseThreatPenalty",
-                    "3656"
-                ],
-                [
-                    "SpineAbandonThreshold",
-                    "271"
-                ],
-                [
-                    "CrosspointRootBiasWeight",
-                    "27"
+                    "Hash",
+                    "64"
                 ],
                 [
                     "MaxSiblingExploration",
-                    "4"
+                    "6"
+                ],
+                [
+                    "PickupCostWeight",
+                    "2"
+                ],
+                [
+                    "InterleaveRootSeeding",
+                    "false"
                 ]
             ],
             "limit": {
@@ -166,67 +130,31 @@
             "variant": 0
         },
         {
-            "name": "Anak-Minus",
-            "dir": "",
-            "cmd": "src\\Zanak\\bin\\Release\\net11.0\\zanak.exe",
+            "name": "Baseline",
+            "dir": "C:\\Users\\laerens\\.copilot\\session-state\\857a85b0-4cfa-4467-9b01-71d73471f071\\files\\spine-pickup-baseline",
+            "cmd": "C:\\Users\\laerens\\.copilot\\session-state\\857a85b0-4cfa-4467-9b01-71d73471f071\\files\\spine-pickup-baseline\\zanak.exe",
             "args": "",
             "restart": false,
             "options": [
-                [
-                    "Hash",
-                    "16"
-                ],
                 [
                     "Threads",
                     "1"
                 ],
                 [
-                    "ShockThreshold",
-                    "80"
-                ],
-                [
-                    "DeadStemMargin",
-                    "268"
-                ],
-                [
-                    "HardAspirationMargin",
-                    "109"
-                ],
-                [
-                    "ContenderPromotionMargin",
-                    "44"
-                ],
-                [
-                    "WorkerPruneMargin",
-                    "219"
-                ],
-                [
-                    "AdaptiveShockBase",
-                    "47"
-                ],
-                [
-                    "AdaptiveShockSlope",
-                    "11"
-                ],
-                [
-                    "RecaptureBonus",
-                    "2259"
-                ],
-                [
-                    "EnPriseThreatPenalty",
-                    "4345"
-                ],
-                [
-                    "SpineAbandonThreshold",
-                    "230"
-                ],
-                [
-                    "CrosspointRootBiasWeight",
-                    "19"
+                    "Hash",
+                    "64"
                 ],
                 [
                     "MaxSiblingExploration",
-                    "7"
+                    "6"
+                ],
+                [
+                    "PickupCostWeight",
+                    "2"
+                ],
+                [
+                    "InterleaveRootSeeding",
+                    "false"
                 ]
             ],
             "limit": {
@@ -244,16 +172,16 @@
         }
     ],
     "stats": {
-        "Anak-Plus vs Anak-Minus": {
-            "wins": 19,
-            "losses": 17,
-            "draws": 4,
-            "penta_WW": 4,
-            "penta_WD": 2,
-            "penta_WL": 9,
+        "Candidate vs Baseline": {
+            "wins": 73,
+            "losses": 49,
+            "draws": 16,
+            "penta_WW": 23,
+            "penta_WD": 7,
+            "penta_WL": 20,
             "penta_DD": 0,
-            "penta_LD": 2,
-            "penta_LL": 3
+            "penta_LD": 9,
+            "penta_LL": 10
         }
     }
 }

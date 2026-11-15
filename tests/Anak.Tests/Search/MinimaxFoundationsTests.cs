@@ -8,9 +8,9 @@ namespace Anak.Tests.Search;
 public class MinimaxFoundationsTests
 {
     [Fact]
-    public void TTEntry_SizeIs32Bytes()
+    public void TTEntry_SizeIs20Bytes()
     {
-        Assert.Equal(32, Unsafe.SizeOf<TTEntry>());
+        Assert.Equal(20, Unsafe.SizeOf<TTEntry>());
     }
 
     [Fact]

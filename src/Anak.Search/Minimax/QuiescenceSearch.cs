@@ -7,7 +7,7 @@ namespace Anak.Search;
 /// <summary>
 /// Quiescence Search (QS) to resolve tactical captures and promotions at leaf nodes.
 /// Features:
-/// - Fast stand-pat score evaluation using IMultiTierEvaluator.EvaluateMicro pre-screening
+/// - Fast stand-pat evaluation with correction history
 /// - Delta pruning to eliminate futile captures
 /// - SEE (Static Exchange Evaluation) filtering to prune losing captures
 /// - MVV-LVA move ordering
@@ -22,6 +22,7 @@ public sealed class QuiescenceSearch
     private readonly IIncrementalEvaluator? _incEval;
     private readonly Func<bool>? _isTimeUp;
     private int _qsNodes;
+    public SearchTraceWriter? SearchTrace { get; set; }
 
     public const int MaxQsDepth = 128;
     public const int DeltaMargin = 900;
@@ -250,6 +251,7 @@ public sealed class QuiescenceSearch
 
             Piece movedPiece = board.GetPieceAt(move.From);
             board.MakeMove(move, out BoardState state, movedPiece);
+            SearchTrace?.WriteEdge(key, board.ZobristKey, move);
             _tt?.Prefetch(board.ZobristKey);
             _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
 

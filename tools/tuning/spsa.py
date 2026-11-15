@@ -206,50 +206,6 @@ CORE_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
-# Micro NNUE & Dynamic Time Management Parameters
-MICRO_PARAMETERS: List[SpsaParam] = [
-    SpsaParam(
-        name="MicroMaxShare",
-        default=6.0,
-        min_val=1.0,
-        max_val=15.0,
-        c=1.0,
-        a=25.0,
-    ),
-    SpsaParam(
-        name="MicroMinTime",
-        default=25.0,
-        min_val=10.0,
-        max_val=50.0,
-        c=3.0,
-        a=75.0,
-    ),
-    SpsaParam(
-        name="MicroDepthGate",
-        default=85.0,
-        min_val=60.0,
-        max_val=98.0,
-        c=4.0,
-        a=100.0,
-    ),
-    SpsaParam(
-        name="MicroAheadWeight",
-        default=100.0,
-        min_val=40.0,
-        max_val=180.0,
-        c=8.0,
-        a=200.0,
-    ),
-    SpsaParam(
-        name="MicroEqualWeight",
-        default=75.0,
-        min_val=30.0,
-        max_val=140.0,
-        c=6.0,
-        a=150.0,
-    ),
-]
-
 # Weakness Remediation Parameters (Watchdog & Syzygy Probing)
 WEAKNESS_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
@@ -1123,8 +1079,8 @@ def parse_args():
     parser.add_argument("--engine", type=str, choices=["anak", "zanak"], default="anak",
                         help="Engine to tune: 'anak' (default) or 'zanak'")
     parser.add_argument("--zanak", type=str, default=None, help="Path to Zanak binary")
-    parser.add_argument("--batch", type=str, choices=["core", "b", "corr", "time", "search", "bcd", "all", "micro", "weakness", "history_pruning", "zanak_time", "zanak_search", "zanak_all"], default="core",
-                        help="Parameter batch to tune ('core', 'b', 'corr', 'time', 'search', 'bcd', 'all', 'micro', 'weakness', 'history_pruning', 'zanak_time', 'zanak_search', 'zanak_all')")
+    parser.add_argument("--batch", type=str, choices=["core", "b", "corr", "time", "search", "bcd", "all", "weakness", "history_pruning", "zanak_time", "zanak_search", "zanak_all"], default="core",
+                        help="Parameter batch to tune ('core', 'b', 'corr', 'time', 'search', 'bcd', 'all', 'weakness', 'history_pruning', 'zanak_time', 'zanak_search', 'zanak_all')")
     parser.add_argument("--param", type=str, default=None, help="Tune a single parameter by name (e.g. --param HistoryPruningThreshold)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
@@ -1150,7 +1106,7 @@ def main():
     progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / default_progress_name)
 
     if args.param:
-        all_known = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS + WEAKNESS_PARAMETERS + HISTORY_PRUNING_PARAMETERS + ZANAK_ALL_PARAMETERS
+        all_known = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + WEAKNESS_PARAMETERS + HISTORY_PRUNING_PARAMETERS + ZANAK_ALL_PARAMETERS
         matched = [p for p in all_known if p.name.lower() == args.param.lower()]
         if not matched:
             print(f"[!] Error: Parameter '{args.param}' not recognized.")
@@ -1174,14 +1130,12 @@ def main():
         param_set = BATCH_BCD_PARAMETERS
     elif args.batch == "search":
         param_set = DEFAULT_PARAMETERS
-    elif args.batch == "micro":
-        param_set = MICRO_PARAMETERS
     elif args.batch == "weakness":
         param_set = WEAKNESS_PARAMETERS
     elif args.batch == "history_pruning":
         param_set = HISTORY_PRUNING_PARAMETERS
     else:
-        param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + MICRO_PARAMETERS + WEAKNESS_PARAMETERS
+        param_set = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + WEAKNESS_PARAMETERS
 
     tuner = SpsaTuner(
         params=param_set,

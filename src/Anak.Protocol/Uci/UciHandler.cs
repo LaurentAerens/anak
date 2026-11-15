@@ -150,7 +150,7 @@ public sealed class UciHandler
 
         if (_adapter.Evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive)
         {
-            SendLine($"info string NNUE active: [Open: {nnue.HasOpenModel}, Closed: {nnue.HasClosedModel}, Micro: {nnue.HasMicroModel}] ({nnue.NnueDirectory})");
+            SendLine($"info string NNUE active: [MoE: {nnue.HasMoeModel}, Open: {nnue.HasOpenModel}, Closed: {nnue.HasClosedModel}] ({nnue.NnueDirectory})");
         }
         else
         {
@@ -385,7 +385,7 @@ public sealed class UciHandler
 
         if (evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue && nnue.IsActive)
         {
-            SendLine($"info string Evaluator: Pure Multi-Tier NNUE (Open: {nnue.HasOpenModel}, Closed: {nnue.HasClosedModel}, Micro: {nnue.HasMicroModel})");
+            SendLine($"info string Evaluator: Multi-Expert NNUE (MoE: {nnue.HasMoeModel}, Open: {nnue.HasOpenModel}, Closed: {nnue.HasClosedModel})");
         }
         else
         {

@@ -77,27 +77,17 @@ class HardwareProfiler:
         user_workers: Optional[int] = None,
         user_compile: Optional[bool] = None,
         is_massive_preset: bool = False,
-        is_micro: bool = False,
     ) -> Dict[str, Any]:
         """
-        Calculates pinned settings to maximize throughput and saturation on current hardware,
-        differentiating between heavy 460k-weight StandardNNUE and agile 12k-weight MicroNNUE.
+        Calculates pinned settings to maximize throughput and saturation on current hardware.
         """
         # 1. Architecture-specific hyperparameter defaults
-        if is_micro:
-            arch_type = "Micro-NNUE (Tactical Watchdog, 768 -> 16x2 -> 1, ~12.3k weights)"
-            default_lr = 2e-3
-            default_weight_decay = 0.0
-            default_ema_decay = 0.990
-            recommended_epochs = 20
-            recommended_patience = 4
-        else:
-            arch_type = "Standard-NNUE (Positional Expert, 768 -> 512x2 -> 64 -> 1, ~460k weights)"
-            default_lr = 1e-3
-            default_weight_decay = 1e-4
-            default_ema_decay = 0.995
-            recommended_epochs = 40
-            recommended_patience = 8
+        arch_type = "Standard / Shared-MoE NNUE (12288 -> 512x2 -> 64 -> 1)"
+        default_lr = 1e-3
+        default_weight_decay = 1e-4
+        default_ema_decay = 0.995
+        recommended_epochs = 40
+        recommended_patience = 8
 
         # 2. Batch size selection (saturates GPU VRAM / Tensor Cores or CPU cache)
         if user_batch_size is not None and user_batch_size > 0:
@@ -105,18 +95,15 @@ class HardwareProfiler:
         else:
             if self.is_cuda:
                 if self.vram_gb >= 20.0:  # e.g. RTX 4090 24GB, A100
-                    if is_micro:
-                        batch_size = 131072 if is_massive_preset else 65536
-                    else:
-                        batch_size = 65536 if is_massive_preset else 32768
+                    batch_size = 65536 if is_massive_preset else 32768
                 elif self.vram_gb >= 12.0:  # e.g. RTX 3080/4070
-                    batch_size = 32768 if is_micro else 16384
+                    batch_size = 16384
                 elif self.vram_gb >= 8.0:
-                    batch_size = 16384 if is_micro else 8192
+                    batch_size = 8192
                 else:
-                    batch_size = 8192 if is_micro else 4096
+                    batch_size = 4096
             else:
-                batch_size = 16384 if is_micro else 8192
+                batch_size = 8192
 
         # 3. Worker threads (parallel chunk parsing, in-place flip, and feature scattering)
         if user_workers is not None and user_workers > 0:
@@ -180,7 +167,6 @@ class HardwareProfiler:
             "prefetch_batches": prefetch_batches,
             "chunk_size": chunk_size,
             "compile_model": compile_model,
-            "is_micro": is_micro,
             "arch_type": arch_type,
             "lr": default_lr,
             "weight_decay": default_weight_decay,
@@ -219,7 +205,6 @@ def auto_tune_hardware(
     user_workers: Optional[int] = None,
     user_compile: Optional[bool] = None,
     is_massive_preset: bool = False,
-    is_micro: bool = False,
     verbose: bool = True,
 ) -> Dict[str, Any]:
     """Convenience function to scan hardware, auto-tune settings, and optionally print banner."""
@@ -229,7 +214,6 @@ def auto_tune_hardware(
         user_workers=user_workers,
         user_compile=user_compile,
         is_massive_preset=is_massive_preset,
-        is_micro=is_micro,
     )
     if verbose:
         profiler.print_banner(cfg)

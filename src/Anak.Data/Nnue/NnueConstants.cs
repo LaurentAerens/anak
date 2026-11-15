@@ -21,9 +21,15 @@ public static class NnueConstants
     public const ushort ArchStandard = 0x0001;
 
     /// <summary>
-    /// Micro NNUE architecture ID: 768 -> 16x2 -> 1.
+    /// Shared Feature-Transformer Multi-Expert Head NNUE architecture ID:
+    /// 12,288 -> 512x2 (shared) -> 6 x (64 -> 1) expert heads with SCReLU.
     /// </summary>
-    public const ushort ArchMicro = 0x0002;
+    public const ushort ArchMoE = 0x0003;
+
+    /// <summary>
+    /// Number of specialized expert heads in ArchMoE (Open, Closed, Endgame, Queenless, Imbalance, Attack).
+    /// </summary>
+    public const int ExpertCount = 6;
 
     /// <summary>
     /// Number of king safety zone buckets with horizontal symmetry (ranks 0-1, 2-3, 4-5, 6-7 x files A-D).
@@ -41,19 +47,14 @@ public static class NnueConstants
     public const int FeatureCount = KingBuckets * RawFeatureCount;
 
     /// <summary>
-    /// Hidden dimension for Standard NNUE feature transformer (per perspective).
+    /// Hidden dimension for Standard/MoE NNUE feature transformer (per perspective).
     /// </summary>
     public const int StandardHiddenDim = 512;
 
     /// <summary>
-    /// Hidden layer 1 dimension for Standard NNUE (1024 -> 64).
+    /// Hidden layer 1 dimension for Standard/MoE NNUE (1024 -> 64).
     /// </summary>
     public const int StandardL1Dim = 64;
-
-    /// <summary>
-    /// Hidden dimension for Micro NNUE feature transformer (per perspective).
-    /// </summary>
-    public const int MicroHiddenDim = 16;
 
     /// <summary>
     /// Upper clamp limit for ClippedReLU activations (1.0 * WeightScale = 64).

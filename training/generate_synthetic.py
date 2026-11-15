@@ -1,7 +1,7 @@
 """
-Generates or seeds baseline NNUE network binaries for all 8 Multi-Expert NNUE models:
-  - StandardNNUE (768 -> 512x2 -> 64 -> 1): open, closed, endgame, queenless, imbalance, attack
-  - MicroNNUE    (768 -> 16x2 -> 1):        micro, volatility
+Generates or seeds baseline NNUE network binaries for all 6 Standard Expert models and the Unified SharedMoENNUE:
+  - StandardNNUE (12288 -> 512x2 -> 64 -> 1): open, closed, endgame, queenless, imbalance, attack
+  - SharedMoENNUE (12288 -> 512x2 -> 6 x (64 -> 1)): anak.nnue
 If trained checkpoints exist in training/checkpoints/, migrates any legacy (256x2 -> 32 -> 1)
 checkpoints into the expanded (512x2 -> 64 -> 1) architecture while preserving learned features
 and perspective-twin antisymmetry, and seeds any missing expert checkpoints.
@@ -10,11 +10,10 @@ and perspective-twin antisymmetry, and seeds any missing expert checkpoints.
 import os
 import shutil
 import torch
-from model import StandardNNUE, MicroNNUE, clamp_nnue_weights
-from export import export_standard, export_micro
+from model import StandardNNUE, SharedMoENNUE, clamp_nnue_weights
+from export import export_standard, export_moe
 
 STANDARD_MODELS = ["open", "closed", "endgame", "queenless", "imbalance", "attack"]
-MICRO_MODELS = ["micro", "volatility"]
 
 
 def load_or_migrate_standard_checkpoint(net: StandardNNUE, ckpt_path: str) -> bool:
@@ -88,12 +87,11 @@ def main():
     os.makedirs(training_net_dir, exist_ok=True)
     os.makedirs(checkpoints_dir, exist_ok=True)
 
-    print(f"Preparing all 8 Multi-Expert NNUE networks into: {output_dir}")
+    print(f"Preparing all 6 Expert + Unified MoE NNUE networks into: {output_dir}")
     torch.manual_seed(42)
 
     open_ckpt = os.path.join(checkpoints_dir, "open_best.pt")
     closed_ckpt = os.path.join(checkpoints_dir, "closed_best.pt")
-    micro_ckpt = os.path.join(checkpoints_dir, "micro_best.pt")
 
     # First migrate open_best.pt and closed_best.pt if they exist so seeded models inherit upgraded weights
     for base_ckpt in (open_ckpt, closed_ckpt):
@@ -131,24 +129,19 @@ def main():
         export_standard(net, out_path)
         shutil.copy2(out_path, os.path.join(training_net_dir, f"{m}.nnue"))
 
-    for m in MICRO_MODELS:
-        ckpt_path = os.path.join(checkpoints_dir, f"{m}_best.pt")
-        net = MicroNNUE()
-        if os.path.isfile(ckpt_path):
-            net.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
-        elif os.path.isfile(micro_ckpt):
-            shutil.copy2(micro_ckpt, ckpt_path)
-            net.load_state_dict(torch.load(ckpt_path, map_location="cpu"))
-            print(f"  [Seeded] {m}_best.pt from micro_best.pt")
-        else:
-            clamp_nnue_weights(net)
-            torch.save(net.state_dict(), ckpt_path)
+    moe_net = SharedMoENNUE()
+    moe_ckpt = os.path.join(checkpoints_dir, "moe_best.pt")
+    if os.path.isfile(moe_ckpt):
+        moe_net.load_state_dict(torch.load(moe_ckpt, map_location="cpu"))
+    else:
+        clamp_nnue_weights(moe_net)
+        torch.save(moe_net.state_dict(), moe_ckpt)
 
-        out_path = os.path.join(output_dir, f"{m}.nnue")
-        export_micro(net, out_path)
-        shutil.copy2(out_path, os.path.join(training_net_dir, f"{m}.nnue"))
+    moe_out = os.path.join(output_dir, "anak.nnue")
+    export_moe(moe_net, moe_out)
+    shutil.copy2(moe_out, os.path.join(training_net_dir, "anak.nnue"))
 
-    print("All 8 Multi-Expert NNUE networks generated and synced successfully!")
+    print("All 6 Expert + Unified MoE NNUE networks generated and synced successfully!")
 
 
 if __name__ == "__main__":

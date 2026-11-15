@@ -10,7 +10,7 @@ namespace Anak.Protocol.Uci;
 
 /// <summary>
 /// Glues the UCI protocol commands to the underlying chess engine components:
-/// Board state, MCTSEngine search, PolyGlot opening book, Syzygy tablebases, and evaluation.
+/// Board state, AlphaBetaEngine search, PolyGlot opening book, Syzygy tablebases, and evaluation.
 /// </summary>
 public sealed class UciEngineAdapter
 {
@@ -18,8 +18,6 @@ public sealed class UciEngineAdapter
     private readonly UciOptionRegistry _options;
     private readonly IEvaluator _evaluator;
     private readonly AlphaBetaEngine _alphaBetaEngine;
-    private readonly MCTSEngine _mctsEngine;
-    private ISearchEngine _activeEngine;
     private Board _board;
     private readonly List<Move> _gameMoves = new();
     private readonly Anak.Data.PolyGlot.PolyGlotBook _book = new();
@@ -27,6 +25,7 @@ public sealed class UciEngineAdapter
 
     private CancellationTokenSource? _searchCts;
     private Task? _searchTask;
+    private bool _searchHasTrace;
     private long _searchSessionId;
     private readonly object _syncLock = new();
 
@@ -35,7 +34,7 @@ public sealed class UciEngineAdapter
     public IReadOnlyList<Move> GameMoves => _gameMoves;
     public bool IsSearching => _searchTask != null && !_searchTask.IsCompleted;
     public IEvaluator Evaluator => _evaluator;
-    public ISearchEngine ActiveEngine => _activeEngine;
+    public ISearchEngine ActiveEngine => _alphaBetaEngine;
 
     public UciEngineAdapter(Action<string> outputWriter)
     {
@@ -45,32 +44,15 @@ public sealed class UciEngineAdapter
         // Instantiate evaluation engine
         _evaluator = CreateEvaluator();
 
-        // Instantiate search engines (AlphaBeta Minimax as default, MCTS as alternative)
+        // Instantiate Alpha-Beta search engine
         _alphaBetaEngine = new AlphaBetaEngine(_evaluator, defaultHashMb: _options.Hash.Value)
         {
             Threads = _options.Threads.Value
         };
-        _mctsEngine = new MCTSEngine(_evaluator, defaultHashMb: _options.Hash.Value)
-        {
-            Threads = _options.Threads.Value
-        };
-        _activeEngine = _options.SearchAlgorithm.Value.Equals("Mcts", StringComparison.OrdinalIgnoreCase)
-            ? _mctsEngine
-            : _alphaBetaEngine;
 
         // Subscribe to UCI option change notifications
-        _options.SearchAlgorithm.ValueChanged += alg =>
-        {
-            lock (_syncLock)
-            {
-                _activeEngine = alg.Equals("Mcts", StringComparison.OrdinalIgnoreCase)
-                    ? _mctsEngine
-                    : _alphaBetaEngine;
-            }
-        };
         _options.Hash.ValueChanged += OnHashChanged;
         _options.Threads.ValueChanged += OnThreadsChanged;
-
 
         // Wire opening book
         _book.LoadOrDefault(_options.BookFile.Value);
@@ -81,19 +63,11 @@ public sealed class UciEngineAdapter
         _options.OwnBook.ValueChanged += enabled => _book.OwnBook = enabled;
         _options.BookMode.ValueChanged += modeStr => _book.Mode = ParseBookMode(modeStr);
 
-        // Wire MCTS search randomness and temperature
-        _mctsEngine.Parameters.MoveRandomness = _options.MoveRandomness.Value;
-        _mctsEngine.Parameters.Temperature = _options.Temperature.Value / 100.0f;
-
-        _options.MoveRandomness.ValueChanged += val => _mctsEngine.Parameters.MoveRandomness = val;
-        _options.Temperature.ValueChanged += val => _mctsEngine.Parameters.Temperature = val / 100.0f;
-
         // Wire NNUE evaluator options
         if (_evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue)
         {
             nnue.UseNnue = _options.UseNnue.Value;
             nnue.NnueDirectory = _options.NnuePath.Value;
-            nnue.BlunderWatchdog = _options.BlunderWatchdog.Value;
             nnue.LoadFromDirectory(_options.NnuePath.Value);
 
             _options.UseNnue.ValueChanged += val => nnue.UseNnue = val;
@@ -102,7 +76,6 @@ public sealed class UciEngineAdapter
                 nnue.NnueDirectory = path;
                 nnue.LoadFromDirectory(path);
             };
-            _options.BlunderWatchdog.ValueChanged += val => nnue.BlunderWatchdog = val;
 
             // Tunable expert routing: rebuild the immutable routing config whenever any routing option changes
             void RebuildRouting()
@@ -157,11 +130,6 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.RfpImprovingMultiplier = _options.RfpImprovingMultiplier.Value;
         _alphaBetaEngine.SingularMargin = _options.SingularMargin.Value;
         _alphaBetaEngine.QsDeltaMargin = _options.QsDeltaMargin.Value;
-        _alphaBetaEngine.MicroMaxShare = _options.MicroMaxShare.Value;
-        _alphaBetaEngine.MicroMinTime = _options.MicroMinTime.Value;
-        _alphaBetaEngine.MicroDepthGate = _options.MicroDepthGate.Value;
-        _alphaBetaEngine.MicroAheadWeight = _options.MicroAheadWeight.Value;
-        _alphaBetaEngine.MicroEqualWeight = _options.MicroEqualWeight.Value;
         _alphaBetaEngine.TimeMovesToGo = _options.TimeMovesToGo.Value;
         _alphaBetaEngine.TimeIncFactor = _options.TimeIncFactor.Value;
         _alphaBetaEngine.TimeHardMultiplier = _options.TimeHardMultiplier.Value;
@@ -188,11 +156,6 @@ public sealed class UciEngineAdapter
         _options.HistoryMaxMalus.ValueChanged += val => HistoryTable.MaxMalus = val;
         _options.CorrHistDivisor.ValueChanged += val => CorrectionHistory.WeightDivisor = val;
         _options.CorrHistMax.ValueChanged += val => CorrectionHistory.MaxCorrection = val;
-        _options.MicroMaxShare.ValueChanged += val => _alphaBetaEngine.MicroMaxShare = val;
-        _options.MicroMinTime.ValueChanged += val => _alphaBetaEngine.MicroMinTime = val;
-        _options.MicroDepthGate.ValueChanged += val => _alphaBetaEngine.MicroDepthGate = val;
-        _options.MicroAheadWeight.ValueChanged += val => _alphaBetaEngine.MicroAheadWeight = val;
-        _options.MicroEqualWeight.ValueChanged += val => _alphaBetaEngine.MicroEqualWeight = val;
         _options.TimeMovesToGo.ValueChanged += val => _alphaBetaEngine.TimeMovesToGo = val;
         _options.TimeIncFactor.ValueChanged += val => _alphaBetaEngine.TimeIncFactor = val;
         _options.TimeHardMultiplier.ValueChanged += val => _alphaBetaEngine.TimeHardMultiplier = val;
@@ -211,7 +174,6 @@ public sealed class UciEngineAdapter
         lock (_syncLock)
         {
             _alphaBetaEngine.TranspositionTable.Resize(hashMb);
-            _mctsEngine.TranspositionTable.Resize(hashMb);
         }
     }
 
@@ -221,7 +183,6 @@ public sealed class UciEngineAdapter
         {
             int t = Math.Max(1, threads);
             _alphaBetaEngine.Threads = t;
-            _mctsEngine.Threads = t;
         }
     }
 
@@ -233,6 +194,8 @@ public sealed class UciEngineAdapter
     {
         lock (_syncLock)
         {
+            // isready may arrive during go; never let a warmup overwrite a live diagnostic trace.
+            if (_searchHasTrace && IsSearching) return;
             Board b = Fen.Parse(Fen.StartPosition);
             _evaluator.Evaluate(in b, ReadOnlySpan<Move>.Empty);
             _alphaBetaEngine.Search(in b, new SearchLimits { Depth = 1 });
@@ -254,8 +217,6 @@ public sealed class UciEngineAdapter
             _alphaBetaEngine.TranspositionTable.Clear();
             _alphaBetaEngine.ClearHistory();
             _alphaBetaEngine.ResetLastRootExpert();
-            _mctsEngine.TranspositionTable.Clear();
-            _mctsEngine.ClearHistory();
             _gameMoves.Clear();
             _board = Fen.Parse(Fen.StartPosition);
         }
@@ -314,27 +275,42 @@ public sealed class UciEngineAdapter
             long currentSession = Interlocked.Increment(ref _searchSessionId);
             _searchCts = new CancellationTokenSource();
             var token = _searchCts.Token;
+            string tracePath = _options.SearchTraceFile.Value;
+            _searchHasTrace = !string.IsNullOrEmpty(tracePath) && tracePath != "<empty>";
 
-            // 1. Check opening book if enabled
-            if (_options.OwnBook.Value && _book.TryGetMove(in _board, out Move bookMove))
+            try
             {
-                _outputWriter($"info depth 1 score cp 0 pv {bookMove.ToUci()}");
-                _outputWriter($"info string book hit {bookMove.ToUci()}");
-                _outputWriter($"bestmove {bookMove.ToUci()}");
-                return;
+                // 1. Check opening book if enabled
+                if (_options.OwnBook.Value && _book.TryGetMove(in _board, out Move bookMove))
+                {
+                    using (SearchTraceWriter.Open(tracePath, _board.ZobristKey)) { }
+                    _outputWriter($"info depth 1 score cp 0 pv {bookMove.ToUci()}");
+                    _outputWriter($"info string book hit {bookMove.ToUci()}");
+                    _outputWriter($"bestmove {bookMove.ToUci()}");
+                    return;
+                }
+
+                // 2. Check Syzygy tablebases at root (only for wins that survive the 50-move rule; for draws/losses and
+                //    cursed wins let search find the most active move). The piece limit follows the loaded table files.
+                if (_tablebase.MaxPieces > 0 &&
+                    BitOperations.PopCount(_board.Occupied) <= _tablebase.MaxPieces &&
+                    _tablebase.TryProbeDtz(in _board, out Move tbMove, out int dtzScore) &&
+                    dtzScore > 0 && dtzScore + _board.HalfmoveClock <= 100)
+                {
+                    using (SearchTraceWriter.Open(tracePath, _board.ZobristKey)) { }
+                    int scoreCp = 20000 - dtzScore;
+                    _outputWriter($"info depth 1 score cp {scoreCp} tbhits {_tablebase.TbHits} pv {tbMove.ToUci()}");
+                    _outputWriter($"info string syzygy hit DTZ={dtzScore} (win)");
+                    _outputWriter($"bestmove {tbMove.ToUci()}");
+                    return;
+                }
             }
-
-            // 2. Check Syzygy tablebases at root (only for wins that survive the 50-move rule; for draws/losses and
-            //    cursed wins let search find the most active move). The piece limit follows the loaded table files.
-            if (_tablebase.MaxPieces > 0 &&
-                BitOperations.PopCount(_board.Occupied) <= _tablebase.MaxPieces &&
-                _tablebase.TryProbeDtz(in _board, out Move tbMove, out int dtzScore) &&
-                dtzScore > 0 && dtzScore + _board.HalfmoveClock <= 100)
+            catch (Exception ex)
             {
-                int scoreCp = 20000 - dtzScore;
-                _outputWriter($"info depth 1 score cp {scoreCp} tbhits {_tablebase.TbHits} pv {tbMove.ToUci()}");
-                _outputWriter($"info string syzygy hit DTZ={dtzScore} (win)");
-                _outputWriter($"bestmove {tbMove.ToUci()}");
+                _outputWriter($"info string search error: {ex.Message}");
+                MoveList legalMoves = default;
+                _board.GenerateLegalMoves(ref legalMoves);
+                _outputWriter($"bestmove {(legalMoves.Count > 0 ? legalMoves[0].ToUci() : "0000")}");
                 return;
             }
 
@@ -345,7 +321,8 @@ public sealed class UciEngineAdapter
             {
                 try
                 {
-                    Move bestMove = _activeEngine.Search(
+                    _alphaBetaEngine.SearchTraceFile = tracePath;
+                    Move bestMove = _alphaBetaEngine.Search(
                         in searchBoard,
                         in limits,
                         stats =>
@@ -394,7 +371,11 @@ public sealed class UciEngineAdapter
                         _outputWriter($"bestmove {fallback}");
                     }
                 }
-            }, token);
+                finally
+                {
+                    _alphaBetaEngine.SearchTraceFile = string.Empty;
+                }
+            }, _searchHasTrace ? CancellationToken.None : token);
         }
     }
 
@@ -423,7 +404,8 @@ public sealed class UciEngineAdapter
             try
             {
                 // Await search task completion with a brief timeout to avoid deadlocks
-                _searchTask.Wait(500);
+                if (_searchHasTrace) _searchTask.GetAwaiter().GetResult();
+                else _searchTask.Wait(500);
             }
             catch
             {

@@ -7,7 +7,7 @@ namespace Anak.Core;
 /// <summary>
 /// High-performance bitboard Static Exchange Evaluation (SEE).
 /// Determines the static material outcome (gain/loss in centipawns) of a sequence of captures on a target square.
-/// Used to heavily penalize losing captures in MCTS policy priors and accurately resolve leaf captures.
+/// Used for move ordering, pruning losing captures, and resolving leaf captures.
 /// </summary>
 [SkipLocalsInit]
 public static class StaticExchangeEvaluator

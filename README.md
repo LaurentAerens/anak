@@ -117,6 +117,10 @@ dotnet run --project src/Anak.Protocol -c Release -- --perft 5
 
 ## Experimental Sub-Projects: Zanak (ZAP Engine)
 
+### Search visualization movies
+
+The [Search Movie tool](tools/search_movie/README.md) runs Anak and Zanak on a FEN at a chosen depth and exports a side-by-side MP4 or looping GIF. The default view uses real UCI reports for animated boards, reported-PV trees, and evaluation history. Optional `--all-lines` records one search thread per engine and replays its actual chronological visits as one persistent, growing tree without boards or page switches. Independent per-engine clocks can limit work at any requested depth; `--same-speed` aligns recorded search times so the faster engine visibly finishes first. Tracing is disabled during normal engine use.
+
 **Zanak** (Zap-Anak) is an experimental standalone sub-project located in [`src/Zanak/`](src/Zanak/) exploring the **ZAP** (Zero-branching Accelerated Probe) search paradigm as an alternative to recursive alpha-beta minimax trees.
 
 - **Zero-Branching Linear Probing**: Fast $O(D)$ greedy spine traces across all legal root moves for instantaneous anytime evaluation.

@@ -274,10 +274,7 @@ public sealed class UciOptionRegistry
     public SpinOption SyzygyProbeDepth { get; }
     public CheckOption UseNnue { get; }
     public StringOption NnuePath { get; }
-    public CheckOption BlunderWatchdog { get; }
-    public SpinOption MoveRandomness { get; }
-    public SpinOption Temperature { get; }
-    public ComboOption SearchAlgorithm { get; }
+    public StringOption SearchTraceFile { get; }
     public SpinOption LmrBase { get; }
     public SpinOption LmrDivision { get; }
     public SpinOption RfpMargin { get; }
@@ -295,11 +292,6 @@ public sealed class UciOptionRegistry
     public SpinOption HistoryMaxMalus { get; }
     public SpinOption CorrHistDivisor { get; }
     public SpinOption CorrHistMax { get; }
-    public SpinOption MicroMaxShare { get; }
-    public SpinOption MicroMinTime { get; }
-    public SpinOption MicroDepthGate { get; }
-    public SpinOption MicroAheadWeight { get; }
-    public SpinOption MicroEqualWeight { get; }
     public SpinOption TimeMovesToGo { get; }
     public SpinOption TimeIncFactor { get; }
     public SpinOption TimeHardMultiplier { get; }
@@ -316,7 +308,7 @@ public sealed class UciOptionRegistry
 
     public UciOptionRegistry()
     {
-        SearchAlgorithm = new ComboOption("SearchAlgorithm", defaultValue: "Minimax", ["Minimax", "Mcts"]);
+        SearchTraceFile = new StringOption("SearchTraceFile", defaultValue: string.Empty);
         Hash = new SpinOption("Hash", defaultValue: 64, min: 1, max: 65536);
         Threads = new SpinOption("Threads", defaultValue: 1, min: 1, max: 256);
         OwnBook = new CheckOption("OwnBook", defaultValue: true);
@@ -326,9 +318,6 @@ public sealed class UciOptionRegistry
         SyzygyProbeDepth = new SpinOption("SyzygyProbeDepth", defaultValue: 1, min: 1, max: 100);
         UseNnue = new CheckOption("UseNnue", defaultValue: true);
         NnuePath = new StringOption("NnuePath", defaultValue: "./networks");
-        BlunderWatchdog = new CheckOption("BlunderWatchdog", defaultValue: false);
-        MoveRandomness = new SpinOption("MoveRandomness", defaultValue: 10, min: 0, max: 100);
-        Temperature = new SpinOption("Temperature", defaultValue: 0, min: 0, max: 100);
         LmrBase = new SpinOption("LmrBase", defaultValue: 83, min: 0, max: 250);
         LmrDivision = new SpinOption("LmrDivision", defaultValue: 224, min: 50, max: 500);
         RfpMargin = new SpinOption("RfpMargin", defaultValue: 77, min: 10, max: 300);
@@ -346,11 +335,6 @@ public sealed class UciOptionRegistry
         HistoryMaxMalus = new SpinOption("HistoryMaxMalus", defaultValue: 2000, min: 200, max: 5000);
         CorrHistDivisor = new SpinOption("CorrHistDivisor", defaultValue: SearchHeuristics.TunedCorrHistDivisor, min: 256, max: 8192);
         CorrHistMax = new SpinOption("CorrHistMax", defaultValue: SearchHeuristics.TunedCorrHistMax, min: 16, max: 256);
-        MicroMaxShare = new SpinOption("MicroMaxShare", defaultValue: 6, min: 1, max: 20);
-        MicroMinTime = new SpinOption("MicroMinTime", defaultValue: 25, min: 10, max: 60);
-        MicroDepthGate = new SpinOption("MicroDepthGate", defaultValue: 85, min: 50, max: 100);
-        MicroAheadWeight = new SpinOption("MicroAheadWeight", defaultValue: 100, min: 25, max: 200);
-        MicroEqualWeight = new SpinOption("MicroEqualWeight", defaultValue: 73, min: 25, max: 150);
         TimeMovesToGo = new SpinOption("TimeMovesToGo", defaultValue: 38, min: 15, max: 65);
         TimeIncFactor = new SpinOption("TimeIncFactor", defaultValue: 73, min: 20, max: 100);
         TimeHardMultiplier = new SpinOption("TimeHardMultiplier", defaultValue: 181, min: 110, max: 260);
@@ -367,7 +351,7 @@ public sealed class UciOptionRegistry
         ExpertOpenThreshold = new SpinOption("ExpertOpenThreshold", defaultValue: 49, min: 20, max: 80);
         ExpertAttackMinOpenness = new SpinOption("ExpertAttackMinOpenness", defaultValue: 3, min: 0, max: 100);
 
-        Register(SearchAlgorithm);
+        Register(SearchTraceFile);
         Register(Hash);
         Register(Threads);
         Register(OwnBook);
@@ -377,9 +361,6 @@ public sealed class UciOptionRegistry
         Register(SyzygyProbeDepth);
         Register(UseNnue);
         Register(NnuePath);
-        Register(BlunderWatchdog);
-        Register(MoveRandomness);
-        Register(Temperature);
         Register(LmrBase);
         Register(LmrDivision);
         Register(RfpMargin);
@@ -397,11 +378,6 @@ public sealed class UciOptionRegistry
         Register(HistoryMaxMalus);
         Register(CorrHistDivisor);
         Register(CorrHistMax);
-        Register(MicroMaxShare);
-        Register(MicroMinTime);
-        Register(MicroDepthGate);
-        Register(MicroAheadWeight);
-        Register(MicroEqualWeight);
         Register(TimeMovesToGo);
         Register(TimeIncFactor);
         Register(TimeHardMultiplier);

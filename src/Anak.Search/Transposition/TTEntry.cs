@@ -18,11 +18,10 @@ public enum TTFlags : byte
 }
 
 /// <summary>
-/// Packed 32-byte entry for the Transposition Table.
-/// Dual-compatible with both MCTS (Visits, Value, Prior) and Minimax / Alpha-Beta (Depth, Score, Bound).
-/// Two entries fit exactly into a 64-byte CPU cache line.
+/// Packed 20-byte entry for the Alpha-Beta Transposition Table.
+/// Three entries fit into a single 64-byte CPU cache line (60 bytes + 4 bytes cluster padding).
 /// </summary>
-[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 32)]
+[StructLayout(LayoutKind.Sequential, Pack = 4, Size = 20)]
 public struct TTEntry
 {
     public const short MateBound = 29000;
@@ -34,25 +33,14 @@ public struct TTEntry
     public ulong Key;
 
     /// <summary>
-    /// Total visits accumulated across convergent DAG paths for this position (MCTS).
-    /// In Minimax, holds at least 1 or search depth for compatibility.
-    /// </summary>
-    public uint Visits;
-
-    /// <summary>
-    /// Mean value Q in [-1.0, 1.0] from the perspective of the side to move (MCTS).
-    /// </summary>
-    public float Value;
-
-    /// <summary>
-    /// Prior probability or policy prior for this state (MCTS).
-    /// </summary>
-    public float Prior;
-
-    /// <summary>
-    /// Centipawn score relative to side to move (Minimax).
+    /// Centipawn score relative to side to move.
     /// </summary>
     public short Score;
+
+    /// <summary>
+    /// Cached raw static evaluation (centipawns) relative to side to move, or short.MinValue if uncomputed.
+    /// </summary>
+    public short StaticEval;
 
     /// <summary>
     /// Best move found from this position.
@@ -60,7 +48,7 @@ public struct TTEntry
     public Move BestMove;
 
     /// <summary>
-    /// Search depth (Minimax).
+    /// Search depth.
     /// </summary>
     public byte Depth;
 
@@ -75,60 +63,29 @@ public struct TTEntry
     public TTFlags Flags;
 
     /// <summary>
-    /// ID of the specialized NNUE expert model that evaluated or searched this entry.
-    /// Dual-purpose: safely isolates score cutoffs across disparate neural evaluation domains,
-    /// while retaining best-move ordering and multi-ply memory when returning to this expert.
+    /// ID of the specialized NNUE expert model that evaluated or searched this entry (0 in unified ArchMoE mode).
     /// </summary>
     public byte ExpertId;
 
     /// <summary>
-    /// Cached raw static evaluation (centipawns) relative to side to move, or short.MinValue if uncomputed.
-    /// </summary>
-    public short StaticEval;
-
-    /// <summary>
-    /// Padding field to ensure struct size is exactly 32 bytes.
-    /// 8 + 4 + 4 + 4 + 2 + 2 + 1 + 1 + 1 + 1 + 2 + 2 = 32 bytes.
+    /// Padding field to ensure struct size is exactly 20 bytes (8 + 2 + 2 + 2 + 1 + 1 + 1 + 1 + 2 = 20).
     /// </summary>
     private readonly short _pad1;
 
     /// <summary>
-    /// Minimax / Alpha-Beta constructor.
+    /// Alpha-Beta Transposition Table entry constructor.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public TTEntry(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId = 0, short staticEval = short.MinValue)
     {
         Key = key;
-        Visits = Math.Max(1u, (uint)depth);
-        Value = 0.0f;
-        Prior = 0.0f;
         Score = score;
+        StaticEval = staticEval;
         BestMove = bestMove;
         Depth = depth;
         Age = age;
         Flags = flags;
         ExpertId = expertId;
-        StaticEval = staticEval;
-        _pad1 = 0;
-    }
-
-    /// <summary>
-    /// MCTS constructor.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public TTEntry(ulong key, Move bestMove, uint visits, float value, float prior, byte age, TTFlags flags = TTFlags.Exact)
-    {
-        Key = key;
-        Visits = visits;
-        Value = value;
-        Prior = prior;
-        Score = 0;
-        BestMove = bestMove;
-        Depth = 0;
-        Age = age;
-        Flags = flags;
-        ExpertId = 0;
-        StaticEval = short.MinValue;
         _pad1 = 0;
     }
 
@@ -164,7 +121,7 @@ public struct TTEntry
     public readonly bool IsValid
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => Key != 0 && (Visits > 0 || Depth > 0 || Flags != TTFlags.None);
+        get => Key != 0 && (Depth > 0 || Flags != TTFlags.None);
     }
 
     /// <summary>
@@ -174,15 +131,12 @@ public struct TTEntry
     public void Reset()
     {
         Key = 0;
-        Visits = 0;
-        Value = 0.0f;
-        Prior = 0.0f;
         Score = 0;
+        StaticEval = short.MinValue;
         BestMove = Move.Null;
         Depth = 0;
         Age = 0;
         Flags = TTFlags.None;
         ExpertId = 0;
-        StaticEval = short.MinValue;
     }
 }

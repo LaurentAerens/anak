@@ -7,7 +7,7 @@ namespace Anak.Data.Nnue;
 
 /// <summary>
 /// Ultra-fast zero-allocation SIMD inference kernels with AVX-512, AVX-512 VNNI, AVX2 VNNI,
-/// and AVX2 hardware acceleration for Standard and Micro NNUE models.
+/// and AVX2 hardware acceleration for Standard and Shared-FT Multi-Expert (MoE) NNUE models.
 /// </summary>
 [SkipLocalsInit]
 public static unsafe class NnueInference
@@ -22,71 +22,80 @@ public static unsafe class NnueInference
         short* ourAcc = sideToMove == Color.White ? whiteAcc : blackAcc;
         short* theirAcc = sideToMove == Color.White ? blackAcc : whiteAcc;
 
-        return weights.IsMicro
-            ? EvaluateMicro(ourAcc, theirAcc, weights)
-            : EvaluateStandard(ourAcc, theirAcc, weights);
+        return EvaluateStandard(ourAcc, theirAcc, weights);
     }
 
     /// <summary>
-    /// Inference kernel for Micro NNUE (768 -> 16x2 -> 1).
-    /// Concatenates 16+16=32 inputs directly into a single SIMD dot product.
+    /// Evaluates a specific expert head of a Shared-FT Multi-Expert (ArchMoE) network.
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int EvaluateMicro(short* ourAcc, short* theirAcc, NnueWeights weights)
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public static int EvaluateMoE(short* whiteAcc, short* blackAcc, NnueWeights weights, Color sideToMove, int expertIndex)
     {
-        short* outputWeights = weights.OutputWeights;
-        int sum = weights.OutputBias;
+        short* ourAcc = sideToMove == Color.White ? whiteAcc : blackAcc;
+        short* theirAcc = sideToMove == Color.White ? blackAcc : whiteAcc;
 
-        if (Avx512BW.IsSupported)
-        {
-            Vector512<short> vAcc = Vector512.Create(Vector256.Load(ourAcc), Vector256.Load(theirAcc));
-            Vector512<short> vZero = Vector512<short>.Zero;
-            Vector512<short> vMax = Vector512.Create((short)NnueConstants.ClippedReluMax);
+        int halfDim = weights.HiddenDim;
+        int inputDim = halfDim * 2;
+        int l1Dim = weights.L1Dim;
+        byte* pAct = stackalloc byte[1024];
 
-            Vector512<short> vClipped = Vector512.Min(Vector512.Max(vAcc, vZero), vMax);
-            Vector512<short> w = Vector512.Load(outputWeights);
+        ActivateFeatures(ourAcc, theirAcc, pAct, halfDim);
 
-            Vector512<int> prod = Avx512BW.MultiplyAddAdjacent(vClipped, w);
-            sum += Vector512.Sum(prod);
-        }
-        else if (Avx2.IsSupported)
-        {
-            // Load 16 shorts from ourAcc and 16 shorts from theirAcc
-            Vector256<short> vOur = Vector256.Load(ourAcc);
-            Vector256<short> vTheir = Vector256.Load(theirAcc);
+        int finalSum = weights.GetOutputBias(expertIndex) + ComputeHiddenAndOutputLayers(
+            pAct,
+            weights.GetHiddenWeights(expertIndex),
+            weights.GetHiddenBiases(expertIndex),
+            weights.GetOutputWeights(expertIndex),
+            inputDim,
+            l1Dim);
 
-            // ClippedReLU: clamp(x, 0, 127)
-            Vector256<short> vZero = Vector256<short>.Zero;
-            Vector256<short> vMax = Vector256.Create((short)NnueConstants.ClippedReluMax);
+        return (finalSum * 25) / 1024;
+    }
 
-            Vector256<short> vOurClipped = Vector256.Min(Vector256.Max(vOur, vZero), vMax);
-            Vector256<short> vTheirClipped = Vector256.Min(Vector256.Max(vTheir, vZero), vMax);
+    /// <summary>
+    /// Evaluates and smoothly blends two expert heads (<paramref name="expertA"/> and <paramref name="expertB"/>)
+    /// using a single shared SCReLU feature activation pass.
+    /// <paramref name="alpha256"/> is the fixed-point blend weight in [0..256] (0 = 100% expertA, 256 = 100% expertB).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public static int EvaluateMoEBlended(
+        short* whiteAcc,
+        short* blackAcc,
+        NnueWeights weights,
+        Color sideToMove,
+        int expertA,
+        int expertB,
+        int alpha256)
+    {
+        short* ourAcc = sideToMove == Color.White ? whiteAcc : blackAcc;
+        short* theirAcc = sideToMove == Color.White ? blackAcc : whiteAcc;
 
-            // Dot product with output weights
-            Vector256<short> wOur = Vector256.Load(outputWeights);
-            Vector256<short> wTheir = Vector256.Load(outputWeights + 16);
+        int halfDim = weights.HiddenDim;
+        int inputDim = halfDim * 2;
+        int l1Dim = weights.L1Dim;
+        byte* pAct = stackalloc byte[1024];
 
-            // Multiply and horizontal add to 32-bit integers
-            Vector256<int> prodOur = Avx2.MultiplyAddAdjacent(vOurClipped, wOur);
-            Vector256<int> prodTheir = Avx2.MultiplyAddAdjacent(vTheirClipped, wTheir);
+        ActivateFeatures(ourAcc, theirAcc, pAct, halfDim);
 
-            sum += Vector256.Sum(prodOur + prodTheir);
-        }
-        else
-        {
-            for (int i = 0; i < 16; i++)
-            {
-                short clipped = Math.Clamp(ourAcc[i], (short)0, NnueConstants.ClippedReluMax);
-                sum += clipped * outputWeights[i];
-            }
-            for (int i = 0; i < 16; i++)
-            {
-                short clipped = Math.Clamp(theirAcc[i], (short)0, NnueConstants.ClippedReluMax);
-                sum += clipped * outputWeights[16 + i];
-            }
-        }
+        int sumA = weights.GetOutputBias(expertA) + ComputeHiddenAndOutputLayers(
+            pAct,
+            weights.GetHiddenWeights(expertA),
+            weights.GetHiddenBiases(expertA),
+            weights.GetOutputWeights(expertA),
+            inputDim,
+            l1Dim);
 
-        return (sum * 25) / 1024;
+        int sumB = weights.GetOutputBias(expertB) + ComputeHiddenAndOutputLayers(
+            pAct,
+            weights.GetHiddenWeights(expertB),
+            weights.GetHiddenBiases(expertB),
+            weights.GetOutputWeights(expertB),
+            inputDim,
+            l1Dim);
+
+        int cpA = (sumA * 25) / 1024;
+        int cpB = (sumB * 25) / 1024;
+        return (((256 - alpha256) * cpA) + (alpha256 * cpB) + 128) >> 8;
     }
 
     /// <summary>

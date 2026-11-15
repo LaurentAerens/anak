@@ -15,17 +15,24 @@ public struct ZapTrajectoryStep
     public ulong ZobristKey;
     public Move Move;
     public Color SideToMove;
+    public short ParentEval;
     public short StaticEval;
     public short EvalDelta;
 
-    public ZapTrajectoryStep(BoardState state, ulong zobristKey, Move move, Color sideToMove, short staticEval, short evalDelta)
+    public ZapTrajectoryStep(BoardState state, ulong zobristKey, Move move, Color sideToMove, short parentEval, short staticEval, short evalDelta)
     {
         State = state;
         ZobristKey = zobristKey;
         Move = move;
         SideToMove = sideToMove;
+        ParentEval = parentEval;
         StaticEval = staticEval;
         EvalDelta = evalDelta;
+    }
+
+    public ZapTrajectoryStep(BoardState state, ulong zobristKey, Move move, Color sideToMove, short staticEval, short evalDelta)
+        : this(state, zobristKey, move, sideToMove, (short)(staticEval - evalDelta), staticEval, evalDelta)
+    {
     }
 }
 

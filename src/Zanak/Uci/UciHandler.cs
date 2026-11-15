@@ -24,6 +24,7 @@ public sealed class UciHandler : IDisposable
     private Move _lastMove = Move.Null;
     private CancellationTokenSource? _searchCts;
     private Task? _searchTask;
+    private string? _nnueError;
 
     public UciHandler(TextReader input, TextWriter output)
     {
@@ -77,6 +78,17 @@ public sealed class UciHandler : IDisposable
         }
         else if (cmd.Equals("isready", StringComparison.OrdinalIgnoreCase))
         {
+            bool isSearching;
+            lock (_stateLock)
+            {
+                isSearching = _searchTask is { IsCompleted: false };
+            }
+
+            if (!isSearching && _nnueError == null)
+            {
+                _search.EnsureWarmedUp();
+            }
+
             SendLine("readyok");
         }
         else if (cmd.Equals("ucinewgame", StringComparison.OrdinalIgnoreCase))
@@ -112,8 +124,13 @@ public sealed class UciHandler : IDisposable
     {
         SendLine("id name Zanak");
         SendLine("id author Anak Team");
-        SendLine("option name Threads type spin default 1 min 1 max 128");
+        SendLine($"option name Threads type spin default {_params.DefaultThreads} min 1 max 128");
         SendLine("option name Hash type spin default 64 min 1 max 65536");
+        SendLine("option name SearchTraceFile type string default <empty>");
+        SendLine("option name PickupTraceFile type string default <empty>");
+        SendLine($"option name InterleaveRootSeeding type check default {_params.InterleaveRootSeeding.ToString().ToLowerInvariant()}");
+        SendLine($"option name PickupCostWeight type spin default {_params.CrosspointCostWeight} min 0 max 100");
+        SendLine($"option name NnuePath type string default {_search.NnueEvaluator?.NnueDirectory}");
         SendLine($"option name ShockThreshold type spin default {_params.ShockThresholdCp} min 10 max 500");
         SendLine($"option name DeadStemMargin type spin default {_params.DeadStemPruneMarginCp} min 50 max 1000");
         SendLine($"option name HardAspirationMargin type spin default {_params.HardAspirationMarginCp} min 20 max 500");
@@ -169,10 +186,45 @@ public sealed class UciHandler : IDisposable
 
         if (nameIdx >= 0 && valIdx > nameIdx)
         {
+            StopSearch();
             string optName = string.Join(' ', tokens[(nameIdx + 1)..valIdx]);
             string optVal = string.Join(' ', tokens[(valIdx + 1)..]);
 
-            if (optName.Equals("Hash", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int hashMb))
+            if (optName.Equals("SearchTraceFile", StringComparison.OrdinalIgnoreCase))
+            {
+                _search.SearchTraceFile = optVal == "<empty>" ? string.Empty : optVal;
+            }
+            else if (optName.Equals("PickupTraceFile", StringComparison.OrdinalIgnoreCase))
+            {
+                _search.PickupTraceFile = optVal == "<empty>" ? string.Empty : optVal;
+            }
+            else if (optName.Equals("InterleaveRootSeeding", StringComparison.OrdinalIgnoreCase) && bool.TryParse(optVal, out bool interleave))
+            {
+                _params.InterleaveRootSeeding = interleave;
+            }
+            else if (optName.Equals("PickupCostWeight", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int costWeight))
+            {
+                _params.CrosspointCostWeight = Math.Clamp(costWeight, 0, 100);
+            }
+            else if (optName.Equals("NnuePath", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    _search.SetNnuePath(optVal);
+                    _nnueError = null;
+                    SendLine($"info string NNUE active directory {_search.NnueEvaluator!.NnueDirectory}");
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+                {
+                    _nnueError = ex.Message;
+                    SendLine($"info string NNUE configuration error: {_nnueError}");
+                }
+            }
+            else if (optName.Equals("Threads", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int threads))
+            {
+                _search.SetWorkerThreads(threads);
+            }
+            else if (optName.Equals("Hash", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int hashMb))
             {
                 _search.TranspositionTable.Resize(hashMb);
             }
@@ -222,7 +274,7 @@ public sealed class UciHandler : IDisposable
             }
             else if (optName.Equals("MaxSiblingExploration", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int maxSib))
             {
-                _params.MaxSiblingExploration = maxSib;
+                _params.MaxSiblingExploration = Math.Clamp(maxSib, 1, 32);
             }
             else if (optName.Equals("HyperBulletBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int hbBd))
             {
@@ -384,6 +436,12 @@ public sealed class UciHandler : IDisposable
         {
             StopSearch();
 
+            if (_nnueError != null)
+            {
+                SendLine($"info string Search refused: NNUE configuration error: {_nnueError}");
+                return;
+            }
+
             int wtime = 0, btime = 0, winc = 0, binc = 0, movestogo = 0, movetime = 0, depth = 0;
             bool infinite = false;
 
@@ -421,6 +479,11 @@ public sealed class UciHandler : IDisposable
             {
                 try
                 {
+                    if (_search.NnueEvaluator is { } nnue)
+                    {
+                        nnue.SetRootTopology(in searchBoard);
+                        SendLine($"info string NNUE active directory {nnue.NnueDirectory} expert {nnue.ActiveRootExpert}");
+                    }
                     Move bestMove = _search.Search(
                         in searchBoard,
                         in budget,
@@ -428,6 +491,10 @@ public sealed class UciHandler : IDisposable
                         token,
                         lastMove);
 
+                    if (_search.LastSearchDiagnostics.Length > 0)
+                    {
+                        SendLine($"info string {_search.LastSearchDiagnostics}");
+                    }
                     SendLine(UciOutput.FormatBestMove(bestMove));
                 }
                 catch (OperationCanceledException)
@@ -438,7 +505,8 @@ public sealed class UciHandler : IDisposable
                 {
                     SendLine($"info string Exception: {ex}");
                 }
-            }, token);
+            }, string.IsNullOrEmpty(_search.SearchTraceFile) || _search.SearchTraceFile == "<empty>"
+                ? token : CancellationToken.None);
         }
     }
 
@@ -456,14 +524,15 @@ public sealed class UciHandler : IDisposable
             {
                 try
                 {
-                    _searchTask.Wait(300);
+                    _searchTask.GetAwaiter().GetResult();
                 }
-                catch
+                catch (OperationCanceledException)
                 {
                     // Ignore task cancellation exceptions
                 }
                 _searchTask = null;
             }
+            _searchCts?.Dispose();
             _searchCts = null;
         }
     }

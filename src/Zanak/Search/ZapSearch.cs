@@ -1,8 +1,10 @@
 using System.Numerics;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using Anak.Core;
 using Anak.Data.Evaluation;
 using Anak.Data.Nnue;
+using SearchTraceWriter = Anak.Search.SearchTraceWriter;
 using Zanak.Time;
 
 namespace Zanak.Search;
@@ -26,13 +28,16 @@ public readonly record struct ZapSearchStats(
 /// </summary>
 public sealed class ZapSearch : IDisposable
 {
+    /// <summary>One-line summary of why the last search stopped and what happened to its crosspoints.</summary>
+    public string LastSearchDiagnostics { get; private set; } = string.Empty;
+
     private readonly ZapParams _params;
     private readonly TimeManager _timeManager;
     private readonly ZapSharedState _sharedState = new();
-    private readonly ZapWorkQueue _workQueue = new();
+    private readonly ZapWorkQueue _workQueue;
     private readonly ZapTranspositionTable _tt;
-    private readonly ZapWorkerPool _workerPool;
-    private readonly IEvaluator _evaluator;
+    private ZapWorkerPool _workerPool;
+    private IEvaluator _evaluator;
     private readonly ITablebaseProber? _tablebase;
 
     public ZapParams Parameters => _params;
@@ -41,14 +46,28 @@ public sealed class ZapSearch : IDisposable
     public ZapSharedState SharedState => _sharedState;
     public ZapWorkQueue WorkQueue => _workQueue;
     public ITablebaseProber? Tablebase => _tablebase;
+    public ZanakNnueEvaluator? NnueEvaluator => _evaluator as ZanakNnueEvaluator;
+    public string SearchTraceFile { get; set; } = string.Empty;
+    public string PickupTraceFile { get; set; } = string.Empty;
+    public double RootFilterMs { get; private set; }
+    public long SeedingMs { get; private set; }
+    public long FirstBatchMs => _workerPool.FirstBatchMs;
+    public int SeededRoots { get; private set; }
+    public bool IsWarmedUp => _isWarmedUp;
+    private SearchTraceWriter? _searchTrace;
+    private readonly object _warmupLock = new();
+    private volatile bool _isWarmedUp;
 
     public ZapSearch(ZapParams? parameters = null, TimeManager? timeManager = null, IEvaluator? evaluator = null, ITablebaseProber? tablebase = null)
     {
         _params = parameters ?? ZapParams.Default;
+        _workQueue = new ZapWorkQueue(_params);
         _timeManager = timeManager ?? new TimeManager();
         _tt = new ZapTranspositionTable(_params.DefaultHashMb);
 
-        _evaluator = evaluator ?? CreateDefaultEvaluator();
+        _evaluator = evaluator is not null && evaluator is not IIncrementalEvaluator
+            ? new SynchronizedEvaluator(evaluator)
+            : evaluator ?? CreateDefaultEvaluator();
         _tablebase = tablebase ?? CreateDefaultTablebase();
         _workerPool = new ZapWorkerPool(
             _params.DefaultThreads,
@@ -57,7 +76,8 @@ public sealed class ZapSearch : IDisposable
             _params,
             _evaluator,
             _tt,
-            _tablebase);
+            _tablebase,
+            _timeManager);
     }
 
     private static ITablebaseProber? CreateDefaultTablebase()
@@ -80,18 +100,183 @@ public sealed class ZapSearch : IDisposable
         _workQueue.Clear();
     }
 
-    private static IEvaluator CreateDefaultEvaluator()
+    public void SetWorkerThreads(int threads)
     {
-        try
+        threads = Math.Max(1, threads);
+        _params.DefaultThreads = threads;
+        _workerPool.Dispose();
+        _workerPool = new ZapWorkerPool(
+            threads,
+            _workQueue,
+            _sharedState,
+            _params,
+            _evaluator,
+            _tt,
+            _tablebase,
+            _timeManager);
+        _isWarmedUp = false;
+    }
+
+    private sealed class SynchronizedEvaluator(IEvaluator inner) : IEvaluator, IDisposable
+    {
+        private readonly object _lock = new();
+
+        public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves)
         {
-            var multiTier = new MultiTierNnueEvaluator();
-            if (multiTier.IsActive) return multiTier;
+            lock (_lock) return inner.Evaluate(in board, legalMoves);
         }
-        catch
+
+        public void Dispose()
         {
-            // Fall back to heuristic evaluator if NNUE files cannot be loaded
+            if (inner is IDisposable disposable) disposable.Dispose();
         }
-        return new DefaultEvaluator();
+    }
+
+    private static ZanakNnueEvaluator CreateDefaultEvaluator(string? directory = null)
+    {
+        if (directory != null)
+        {
+            if (!Directory.Exists(directory))
+            {
+                throw new DirectoryNotFoundException($"NNUE directory does not exist: {directory}");
+            }
+
+            string anakPath = Path.Combine(directory, "anak.nnue");
+            if (System.IO.File.Exists(anakPath))
+            {
+                using var weights = NnueWeights.LoadFromFile(anakPath);
+                if (weights == null || !weights.IsMoE)
+                {
+                    throw new InvalidDataException($"Explicit NnuePath has invalid unified MoE model: {anakPath}");
+                }
+            }
+            else
+            {
+                string[] experts = ["open", "closed", "endgame", "queenless", "imbalance", "attack"];
+                foreach (string expert in experts)
+                {
+                    string path = Path.Combine(directory, $"{expert}.nnue");
+                    using var weights = NnueWeights.LoadFromFile(path);
+                    if (weights == null || !weights.IsStandard)
+                    {
+                        throw new InvalidDataException($"Explicit NnuePath requires six valid full experts; cannot load {path}");
+                    }
+                }
+            }
+        }
+
+        var nnue = new ZanakNnueEvaluator(directory);
+        if (nnue.IsActive) return nnue;
+        nnue.Dispose();
+        throw new InvalidOperationException("Zanak requires an active NNUE. Heuristic evaluation must be explicitly injected for diagnostics.");
+    }
+
+    public void SetNnuePath(string directory)
+    {
+        var replacement = CreateDefaultEvaluator(directory == "<embedded>" ? null : directory);
+        Stop();
+        _workerPool.Dispose();
+        if (_evaluator is IDisposable disposable) disposable.Dispose();
+        _evaluator = replacement;
+        _workerPool = new ZapWorkerPool(_params.DefaultThreads, _workQueue, _sharedState, _params, _evaluator, _tt, _tablebase, _timeManager);
+        Clear();
+        _isWarmedUp = false;
+    }
+
+    /// <summary>
+    /// Ensures static tables, NNUE evaluation, policy, probe, and worker pool paths are JIT-compiled
+    /// before search clocks start. Safe to call repeatedly; no-op when already warmed up.
+    /// </summary>
+    public void EnsureWarmedUp()
+    {
+        if (_isWarmedUp) return;
+        lock (_warmupLock)
+        {
+            if (_isWarmedUp) return;
+            Warmup();
+        }
+    }
+
+    /// <summary>
+    /// Explicitly warms up static bitboard tables, NNUE evaluators, greedy policy, probe tracing,
+    /// work queue, and worker threads while preserving diagnostic trace files and leaving search state clean.
+    /// </summary>
+    public void Warmup()
+    {
+        lock (_warmupLock)
+        {
+            string prevTrace = SearchTraceFile;
+            string prevPickupTrace = PickupTraceFile;
+            SearchTraceFile = string.Empty;
+            PickupTraceFile = string.Empty;
+
+            try
+            {
+                ZapTables.EnsureInitialized();
+                RuntimeHelpers.RunClassConstructor(typeof(Bitboard).TypeHandle);
+                RuntimeHelpers.RunClassConstructor(typeof(MagicBitboards).TypeHandle);
+
+                Board startBoard = Fen.Parse(Fen.StartPosition);
+                _evaluator.Evaluate(in startBoard, ReadOnlySpan<Move>.Empty);
+
+                var warmupBudget = new SearchBudget(
+                    SoftLimitMs: 30,
+                    HardLimitMs: 250,
+                    TargetBaseDepth: 2,
+                    MaxDepthHorizon: 3);
+                Search(in startBoard, in warmupBudget, cancellationToken: default);
+
+                var warmupPolicy = new ZapPolicy(_params, _tt);
+                ReadOnlySpan<string> warmupFens =
+                [
+                    "4k3/2b5/8/8/4Q3/8/8/4K3 b - - 0 1",
+                    "3r3k/4P3/8/8/8/8/8/4K3 w - - 0 1",
+                    "8/8/8/8/4k3/8/4P3/4K3 w - - 0 1"
+                ];
+
+                foreach (string fen in warmupFens)
+                {
+                    Board board = Fen.Parse(fen);
+                    if (_evaluator is ZanakNnueEvaluator nnue)
+                    {
+                        nnue.InitSearch(in board);
+                    }
+                    else if (_evaluator is IIncrementalEvaluator incremental)
+                    {
+                        incremental.InitSearch(in board);
+                    }
+
+                    _evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
+
+                    if (warmupPolicy.TryGetQuickMove(in board, 0, out Move quickMove) && !quickMove.IsNull)
+                    {
+                        Piece movedPiece = board.GetPieceAt(quickMove.From);
+                        if (board.MakeMove(quickMove, out BoardState state, movedPiece))
+                        {
+                            if (_evaluator is IIncrementalEvaluator incrementalAfter)
+                            {
+                                incrementalAfter.PushMove(quickMove, movedPiece, state.CapturedPiece, in board);
+                            }
+
+                            _evaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                SearchTraceFile = prevTrace;
+                PickupTraceFile = prevPickupTrace;
+                Clear();
+                _workerPool.ResetDiagnostics();
+                _workerPool.SpineTree.Reset(0);
+                RootFilterMs = 0;
+                SeedingMs = 0;
+                SeededRoots = 0;
+                LastSearchDiagnostics = string.Empty;
+                _isWarmedUp = true;
+            }
+        }
     }
 
     /// <summary>
@@ -104,6 +289,64 @@ public sealed class ZapSearch : IDisposable
         CancellationToken cancellationToken = default,
         Move lastMove = default)
     {
+        using var trace = SearchTraceWriter.Open(SearchTraceFile, rootBoard.ZobristKey);
+        using var diagnostics = string.IsNullOrWhiteSpace(PickupTraceFile) ? null : new ZapDiagnosticsWriter(PickupTraceFile);
+
+        _workerPool.StopExploration();
+        _searchTrace = trace;
+        _workerPool.SearchTrace = trace;
+        if (diagnostics != null)
+        {
+            diagnostics.Start(rootBoard.ZobristKey, _params);
+            _workQueue.Picked += diagnostics.Pickup;
+            _workerPool.BatchCompleted += diagnostics.Batch;
+        }
+        try
+        {
+            return SearchCore(in rootBoard, in budget, infoCallback, cancellationToken, lastMove);
+        }
+        finally
+        {
+            // Persistent agents must be idle before the file is synchronously flushed and closed.
+            _workerPool.StopExploration();
+            _timeManager.Stop();
+            _workerPool.SearchTrace = null;
+            _searchTrace = null;
+            if (diagnostics != null)
+            {
+                _workQueue.Picked -= diagnostics.Pickup;
+                _workerPool.BatchCompleted -= diagnostics.Batch;
+                diagnostics.Summary(RootFilterMs, SeedingMs, FirstBatchMs, SeededRoots, LastSearchDiagnostics);
+            }
+        }
+    }
+
+    private bool MakeSearchMove(ref Board board, Move move)
+    {
+        ulong from = board.ZobristKey;
+        if (!board.MakeMove(move, out _)) return false;
+        _searchTrace?.WriteEdge(from, board.ZobristKey, move);
+        return true;
+    }
+
+    private Move SearchCore(
+        in Board rootBoard,
+        in SearchBudget budget,
+        Action<ZapSearchStats>? infoCallback,
+        CancellationToken cancellationToken,
+        Move lastMove)
+    {
+        _timeManager.Start();
+        _workerPool.StopExploration();
+        _workQueue.Clear();
+        _workerPool.ResetDiagnostics();
+        LastSearchDiagnostics = string.Empty;
+        RootFilterMs = 0;
+        SeedingMs = 0;
+        SeededRoots = 0;
+        _sharedState.ResetSpliceDiagnostics();
+        _tt.Clear();
+
         // 1. Root move generation
         MoveList legalMoves = default;
         MoveGenerator.GenerateLegalMoves(in rootBoard, ref legalMoves);
@@ -113,11 +356,15 @@ public sealed class ZapSearch : IDisposable
             return Move.Null;
         }
 
-        // Fast-path: only 1 legal move -> return immediately
+        // Fast-path: only 1 legal move -> return immediately (still emit valid depth >= 1 info)
         if (legalMoves.Count == 1)
         {
+            _sharedState.Reset([legalMoves[0]]);
+            EmitInfo(infoCallback, 1);
             return legalMoves[0];
         }
+        if (_timeManager.ShouldStop(0, in budget, cancellationToken))
+            return legalMoves[0];
 
         // Level 1: Root Syzygy Tablebase Ground-Truth (Instant DTZ Resolution)
         if (_tablebase != null &&
@@ -149,38 +396,26 @@ public sealed class ZapSearch : IDisposable
             return legalMoves[0];
         }
 
-        _timeManager.Start();
         _tt.NewSearch();
 
         Color engineColor = rootBoard.SideToMove;
         var rootPolicy = new ZapPolicy(_params, _tt);
 
-        // Pre-order root moves: Recaptures and Winning Captures first (Queen > Rook > Minor > Pawn), then Quiets
-        Span<Move> orderedMoves = stackalloc Move[legalMoves.Count];
-        Span<int> moveScores = stackalloc int[legalMoves.Count];
-
-        for (int i = 0; i < legalMoves.Count; i++)
+        // NNUE expert is chosen ONCE at the root and fixed for the whole search (master + all workers),
+        // so eval deltas along spines and across agents are always measured with the same network.
+        if (_evaluator is ZanakNnueEvaluator rootNnue)
         {
-            Move m = legalMoves[i];
-            orderedMoves[i] = m;
-            moveScores[i] = rootPolicy.ScoreMove(in rootBoard, m, 0, lastMove);
+            rootNnue.SetRootTopology(in rootBoard);
         }
+        _workerPool.SetRootBoard(in rootBoard);
 
-        for (int i = 0; i < legalMoves.Count - 1; i++)
-        {
-            for (int j = i + 1; j < legalMoves.Count; j++)
-            {
-                if (moveScores[j] > moveScores[i])
-                {
-                    (moveScores[i], moveScores[j]) = (moveScores[j], moveScores[i]);
-                    (orderedMoves[i], orderedMoves[j]) = (orderedMoves[j], orderedMoves[i]);
-                }
-            }
-        }
-
-        Move[] movesArray = orderedMoves.ToArray();
+        // Root moves are intentionally NOT sorted: every 1-ply move gets a spine anyway.
+        Move[] movesArray = legalMoves.AsSpan().ToArray();
         _sharedState.Reset(movesArray);
+        _workerPool.SpineTree.Reset(movesArray.Length);
         uint generation = _sharedState.NextGeneration();
+        if (_timeManager.ShouldStop(0, in budget, cancellationToken))
+            return _sharedState.GetBestMove();
 
         // -------------------------------------------------------------
         // Phase 1: Root Multi-Spine Seeding (The Anytime Guarantee)
@@ -191,13 +426,33 @@ public sealed class ZapSearch : IDisposable
         // Phase 1 Time Gating: Reserve at least 60% of the soft time budget for the Worker Pool!
         long maxPhase1Ms = Math.Max(5, (long)(budget.SoftLimitMs * 0.40));
 
+        // Quick removal of clearly bad 1-ply moves (null-move baseline) before any spine is generated.
+        Span<bool> keepRoot = stackalloc bool[movesArray.Length];
+        long filterStart = Stopwatch.GetTimestamp();
+        ZapRootFilter.Filter(in rootBoard, movesArray, keepRoot, _params.RootFilterMarginCp);
+        RootFilterMs = Stopwatch.GetElapsedTime(filterStart).TotalMilliseconds;
+        if (_params.InterleaveRootSeeding)
+            _workerPool.StartExploration(engineColor, budget, runOnCaller: true);
+
         for (int i = 0; i < movesArray.Length; i++)
         {
-            if (cancellationToken.IsCancellationRequested) break;
+            if (_timeManager.ShouldStop(_sharedState.TotalNodes, in budget, cancellationToken))
+            {
+                _sharedState.RequestStop();
+                break;
+            }
+
+            if (!keepRoot[i])
+            {
+                _sharedState.UpdateCandidateBaseline(i, -30000, Move.Null);
+                _sharedState.UpdateCandidateTrajectory(i, ReadOnlySpan<ZapTrajectoryStep>.Empty);
+                continue;
+            }
 
             Move rootMove = movesArray[i];
             Board scratchBoard = rootBoard;
-            if (!scratchBoard.MakeMove(rootMove, out _)) continue;
+            if (!MakeSearchMove(ref scratchBoard, rootMove)) continue;
+            Board preTraceScratchBoard = scratchBoard;
 
             _sharedState.IncrementNodes(1);
 
@@ -233,178 +488,6 @@ public sealed class ZapSearch : IDisposable
                 continue;
             }
 
-            // 2-Ply Blunder Shield:
-            // Check if rootMove allows an immediate opponent checkmate on reply 1, hangs major/minor pieces,
-            // or allows the opponent to claim an immediate threefold repetition draw!
-            bool allowsImmediateMate = false;
-            bool allowsImmediateDraw = false;
-            int maxOpponentTacticalLoss = 0;
-            for (int r = 0; r < opponentReplies.Count; r++)
-            {
-                Move reply = opponentReplies[r];
-                Board replyBoard = scratchBoard;
-                if (replyBoard.MakeMove(reply, out _))
-                {
-                    if (replyBoard.HalfmoveClock >= 4 && (replyBoard.IsThreefoldRepetition() || replyBoard.IsFiftyMoveRule()) ||
-                        replyBoard.HasInsufficientMaterial())
-                    {
-                        allowsImmediateDraw = true;
-                    }
-                }
-
-                if (scratchBoard.GivesCheck(reply))
-                {
-                    Board mateCheckBoard = scratchBoard;
-                    if (mateCheckBoard.MakeMove(reply, out _))
-                    {
-                        MoveList evasions = default;
-                        MoveGenerator.GenerateLegalMoves(in mateCheckBoard, ref evasions);
-                        if (evasions.Count == 0)
-                        {
-                            allowsImmediateMate = true;
-                            break;
-                        }
-                        else if (evasions.Count <= 3)
-                        {
-                            // Forced Mate in 2 check: if every evasion allows an immediate checkmate by opponent
-                            bool allEvasionsMated = true;
-                            for (int e = 0; e < evasions.Count; e++)
-                            {
-                                Board afterEvasion = mateCheckBoard;
-                                if (afterEvasion.MakeMove(evasions[e], out _))
-                                {
-                                    MoveList replies2 = default;
-                                    MoveGenerator.GenerateLegalMoves(in afterEvasion, ref replies2);
-                                    bool hasMateReply = false;
-                                    for (int m2 = 0; m2 < replies2.Count; m2++)
-                                    {
-                                        if (afterEvasion.GivesCheck(replies2[m2]))
-                                        {
-                                            Board mate2 = afterEvasion;
-                                            if (mate2.MakeMove(replies2[m2], out _))
-                                            {
-                                                MoveList evasions2 = default;
-                                                MoveGenerator.GenerateLegalMoves(in mate2, ref evasions2);
-                                                if (evasions2.Count == 0)
-                                                {
-                                                    hasMateReply = true;
-                                                    break;
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if (!hasMateReply)
-                                    {
-                                        allEvasionsMated = false;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (allEvasionsMated)
-                            {
-                                allowsImmediateMate = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-
-                if (reply.IsCapture)
-                {
-                    // Compute exchange balance from opponent's perspective:
-                    // Notice that if the initial exchange trades equal material (e.g. Knight for Knight or Pawn for Knight where our piece also captures back),
-                    // the net tactical loss for us is: piece lost - piece gained in rootMove (if rootMove was a capture on that square!).
-                    int see = StaticExchangeEvaluator.Evaluate(in scratchBoard, reply);
-
-                    // If rootMove captured a piece on that square, subtract the material we just gained!
-                    if (rootMove.IsCapture && rootMove.To == reply.To)
-                    {
-                        Piece ourCapturedVictim = rootBoard.GetPieceAt(rootMove.To);
-                        if (ourCapturedVictim != Piece.None)
-                        {
-                            int rootGain = StaticExchangeEvaluator.GetPieceValue(ourCapturedVictim.Type());
-                            see -= rootGain;
-                        }
-                    }
-                    
-                    // If SEE suggests defending piece can recapture, verify if the defender is pinned to our King:
-                    Piece targetPiece = scratchBoard.GetPieceAt(reply.To);
-                    if (targetPiece != Piece.None && see <= 100)
-                    {
-                        // Check if any legal replies by us can recapture on reply.To:
-                        Board afterReply = scratchBoard;
-                        if (afterReply.MakeMove(reply, out _))
-                        {
-                            MoveList ourReplies = default;
-                            MoveGenerator.GenerateLegalMoves(in afterReply, ref ourReplies);
-                            bool canRecapture = false;
-                            for (int o = 0; o < ourReplies.Count; o++)
-                            {
-                                if (ourReplies[o].To == reply.To) { canRecapture = true; break; }
-                            }
-                            if (!canRecapture)
-                            {
-                                // The capture was completely free!
-                                see = StaticExchangeEvaluator.GetPieceValue(targetPiece.Type());
-                            }
-                        }
-                    }
-
-                    if (see > maxOpponentTacticalLoss)
-                    {
-                        maxOpponentTacticalLoss = see;
-                    }
-                }
-                else
-                {
-                    // Opponent quiet tactical threat detection:
-                    // Check if opponent reply is an immediate pawn fork or knight fork on our major/minor pieces
-                    Piece replyPiece = scratchBoard.GetPieceAt(reply.From);
-                    PieceType replyType = replyPiece.Type();
-                    Color replyColor = replyPiece.Color();
-                    byte toByte = (byte)reply.To;
-
-                    if (replyType == PieceType.Pawn)
-                    {
-                        ulong pAttacks = replyColor == Color.White
-                            ? Bitboard.WhitePawnAttacks[toByte]
-                            : Bitboard.BlackPawnAttacks[toByte];
-
-                        ulong ourPiecesMask = engineColor == Color.White ? scratchBoard.White : scratchBoard.Black;
-                        ulong ourPawnsMask = ourPiecesMask & scratchBoard.Pawns;
-                        ulong attackedFriendly = pAttacks & ourPiecesMask & ~ourPawnsMask;
-
-                        if (attackedFriendly != 0)
-                        {
-                            int forkCount = BitOperations.PopCount(attackedFriendly);
-                            if (forkCount >= 2)
-                            {
-                                // Severe pawn fork on multiple pieces!
-                                if (300 > maxOpponentTacticalLoss) maxOpponentTacticalLoss = 300;
-                            }
-                        }
-                    }
-                    else if (replyType == PieceType.Knight)
-                    {
-                        ulong nAttacks = Bitboard.KnightAttacks[toByte];
-                        ulong ourPiecesMask = engineColor == Color.White ? scratchBoard.White : scratchBoard.Black;
-                        ulong attackedHighVal = nAttacks & ourPiecesMask & (scratchBoard.Queens | scratchBoard.Rooks | scratchBoard.Kings);
-                        if (BitOperations.PopCount(attackedHighVal) >= 2)
-                        {
-                            // Knight royal/major fork!
-                            if (350 > maxOpponentTacticalLoss) maxOpponentTacticalLoss = 350;
-                        }
-                    }
-                }
-            }
-
-            if (allowsImmediateMate)
-            {
-                _sharedState.UpdateCandidateBaseline(i, -30000, Move.Null);
-                _sharedState.UpdateCandidateTrajectory(i, ReadOnlySpan<ZapTrajectoryStep>.Empty);
-                continue;
-            }
-
             int probeDepth = _timeManager.ElapsedMilliseconds >= maxPhase1Ms
                 ? Math.Min(3, baseDepth - 1)
                 : (baseDepth - 1);
@@ -420,45 +503,101 @@ public sealed class ZapSearch : IDisposable
                 initialLastMove: rootMove,
                 parameters: _params,
                 tablebase: _tablebase,
-                searchPly: 1);
+                searchPly: 1,
+                tt: _tt,
+                searchTrace: _searchTrace);
 
-            // Immediate Opponent Draw Resolution:
-            // If the opponent can immediately force a 3-fold repetition draw or 50-move draw on reply 1,
-            // cap the score at draw (0 cp) so an advantageous position is not thrown away.
-            if (allowsImmediateDraw)
+            // Opponent immediate draw resolution: if opponent has any legal reply triggering 3-fold repetition, 50-move draw, or insufficient material,
+            // cap an advantageous score at 0 cp so winning positions are not thrown away into an opponent-forced draw.
+            bool allowsImmediateDraw = false;
+            for (int r = 0; r < opponentReplies.Count; r++)
             {
-                terminalScore = Math.Min(terminalScore, 0);
+                Board replyBoard = preTraceScratchBoard;
+                if (replyBoard.MakeMove(opponentReplies[r], out _))
+                {
+                    if ((replyBoard.HalfmoveClock >= 4 && (replyBoard.IsThreefoldRepetition() || replyBoard.IsFiftyMoveRule())) ||
+                        replyBoard.HasInsufficientMaterial())
+                    {
+                        allowsImmediateDraw = true;
+                        break;
+                    }
+                }
             }
 
             // 2-Fold Repetition Penalty with game history:
             // If playing rootMove steps into a 2-fold repetition with past game history and engine is ahead,
-            // penalize returning to repeated game positions to prevent repetition cycles.
-            if (scratchBoard.HalfmoveClock >= 4 && scratchBoard.RepetitionCount() == 1)
+            // cap score to 0 (draw) to ensure winning positions are not thrown into a repetition cycle.
+            if (preTraceScratchBoard.HalfmoveClock >= 4 && preTraceScratchBoard.RepetitionCount() == 1)
             {
                 if (terminalScore > 0)
                 {
-                    terminalScore = Math.Max(0, terminalScore - 200);
+                    terminalScore = 0;
                 }
-            }
-
-            // Severe immediate blunder penalty (hanging Queen, Rook, Minor on move 1)
-            if (maxOpponentTacticalLoss >= 200)
-            {
-                terminalScore -= maxOpponentTacticalLoss * 10;
             }
 
             _sharedState.IncrementNodes(trajectory.Count);
 
             Move followup = trajectory.Count > 0 ? trajectory[0].Move : Move.Null;
+            if (allowsImmediateDraw)
+            {
+                terminalScore = Math.Min(terminalScore, 0);
+            }
+
             _sharedState.UpdateCandidateBaseline(i, terminalScore, followup);
-            _sharedState.UpdateCandidateTrajectory(i, trajectory.AsSpan());
+            if (allowsImmediateDraw)
+            {
+                _sharedState.ApplyAgentRefutation(i, terminalScore, 1);
+            }
+            _workerPool.SpineTree.SetRootSpine(i, trajectory.AsSpan(), terminalScore);
+            SeededRoots++;
+
+            // Extract immediate opponent reply crosspoint (Ply 1) for every surviving root move!
+            // If the root move captured or jumped in evaluation, any opponent reply is queued for refutation.
+            if (trajectory.Count > 0)
+            {
+                ZapTrajectoryStep firstStep = trajectory[0];
+                if (firstStep.SideToMove != engineColor)
+                {
+                    int shock = Math.Abs((int)firstStep.EvalDelta);
+                    // If root move caused an eval jump or was a capture, give high shock to force immediate refutation check
+                    if (rootMove.IsCapture || Math.Abs(terminalScore) > 100)
+                    {
+                        shock = Math.Max(shock, 200);
+                    }
+
+                    _workQueue.Enqueue(new ZapCrosspoint(
+                        board: preTraceScratchBoard,
+                        rootCandidateIndex: i,
+                        ply: 1,
+                        baselineScore: (short)Math.Clamp(terminalScore, short.MinValue + 1, short.MaxValue - 1),
+                        shockMagnitude: (short)Math.Min(shock, short.MaxValue),
+                        kind: CrosspointKind.AdversarialRefutation,
+                        remainingHorizon: Math.Max(1, trajectory.Count),
+                        originalMove: firstStep.Move,
+                        rootBiasWeight: _params.CrosspointRootBiasWeight,
+                        generation: generation,
+                        role: ZapAgentRole.Refutation,
+                        parentEval: firstStep.ParentEval,
+                        prevWasCapture: rootMove.IsCapture,
+                        parameters: _params
+                    ));
+                }
+            }
+            // Seed one root, then spend at most one batch challenging already published roots.
+            if (_params.InterleaveRootSeeding &&
+                _workQueue.TryDequeue(out ZapCrosspoint seedCrosspoint, _sharedState, generation))
+            {
+                _workerPool.ProcessCrosspoint(in seedCrosspoint, rootPolicy, _evaluator);
+            }
         }
+        SeedingMs = _timeManager.ElapsedMilliseconds;
+        if (_params.InterleaveRootSeeding) _workerPool.StopExploration();
 
         // Print Phase 1 candidates:
         // System.Diagnostics.Debug.WriteLine or test inspect
 
         // Sort candidates descending by baseline eval and prune dead stems
-        _sharedState.SortCandidatesAndPrune(_params.HardAspirationMarginCp);
+        _sharedState.SortCandidatesAndPrune(_params.DeadStemPruneMarginCp);
 
         // Emit initial anytime telemetry
         EmitInfo(infoCallback, baseDepth);
@@ -473,80 +612,67 @@ public sealed class ZapSearch : IDisposable
         // -------------------------------------------------------------
         // Phase 2 & 3: Gated Spine Qualification & Dual-Role Exploration
         // -------------------------------------------------------------
-        _workQueue.Clear();
-
-        // 1. Refutation Squad: Targets the Leader spine only on OPPONENT plies
-        ZapRootCandidate leader = _sharedState.GetBestCandidate();
-        int initialLeaderIdx = _sharedState.BestCandidateIndex;
-        if (!leader.IsDeadStem && leader.Trajectory.Length > 0)
-        {
-            ExtractCrosspoints(
-                in rootBoard,
-                leader.Move,
-                initialLeaderIdx,
-                leader.Trajectory,
-                baseDepth,
-                in budget,
-                engineColor,
-                generation,
-                ZapAgentRole.Refutation);
-        }
-
-        // 2. Promotion Squad: Targets qualified Contenders within ContenderPromotionMarginCp on ENGINE plies
-        int promotionCutoff = leader.Score - _params.ContenderPromotionMarginCp;
-        for (int i = 1; i < _sharedState.CandidateCount; i++)
+        // Every position is eligible; role and tactical features determine which agent picks it up.
+        for (int i = 0; i < _sharedState.CandidateCount; i++)
         {
             ZapRootCandidate contender = _sharedState.GetCandidate(i);
-            if (contender.IsDeadStem || contender.Score < promotionCutoff || contender.Trajectory.Length == 0)
+            // Dead stems keep their crosspoints; their low spine score ranks them low for pickup.
+            if (contender.Trajectory.Length == 0)
             {
                 continue;
             }
 
-            ExtractCrosspoints(
-                in rootBoard,
-                contender.Move,
-                i,
-                contender.Trajectory,
-                baseDepth,
-                in budget,
-                engineColor,
-                generation,
-                ZapAgentRole.Promotion);
+            Board startBoard = rootBoard;
+            if (startBoard.MakeMove(contender.Move, out _))
+                _workQueue.EnqueueTrajectory(in startBoard, i, contender.Trajectory, engineColor, generation,
+                    prevWasCapture: contender.Move.IsCapture);
         }
 
         // Start worker pool to explore queued crosspoints
-        _workerPool.StartExploration(engineColor, budget);
+        // A traced single-thread search must not interleave agent probes with the caller's probes.
+        _workerPool.StartExploration(engineColor, budget, runOnCaller: _searchTrace != null && _params.DefaultThreads == 1);
 
-        // Iterative deepening & monitoring loop
+        // Iterative deepening & monitoring loop. With a clock budget the horizon keeps growing while time
+        // remains; deeper spines re-open their crosspoints with longer agent horizons.
         int currentIterDepth = baseDepth + 1;
+        int depthCap = budget.ExtendHorizonWithTime
+            ? Math.Max(budget.MaxDepthHorizon, _timeManager.Parameters.ExtendedHorizonMaxPlies)
+            : budget.MaxDepthHorizon;
         int prevLeaderIdx = _sharedState.BestCandidateIndex;
-        while (currentIterDepth <= budget.MaxDepthHorizon && !_sharedState.IsStopped && !cancellationToken.IsCancellationRequested)
+        bool forceDeepen = false;
+        long lastInfoMs = 0;
+        long lastDeepenMs = _timeManager.ElapsedMilliseconds;
+        string exitReason = "depth-cap";
+        Span<int> contenderIdx = stackalloc int[256];
+        Span<int> contenderScore = stackalloc int[256];
+        while (currentIterDepth <= depthCap && !_sharedState.IsStopped && !cancellationToken.IsCancellationRequested)
         {
-            _sharedState.SetCompletedDepth(currentIterDepth);
-
             // Periodic polling
             if (_timeManager.ShouldStop(_sharedState.TotalNodes, in budget, cancellationToken))
             {
+                exitReason = "hard-limit";
                 _sharedState.RequestStop();
                 break;
             }
 
-            ZapRootCandidate currentLeader = _sharedState.GetBestCandidate();
-            int leaderIdx = _sharedState.BestCandidateIndex;
+            ZapRootCandidate currentLeader = _sharedState.GetBestCandidate(out int leaderIdx);
+            _sharedState.SetCompletedDepth(currentLeader.CompletedDepth);
 
             // If a new Leader was promoted, immediately dispatch Refutation Squad on the new Leader!
             if (leaderIdx != prevLeaderIdx && !_sharedState.IsRootMoveRefutedOrDead(leaderIdx))
             {
                 Board newLeaderBoard = rootBoard;
-                if (newLeaderBoard.MakeMove(currentLeader.Move, out _))
+                if (MakeSearchMove(ref newLeaderBoard, currentLeader.Move))
                 {
                     if ((newLeaderBoard.HalfmoveClock >= 4 && (newLeaderBoard.IsFiftyMoveRule() || newLeaderBoard.IsThreefoldRepetition() || newLeaderBoard.IsRepetition(1))) ||
                         newLeaderBoard.HasInsufficientMaterial())
                     {
                         // Leader is an immediate terminal draw: score remains 0, cannot be refuted or deepened
+                        prevLeaderIdx = leaderIdx;
                         continue;
                     }
 
+                    Board newLeaderStart = newLeaderBoard;
                     ZapTrajectory newLeaderTraj = default;
                     int newLeaderScore = ZapProbe.Trace(
                         ref newLeaderBoard,
@@ -557,12 +683,26 @@ public sealed class ZapSearch : IDisposable
                         ref newLeaderTraj,
                         initialLastMove: currentLeader.Move,
                         parameters: _params,
-                        tablebase: _tablebase);
+                        tablebase: _tablebase,
+                        searchTrace: _searchTrace);
+
+                    // Check if new leader allows immediate 3-fold draw by opponent on reply 1
+                    MoveList newLeaderReplies = default;
+                    MoveGenerator.GenerateLegalMoves(in newLeaderStart, ref newLeaderReplies);
+                    for (int r = 0; r < newLeaderReplies.Count; r++)
+                    {
+                        Board repB = newLeaderStart;
+                        if (repB.MakeMove(newLeaderReplies[r], out _) &&
+                            ((repB.HalfmoveClock >= 4 && (repB.IsThreefoldRepetition() || repB.IsFiftyMoveRule())) || repB.HasInsufficientMaterial()))
+                        {
+                            newLeaderScore = Math.Min(newLeaderScore, 0);
+                            break;
+                        }
+                    }
 
                     _sharedState.IncrementNodes(newLeaderTraj.Count);
                     _sharedState.AppendCandidateScoreHistory(leaderIdx, $"LeaderPromoteDeepen(d={currentIterDepth})->{newLeaderScore} ");
-                    _sharedState.TryUpdateScore(leaderIdx, newLeaderScore, currentIterDepth);
-                    _sharedState.UpdateCandidateTrajectory(leaderIdx, newLeaderTraj.AsSpan());
+                    _workerPool.SpineTree.SetRootSpine(leaderIdx, newLeaderTraj.AsSpan(), newLeaderScore);
 
                     // Disapproval Agent immediately stress-tests opponent junctions of the new Leader
                     TestLeaderRefutations(
@@ -594,42 +734,49 @@ public sealed class ZapSearch : IDisposable
                 }
                 prevLeaderIdx = _sharedState.BestCandidateIndex;
             }
-            ZapRootCandidate contender = _sharedState.CandidateCount > 1 ? _sharedState.GetCandidate(1) : default;
+            ZapRootCandidate contender = _sharedState.GetSecondBestCandidate();
 
-            // Check Stable Dominance early break
-            if (_timeManager.CheckStableDominance(currentIterDepth, currentLeader.Score, contender.Score, currentLeader.Move.RawValue))
+            // Check Stable Dominance early break (only after a minimum share of the soft budget is spent)
+            if (_timeManager.ElapsedMilliseconds >= (long)(budget.SoftLimitMs * _timeManager.Parameters.StableDominanceMinSoftFraction) &&
+                _timeManager.CheckStableDominance(currentLeader.CompletedDepth, currentLeader.Score, contender.Score, currentLeader.Move.RawValue))
             {
+                exitReason = "stable-dominance";
                 break;
             }
 
-            // Check Soft time limit exit (with panic extension check)
+            // Check Soft time limit exit (with panic extension check). A clock budget stops at the soft limit;
+            // otherwise remaining queued work may run on to the hard limit.
             if (_timeManager.HasReachedSoftLimit(in budget, currentLeader.Score, contender.Score, currentLeader.Move.RawValue))
             {
-                if (_workQueue.IsEmpty || _timeManager.ElapsedMilliseconds >= budget.HardLimitMs)
+                if (budget.ExtendHorizonWithTime || _workQueue.IsEmpty || _timeManager.ElapsedMilliseconds >= budget.HardLimitMs)
                 {
+                    exitReason = "soft-limit";
                     break;
                 }
             }
 
             // If work queue is emptying and time remains, deepen the top candidates and extract deeper crosspoints!
-            if (_workQueue.Count < 4)
+            // Subspines keep the queue full, so with a clock budget the horizon also grows on a time schedule.
+            bool deepened = false;
+            bool deepenDue = budget.ExtendHorizonWithTime &&
+                _timeManager.ElapsedMilliseconds - lastDeepenMs >= Math.Max(10, budget.SoftLimitMs / Math.Max(1, depthCap - baseDepth));
+            if (_workQueue.Count < 4 || forceDeepen || deepenDue)
             {
+                deepened = true;
+                lastDeepenMs = _timeManager.ElapsedMilliseconds;
                 _tt.Store(rootBoard.ZobristKey, currentLeader.Move, (byte)Math.Min(255, currentIterDepth), (short)currentLeader.Score);
 
                 // Deepen Leader (Refutation Squad)
-                leaderIdx = _sharedState.BestCandidateIndex;
+                currentLeader = _sharedState.GetBestCandidate(out leaderIdx);
                 if (!_sharedState.IsRootMoveRefutedOrDead(leaderIdx))
                 {
                     Board leaderBoard = rootBoard;
-                    if (leaderBoard.MakeMove(currentLeader.Move, out _))
+                    if (MakeSearchMove(ref leaderBoard, currentLeader.Move) &&
+                        // Leader that is an immediate terminal draw keeps score 0 and is not deepened
+                        !((leaderBoard.HalfmoveClock >= 4 && (leaderBoard.IsFiftyMoveRule() || leaderBoard.IsThreefoldRepetition() || leaderBoard.IsRepetition(1))) ||
+                          leaderBoard.HasInsufficientMaterial()))
                     {
-                        if ((leaderBoard.HalfmoveClock >= 4 && (leaderBoard.IsFiftyMoveRule() || leaderBoard.IsThreefoldRepetition() || leaderBoard.IsRepetition(1))) ||
-                            leaderBoard.HasInsufficientMaterial())
-                        {
-                            // Leader is an immediate terminal draw: score remains 0
-                            continue;
-                        }
-
+                        Board leaderStart = leaderBoard;
                         ZapTrajectory deeperTraj = default;
                         int newScore = ZapProbe.Trace(
                             ref leaderBoard,
@@ -643,12 +790,25 @@ public sealed class ZapSearch : IDisposable
                             leaderScore: currentLeader.Score,
                             sharedState: _sharedState,
                             rootCandidateIndex: leaderIdx,
-                            tablebase: _tablebase);
+                            tablebase: _tablebase,
+                            searchTrace: _searchTrace);
+
+                        MoveList leaderReplies = default;
+                        MoveGenerator.GenerateLegalMoves(in leaderStart, ref leaderReplies);
+                        for (int r = 0; r < leaderReplies.Count; r++)
+                        {
+                            Board repB = leaderStart;
+                            if (repB.MakeMove(leaderReplies[r], out _) &&
+                                ((repB.HalfmoveClock >= 4 && (repB.IsThreefoldRepetition() || repB.IsFiftyMoveRule())) || repB.HasInsufficientMaterial()))
+                            {
+                                newScore = Math.Min(newScore, 0);
+                                break;
+                            }
+                        }
 
                         _sharedState.IncrementNodes(deeperTraj.Count);
                         _sharedState.AppendCandidateScoreHistory(leaderIdx, $"LeaderEmptyQueueDeepen(d={currentIterDepth})->{newScore} ");
-                        _sharedState.TryUpdateScore(leaderIdx, newScore, currentIterDepth);
-                        _sharedState.UpdateCandidateTrajectory(leaderIdx, deeperTraj.AsSpan());
+                        _workerPool.SpineTree.SetRootSpine(leaderIdx, deeperTraj.AsSpan(), newScore);
 
                         ExtractCrosspoints(
                             in rootBoard,
@@ -664,17 +824,33 @@ public sealed class ZapSearch : IDisposable
                     }
                 }
 
-                // Deepen Qualified Contenders (Promotion Squad)
-                int promoThreshold = currentLeader.Score - _params.ContenderPromotionMarginCp;
-                int maxCandidatesToCheck = Math.Min(4, _sharedState.CandidateCount);
-                for (int c = 0; c < maxCandidatesToCheck; c++)
+                // Deepen Qualified Contenders (Promotion Squad). Candidate indices are stable (not sorted),
+                // so pick the best-scoring live contenders; at the horizon cap widen to every live candidate.
+                bool widen = budget.ExtendHorizonWithTime && currentIterDepth >= depthCap;
+                int candidateCount = _sharedState.CandidateCount;
+                int contenderCount = 0;
+                for (int c = 0; c < candidateCount; c++)
                 {
                     if (c == leaderIdx) continue;
                     ZapRootCandidate cand = _sharedState.GetCandidate(c);
-                    if (cand.IsDeadStem || cand.Score < promoThreshold || _sharedState.IsRootMoveRefutedOrDead(c)) continue;
+                    int pos = contenderCount++;
+                    while (pos > 0 && contenderScore[pos - 1] < cand.Score)
+                    {
+                        contenderIdx[pos] = contenderIdx[pos - 1];
+                        contenderScore[pos] = contenderScore[pos - 1];
+                        pos--;
+                    }
+                    contenderIdx[pos] = c;
+                    contenderScore[pos] = cand.Score;
+                }
+                int maxCandidatesToCheck = widen ? contenderCount : Math.Min(3, contenderCount);
+                for (int k = 0; k < maxCandidatesToCheck; k++)
+                {
+                    int c = contenderIdx[k];
+                    ZapRootCandidate cand = _sharedState.GetCandidate(c);
 
                     Board candBoard = rootBoard;
-                    if (!candBoard.MakeMove(cand.Move, out _)) continue;
+                    if (!MakeSearchMove(ref candBoard, cand.Move)) continue;
 
                     ZapTrajectory deeperTraj = default;
                     int newScore = ZapProbe.Trace(
@@ -689,11 +865,11 @@ public sealed class ZapSearch : IDisposable
                         leaderScore: currentLeader.Score,
                         sharedState: _sharedState,
                         rootCandidateIndex: c,
-                        tablebase: _tablebase);
+                        tablebase: _tablebase,
+                        searchTrace: _searchTrace);
 
                     _sharedState.IncrementNodes(deeperTraj.Count);
-                    _sharedState.TryUpdateScore(c, newScore, currentIterDepth);
-                    _sharedState.UpdateCandidateTrajectory(c, deeperTraj.AsSpan());
+                    _workerPool.SpineTree.SetRootSpine(c, deeperTraj.AsSpan(), newScore);
 
                     ExtractCrosspoints(
                         in rootBoard,
@@ -709,9 +885,14 @@ public sealed class ZapSearch : IDisposable
                 }
             }
 
-            EmitInfo(infoCallback, currentIterDepth);
+            if (deepened || !budget.ExtendHorizonWithTime || _timeManager.ElapsedMilliseconds - lastInfoMs >= 250)
+            {
+                EmitInfo(infoCallback, currentIterDepth);
+                lastInfoMs = _timeManager.ElapsedMilliseconds;
+            }
             if (_timeManager.ElapsedMilliseconds >= budget.HardLimitMs - 15)
             {
+                exitReason = "hard-limit";
                 break;
             }
             // Cooperative worker processing: search thread helps drain high-priority crosspoints
@@ -726,11 +907,18 @@ public sealed class ZapSearch : IDisposable
                 }
             }
 
-            currentIterDepth++;
+            if (!budget.ExtendHorizonWithTime || deepened)
+            {
+                currentIterDepth++;
+            }
+            // Unpicked but ineligible entries (stale generation, refuted root) keep Count high; deepen anyway.
+            forceDeepen = processed == 0 && !deepened;
         }
 
         // Spine exploration draining: if time remains below soft limit, drain pending crosspoints
-        while (!_workQueue.IsEmpty && !_sharedState.IsStopped && !_timeManager.HasReachedSoftLimit(in budget, _sharedState.GetBestCandidate().Score, _sharedState.CandidateCount > 1 ? _sharedState.GetCandidate(1).Score : 0, _sharedState.GetBestMove().RawValue))
+        if (exitReason == "depth-cap" && (_sharedState.IsStopped || cancellationToken.IsCancellationRequested)) exitReason = "stopped";
+        string drainExit = "soft-limit";
+        while (!_sharedState.IsStopped && !_timeManager.HasReachedSoftLimit(in budget, _sharedState.GetBestCandidate().Score, _sharedState.GetSecondBestCandidate().Score, _sharedState.GetBestMove().RawValue))
         {
             if (_workQueue.TryDequeue(out ZapCrosspoint cp, _sharedState, generation))
             {
@@ -738,15 +926,30 @@ public sealed class ZapSearch : IDisposable
             }
             else
             {
-                break;
+                _workerPool.WaitForIdle(5);
+                if (_workQueue.IsEmpty && !_workerPool.HasInFlightWork)
+                {
+                    drainExit = "queue-empty";
+                    break;
+                }
             }
         }
 
         _workerPool.StopExploration();
         _timeManager.Stop();
+        LastSearchDiagnostics =
+            $"zap exit {exitReason} drain {drainExit} depth {currentIterDepth - 1} time {_timeManager.ElapsedMilliseconds}/{budget.SoftLimitMs}ms " +
+            $"agents {_workQueue.DequeuedCount} improved {_workerPool.AgentsImproved} spliced {_workerPool.AgentsSpliced} " +
+            $"entries new {_workQueue.NewEntryCount} merged {_workQueue.MergedEntryCount} reopened {_workQueue.ReopenedEntryCount} " +
+            $"subspine-positions {_workerPool.SubspinePositions} tree-nodes {_workerPool.SpineTree.NodeCount} " +
+            $"entries {_workQueue.TotalEntries} capped {_workQueue.CapacityRejectedCount} " +
+            $"evicted-stale {_workQueue.EvictedStaleCount} pending {_workQueue.Count}";
+        LastSearchDiagnostics +=
+            $" seeded {SeededRoots}/{movesArray.Length} seed-ms {SeedingMs} root-filter-ms {RootFilterMs:F2}" +
+            $" first-batch-ms {FirstBatchMs} completed {_workerPool.CompletedCrosspoints} siblings {_workerPool.SiblingsTraced}";
 
         // Re-sort non-refuted, non-dead candidates to ensure the highest score candidate is chosen
-        _sharedState.SortCandidatesAndPrune(_params.HardAspirationMarginCp);
+        _sharedState.SortCandidatesAndPrune(_params.RootKillMarginCp);
 
         ZapRootCandidate finalBest = _sharedState.GetBestCandidate();
         _tt.Store(rootBoard.ZobristKey, finalBest.Move, (byte)Math.Min(255, _sharedState.CompletedDepth), (short)finalBest.Score);
@@ -776,7 +979,7 @@ public sealed class ZapSearch : IDisposable
         return; // Background worker pool processes crosspoints; synchronous TestLeaderRefutations caused leader index race
     }
 
-    private void ExtractCrosspoints(
+    internal void ExtractCrosspoints(
         in Board rootBoard,
         Move rootMove,
         int candidateIndex,
@@ -785,83 +988,14 @@ public sealed class ZapSearch : IDisposable
         in SearchBudget budget,
         Color engineColor,
         uint generation,
-        ZapAgentRole role)
+        ZapAgentRole role,
+        bool immediateOnly = false)
     {
         Board spineBoard = rootBoard;
         if (!spineBoard.MakeMove(rootMove, out _)) return;
 
-        for (int ply = 0; ply < steps.Length; ply++)
-        {
-            ZapTrajectoryStep step = steps[ply];
-
-            // Asymmetric Squad Filter:
-            // Refutation Squad only investigates OPPONENT moves (step.SideToMove != engineColor)
-            // Promotion Squad only investigates ENGINE moves (step.SideToMove == engineColor)
-            bool matchesSquad = role == ZapAgentRole.Refutation
-                ? step.SideToMove != engineColor
-                : step.SideToMove == engineColor;
-
-            if (matchesSquad)
-            {
-                int absDelta = Math.Abs((int)step.EvalDelta);
-
-                // Depth-adaptive shock threshold: sensitive near root, noise-filtering near leaves
-                int dynamicThreshold = _params.AdaptiveShockBaseCp + (ply * _params.AdaptiveShockSlopeCp);
-
-                // Priority Crosspoints:
-                // For Refutation Squad, ALWAYS investigate ply 0 (opponent's immediate reply to Leader's move)
-                bool isImmediateRefutation = role == ZapAgentRole.Refutation && ply == 0;
-
-                // Opponent Blunder Junction Detection:
-                // If this is an opponent ply, look ahead to see if the opponent's move conceded a large eval gain
-                // to the engine on the subsequent reply (indicating an opponent blunder down the spine).
-                int opponentConcededGain = 0;
-                if (role == ZapAgentRole.Refutation && ply + 1 < steps.Length)
-                {
-                    ZapTrajectoryStep nextStep = steps[ply + 1];
-                    if (nextStep.SideToMove == engineColor && nextStep.EvalDelta > 0)
-                    {
-                        opponentConcededGain = nextStep.EvalDelta;
-                    }
-                }
-
-                bool isOpponentBlunderJunction = opponentConcededGain >= dynamicThreshold;
-
-                if (absDelta >= dynamicThreshold || isImmediateRefutation || isOpponentBlunderJunction)
-                {
-                    CrosspointKind kind = step.SideToMove == engineColor
-                        ? CrosspointKind.Opportunity
-                        : CrosspointKind.AdversarialRefutation;
-
-                    int remainingHorizon = Math.Max(2, budget.MaxDepthHorizon - (ply + 1));
-
-                    // Tablebase shock boost, immediate refutation boost, or opponent blunder junction boost
-                    int tbBoost = Math.Abs((int)step.StaticEval) >= 28000 ? 500 : 0;
-                    int refutationBoost = isImmediateRefutation ? 400 : 0;
-                    int blunderBoost = isOpponentBlunderJunction ? Math.Min(2000, opponentConcededGain * 2) : 0;
-                    short effectiveShock = (short)Math.Min(absDelta + tbBoost + refutationBoost + blunderBoost, short.MaxValue);
-
-                    _workQueue.Enqueue(new ZapCrosspoint(
-                        board: spineBoard,
-                        rootCandidateIndex: candidateIndex,
-                        ply: ply + 1,
-                        baselineScore: step.StaticEval,
-                        shockMagnitude: effectiveShock,
-                        kind: kind,
-                        remainingHorizon: remainingHorizon,
-                        originalMove: step.Move,
-                        rootBiasWeight: _params.CrosspointRootBiasWeight,
-                        generation: generation,
-                        role: role
-                    ));
-                }
-            }
-
-            if (!spineBoard.MakeMove(step.Move, out _))
-            {
-                break;
-            }
-        }
+        _workQueue.EnqueueTrajectory(in spineBoard, candidateIndex, steps, engineColor, generation,
+            role: role, immediateOnly: immediateOnly, prevWasCapture: rootMove.IsCapture);
     }
 
     private void EmitInfo(Action<ZapSearchStats>? infoCallback, int depth)
@@ -873,7 +1007,8 @@ public sealed class ZapSearch : IDisposable
         long nodes = _sharedState.TotalNodes;
         long nps = (nodes * 1000) / elapsed;
 
-        Move[] pv = best.BestFollowup.IsNull ? [best.Move] : [best.Move, best.BestFollowup];
+        Move[] pv = [best.Move, .. best.Trajectory.Select(step => step.Move)];
+        depth = Math.Max(1, best.CompletedDepth > 0 ? best.CompletedDepth : depth);
 
         var stats = new ZapSearchStats(
             Depth: depth,

@@ -17,7 +17,7 @@ public sealed class NnueInferenceTests
         Assert.Equal(12_288, NnueConstants.FeatureCount);
         Assert.Equal(512, NnueConstants.StandardHiddenDim);
         Assert.Equal(64, NnueConstants.StandardL1Dim);
-        Assert.Equal(16, NnueConstants.MicroHiddenDim);
+        Assert.Equal(6, NnueConstants.ExpertCount);
     }
 
     [Fact]

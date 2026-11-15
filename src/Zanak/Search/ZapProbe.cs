@@ -1,11 +1,13 @@
 using System.Runtime.CompilerServices;
 using Anak.Core;
+using Anak.Data.Nnue;
+using SearchTraceWriter = Anak.Search.SearchTraceWriter;
 
 namespace Zanak.Search;
 
 /// <summary>
 /// Linear trajectory tracer executing zero-branching greedy descents down to target base depth.
-/// Incorporates immediate recapture tracking and early spine abandonment for ruined trajectories.
+/// Incorporates immediate recapture tracking. Spines are never abandoned early; agents prune them later.
 /// </summary>
 public static class ZapProbe
 {
@@ -27,7 +29,10 @@ public static class ZapProbe
         ZapSharedState? sharedState = null,
         int rootCandidateIndex = -1,
         ITablebaseProber? tablebase = null,
-        int searchPly = 1)
+        int searchPly = 1,
+        ZapTranspositionTable? tt = null,
+        int maxPlies = ZapTrajectory.MaxCapacity,
+        SearchTraceWriter? searchTrace = null)
     {
         trajectory.Clear();
         ZapParams zapParams = parameters ?? ZapParams.Default;
@@ -39,6 +44,13 @@ public static class ZapProbe
             return 0;
         }
 
+        // Incremental NNUE: seed the accumulator stack at the probe start, then push every move played.
+        // (No-op if the evaluator is not the multi-tier NNUE or no root expert has been fixed.)
+        ZanakNnueEvaluator? nnue = evaluator as ZanakNnueEvaluator;
+        IIncrementalEvaluator? incremental = evaluator as IIncrementalEvaluator;
+        if (nnue != null) nnue.ResetAccumulatorStack(in board);
+        else incremental?.InitSearch(in board);
+
         // Initial evaluation at the start of the probe
         int initialRaw = (int)evaluator.Evaluate(in board);
         int prevEngineEval = board.SideToMove == engineColor ? initialRaw : -initialRaw;
@@ -47,14 +59,13 @@ public static class ZapProbe
         int pliesTraced = 0;
         Move lastMove = initialLastMove;
         bool isTablebaseHit = false;
-        bool isSpineAbandoned = false;
 
-        while (pliesTraced < targetDepth)
+        while (pliesTraced < targetDepth && trajectory.Count < maxPlies)
         {
-            // Early branch abort check: if shared state signals stop or root candidate was refuted/dead, exit immediately
+            // Early abort only when the search stops; demoted or refuted spines are still traced in full.
             if (sharedState != null && (pliesTraced & 3) == 0)
             {
-                if (sharedState.IsStopped || (rootCandidateIndex >= 0 && sharedState.IsRootMoveRefutedOrDead(rootCandidateIndex)))
+                if (sharedState.IsStopped)
                 {
                     break;
                 }
@@ -63,8 +74,14 @@ public static class ZapProbe
             Color moverColor = board.SideToMove;
             ulong zobrist = board.ZobristKey;
 
-            // Select greedy move using ZapPolicy, passing lastMove for immediate recaptures
-            if (!policy.TryGetQuickMove(in board, pliesTraced, lastMove, out Move move) || move.IsNull)
+            Move move = Move.Null;
+            // Check Transposition Table first: if a verified refutation move exists, use it!
+            if (tt != null && tt.TryGet(zobrist, out var ttEntry) && ttEntry.Flags >= 2 && !ttEntry.BestMove.IsNull && board.IsLegal(ttEntry.BestMove))
+            {
+                move = ttEntry.BestMove;
+            }
+            // Otherwise, select greedy move using ZapPolicy, passing lastMove for immediate recaptures
+            else if (!policy.TryGetQuickMove(in board, pliesTraced, lastMove, out move) || move.IsNull)
             {
                 // Terminal position (checkmate or stalemate)
                 if (board.IsInCheck())
@@ -84,28 +101,32 @@ public static class ZapProbe
             }
 
             // Apply move
-            if (!board.MakeMove(move, out BoardState state))
+            Piece movedPiece = board.GetPieceAt(move.From);
+            if (!board.MakeMove(move, out BoardState state, movedPiece))
             {
                 break;
             }
+            searchTrace?.WriteEdge(zobrist, board.ZobristKey, move);
+            incremental?.PushMove(move, movedPiece, state.CapturedPiece, in board);
 
             pliesTraced++;
 
-            // Terminal Repetition and Draw Detection along probe
-            if (board.HalfmoveClock >= 4 && (board.IsFiftyMoveRule() || board.IsRepetition(searchPly + pliesTraced) || board.IsThreefoldRepetition()))
-            {
-                return 0;
-            }
-
-            if (board.HasInsufficientMaterial())
-            {
-                return 0;
-            }
+            // Terminal Repetition and Draw Detection along probe:
+            // Treat 50-move, 3-fold repetition, and insufficient material as 0 draws.
+            // A 2-fold repetition on the heuristic spine stops the rollout at static eval rather than forcing 0.
+            bool isDraw = (board.HalfmoveClock >= 4 &&
+                (board.IsFiftyMoveRule() || board.IsThreefoldRepetition())) ||
+                board.HasInsufficientMaterial();
+            bool isTwofoldLoop = !isDraw && board.HalfmoveClock >= 4 && board.IsRepetition(searchPly + pliesTraced);
 
             // Evaluate board post-move:
             // Check Syzygy Tablebase Ground Truth if piece count <= MaxPieces and no castling
             int currentEngineEval;
-            if (tablebase != null &&
+            if (isDraw)
+            {
+                currentEngineEval = 0;
+            }
+            else if (tablebase != null &&
                 board.Castling == CastlingRights.None &&
                 System.Numerics.BitOperations.PopCount(board.Occupied) <= tablebase.MaxPieces &&
                 tablebase.TryProbeWdl(in board, out int wdl))
@@ -137,9 +158,25 @@ public static class ZapProbe
                 zobristKey: zobrist,
                 move: move,
                 sideToMove: moverColor,
+                parentEval: (short)Math.Clamp(prevEngineEval, short.MinValue + 1, short.MaxValue - 1),
                 staticEval: (short)Math.Clamp(currentEngineEval, short.MinValue + 1, short.MaxValue - 1),
                 evalDelta: (short)Math.Clamp(delta, short.MinValue + 1, short.MaxValue - 1)
             ));
+            if (isDraw) return 0;
+            if (isTwofoldLoop)
+            {
+                prevEngineEval = currentEngineEval;
+                break;
+            }
+
+            if (tt != null)
+            {
+                // Store greedy spine step in TT if not already verified by an agent
+                if (!tt.TryGet(zobrist, out var existing) || existing.Flags < 2)
+                {
+                    tt.Store(zobrist, move, (byte)Math.Clamp(targetDepth - pliesTraced, 1, 255), (short)Math.Clamp(currentEngineEval, short.MinValue + 1, short.MaxValue - 1), flags: 1);
+                }
+            }
 
             prevEngineEval = currentEngineEval;
             lastMove = move;
@@ -151,47 +188,25 @@ public static class ZapProbe
                 break;
             }
 
-            // Early Spine Abandonment:
-            // 1. Catastrophic eval collapse near the root (e.g. blundered material along root reply)
-            // Only prune near the root (pliesTraced <= 4) where root move blunders occur.
-            // Deep down the spine, tracing to the horizon is computationally negligible (< 1 microsecond)
-            // and avoiding mid-spine truncation prevents horizon distortion during tactical exchanges.
-            if (pliesTraced <= 4 && currentEngineEval - probeStartEngineEval <= -zapParams.SpineAbandonThresholdCp)
-            {
-                // If the opponent just captured and we have an immediate legal recapture with SEE >= 0 on that square,
-                // do not abandon yet - resolve the exchange first!
-                bool hasPendingRecapture = moverColor != engineColor &&
-                    lastMove.IsCapture &&
-                    ZapPolicy.TryGetLvaRecapture(in board, lastMove, out Move pendingRecap) &&
-                    !pendingRecap.IsNull;
-
-                if (!hasPendingRecapture)
-                {
-                    isSpineAbandoned = true;
-                    break;
-                }
-            }
-
-            // 2. Relative Dead Line Truncation:
-            // On engine plies (pliesTraced >= 4), if position collapses >= 300 cp below the leader, truncate the doomed spine
-            if (moverColor == engineColor && pliesTraced >= 4 && leaderScore > -20000 && currentEngineEval <= leaderScore - 300)
-            {
-                isSpineAbandoned = true;
-                break;
-            }
+            // NOTE: Spines are never abandoned by the probe. Weak lines are only discarded later by the agents
+            // (Refutation / Promotion squads), so every spine always reaches its full horizon.
         }
 
         // Quiescence Resolution: resolve active exchanges at probe horizon to avoid horizon effect
-        // (Skipped if spine already truncated upon reaching tablebase ground truth or early abandonment)
-        if (!isTablebaseHit && !isSpineAbandoned)
+        // (Skipped if spine already truncated upon reaching tablebase ground truth)
+        if (!isTablebaseHit)
         {
             int qPlies = 0;
             int maxQPlies = zapParams.QuiescenceMaxPlies;
-            while (qPlies < maxQPlies)
+            while (qPlies < maxQPlies && trajectory.Count < maxPlies)
             {
                 Move qMove = Move.Null;
                 // If the last move was a capture, resolve the immediate recapture first (including equal trades like Queen for Queen)!
-                if (!ZapPolicy.TryGetLvaRecapture(in board, lastMove, out qMove) || qMove.IsNull)
+                if (board.IsInCheck())
+                {
+                    if (!policy.TryGetQuickMove(in board, pliesTraced + qPlies, lastMove, out qMove) || qMove.IsNull) break;
+                }
+                else if (!ZapPolicy.TryGetLvaRecapture(in board, lastMove, out qMove) || qMove.IsNull)
                 {
                     if (!policy.TryGetWinningCapture(in board, lastMove, out qMove) || qMove.IsNull)
                     {
@@ -202,24 +217,21 @@ public static class ZapProbe
                 Color moverColor = board.SideToMove;
                 ulong zobrist = board.ZobristKey;
 
-                if (!board.MakeMove(qMove, out BoardState qState))
+                Piece qMovedPiece = board.GetPieceAt(qMove.From);
+                if (!board.MakeMove(qMove, out BoardState qState, qMovedPiece))
                 {
                     break;
                 }
+                searchTrace?.WriteEdge(zobrist, board.ZobristKey, qMove);
+                incremental?.PushMove(qMove, qMovedPiece, qState.CapturedPiece, in board);
 
                 qPlies++;
 
-                if (board.HalfmoveClock >= 4 && (board.IsFiftyMoveRule() || board.IsRepetition(searchPly + pliesTraced + qPlies) || board.IsThreefoldRepetition()))
-                {
-                    return 0;
-                }
+                bool isDraw = (board.HalfmoveClock >= 4 &&
+                    (board.IsFiftyMoveRule() || board.IsRepetition(searchPly + pliesTraced + qPlies) || board.IsThreefoldRepetition())) ||
+                    board.HasInsufficientMaterial();
 
-                if (board.HasInsufficientMaterial())
-                {
-                    return 0;
-                }
-
-                int postRaw = (int)evaluator.Evaluate(in board);
+                int postRaw = isDraw ? 0 : (int)evaluator.Evaluate(in board);
                 int currentEngineEval = board.SideToMove == engineColor ? postRaw : -postRaw;
                 int delta = currentEngineEval - prevEngineEval;
 
@@ -228,9 +240,11 @@ public static class ZapProbe
                     zobristKey: zobrist,
                     move: qMove,
                     sideToMove: moverColor,
+                    parentEval: (short)Math.Clamp(prevEngineEval, short.MinValue + 1, short.MaxValue - 1),
                     staticEval: (short)Math.Clamp(currentEngineEval, short.MinValue + 1, short.MaxValue - 1),
                     evalDelta: (short)Math.Clamp(delta, short.MinValue + 1, short.MaxValue - 1)
                 ));
+                if (isDraw) return 0;
 
                 prevEngineEval = currentEngineEval;
                 lastMove = qMove;

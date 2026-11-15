@@ -509,6 +509,31 @@
         395,
         182
       ]
+    },
+    "v1.0.22": {
+      "version": "v1.0.22",
+      "date": "2026-11-15",
+      "estimated_elo": 2677,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.0.21 (Known Elo: 2670)",
+      "score": "4068.5 / 8000",
+      "wins": 3086,
+      "losses": 2949,
+      "draws": 1965,
+      "perf_percent": 50.86,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.21_20261114_183430.pgn",
+      "notes": "Unified Shared-FT MoE NNUE (ArchMoE 6-expert heads + Open/Closed blending), 20-byte TTEntry (3 entries/cluster), and MCTS/micro/volatility removal (+6.56 nElo / +5.95 Elo over v1.0.21 in 8,000 games)",
+      "nelo": 6.56,
+      "nelo_margin": 5.39,
+      "draw_rate": 0.246,
+      "pentanomial": [
+        186,
+        421,
+        708,
+        457,
+        228
+      ]
     }
   }
 }

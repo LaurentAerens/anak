@@ -16,7 +16,6 @@ namespace Anak.Search;
 ///   - Mate distance pruning
 ///   - Threefold repetition & 50-move rule draw detection
 ///   - QuiescenceSearch at leaf nodes (depth <= 0)
-///   - Cascading Micro-NNUE fast pre-screen via IMultiTierEvaluator.EvaluateMicro
 ///   - Reverse Futility Pruning (Static Null Move) for depth <= 4
 ///   - Adaptive Null Move Pruning (NMP) with zugzwang verification
 ///   - Singular Extensions (+1 or +2 plies)
@@ -171,36 +170,6 @@ public sealed class AlphaBetaEngine : ISearchEngine
         }
     }
 
-    public int MicroMaxShare
-    {
-        get => (int)Math.Round(_timeManager.MicroMaxShare * 100.0f);
-        set => _timeManager.MicroMaxShare = value / 100.0f;
-    }
-
-    public int MicroMinTime
-    {
-        get => _timeManager.MicroMinTimeThresholdMs;
-        set => _timeManager.MicroMinTimeThresholdMs = value;
-    }
-
-    public int MicroDepthGate
-    {
-        get => (int)Math.Round(_timeManager.MicroDepthGateRatio * 100.0f);
-        set => _timeManager.MicroDepthGateRatio = value / 100.0f;
-    }
-
-    public int MicroAheadWeight
-    {
-        get => (int)Math.Round(_timeManager.MicroAheadWeight * 100.0f);
-        set => _timeManager.MicroAheadWeight = value / 100.0f;
-    }
-
-    public int MicroEqualWeight
-    {
-        get => (int)Math.Round(_timeManager.MicroEqualWeight * 100.0f);
-        set => _timeManager.MicroEqualWeight = value / 100.0f;
-    }
-
     public int TimeMovesToGo
     {
         get => _timeManager.TimeMovesToGo;
@@ -345,11 +314,35 @@ public sealed class AlphaBetaEngine : ISearchEngine
     /// <summary>
     /// Executes Alpha-Beta / PVS search for the given board position within the specified limits.
     /// </summary>
+    public string SearchTraceFile { get; set; } = string.Empty;
+    private SearchTraceWriter? _searchTrace;
+
     public Move Search(
         in Board board,
         in SearchLimits limits,
         Action<SearchStatistics>? infoCallback = null,
         CancellationToken cancellationToken = default)
+    {
+        using var trace = SearchTraceWriter.Open(SearchTraceFile, board.ZobristKey);
+        if (trace == null)
+            return SearchCore(in board, in limits, infoCallback, cancellationToken);
+        _searchTrace = trace;
+        try
+        {
+            return SearchCore(in board, in limits, infoCallback, cancellationToken);
+        }
+        finally
+        {
+            _searchTrace = null;
+            foreach (var worker in _workers) worker._qsearch.SearchTrace = null;
+        }
+    }
+
+    private Move SearchCore(
+        in Board board,
+        in SearchLimits limits,
+        Action<SearchStatistics>? infoCallback,
+        CancellationToken cancellationToken)
     {
         // 1. Advance TT generation age
         _tt.NewSearch();
@@ -359,15 +352,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
         if (_evaluator is IMultiTierEvaluator multiTier)
         {
             multiTier.SetRootTopology(in board);
-            activeExpertId = (byte)multiTier.ActiveRootExpert;
-
-            // If active root expert transitioned (e.g. Open -> Endgame or Imbalance -> Endgame),
-            // clear history tables to avoid move ordering bias across incompatible game phases.
-            // TT is preserved! TTEntry.ExpertId isolates foreign score cutoffs while retaining
-            // hash moves and restoring full search depth when returning to a previously visited expert.
-            if (_lastRootExpert.HasValue && _lastRootExpert.Value != multiTier.ActiveRootExpert)
+            if (!multiTier.IsUnifiedMoE)
             {
-                ClearHistory();
+                activeExpertId = (byte)multiTier.ActiveRootExpert;
+
+                // Legacy 6-model mode: clear history tables on expert transition and isolate TT scores by ExpertId.
+                // Unified ArchMoE mode shares one calibrated FT & WDL scale, so history and TT remain 100% intact.
+                if (_lastRootExpert.HasValue && _lastRootExpert.Value != multiTier.ActiveRootExpert)
+                {
+                    ClearHistory();
+                }
             }
             _lastRootExpert = multiTier.ActiveRootExpert;
         }
@@ -385,6 +379,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         for (int i = 0; i < _workers.Length; i++)
         {
             _workers[i].ResetForSearch(activeExpertId);
+            _workers[i]._qsearch.SearchTrace = _searchTrace;
         }
 
         // 5. Check if position has zero legal moves
@@ -433,23 +428,28 @@ public sealed class AlphaBetaEngine : ISearchEngine
         }
 
         // 7. Run main search on worker 0
-        Move bestMove = _workers[0].RunMainSearch(in board, in limits, infoCallback, cancellationToken);
-
-        // 8. Search finished: stop all helper workers
-        _stopped = true;
-        if (helperTasks != null)
+        try
         {
-            try
+            return _workers[0].RunMainSearch(in board, in limits, infoCallback, cancellationToken);
+        }
+        finally
+        {
+            // A trace must not be closed while a helper is still writing, even on cancellation/error.
+            _stopped = true;
+            if (helperTasks != null)
             {
-                Task.WaitAll(helperTasks, 500);
-            }
-            catch
-            {
-                // Helper worker task exceptions or cancellations are safely swallowed
+                try
+                {
+                    if (_searchTrace != null) Task.WaitAll(helperTasks);
+                    else Task.WaitAll(helperTasks, 500);
+                }
+                catch
+                {
+                    // Helper worker task exceptions or cancellations are safely swallowed.
+                    // Trace I/O failures are retained by the writer and rethrown at disposal.
+                }
             }
         }
-
-        return bestMove;
     }
 
     /// <summary>
@@ -774,13 +774,6 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
 
-            // --- Micro Forward Blunder Watchdog ---
-            // When holding a candidate move, verify with ultra-fast Micro tactical watchdog
-            if (multiTier is { HasMicroModel: true, BlunderWatchdog: true } && !bestMove.IsNull && !cancellationToken.IsCancellationRequested)
-            {
-                bestMove = RunMicroBlunderWatchdog(in rootBoard, bestMove, bestScore, completedDepth, expectedDepth, multiTier, cancellationToken);
-            }
-
             return bestMove;
         }
 
@@ -816,139 +809,6 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             // In all other cases: main search gets 100% of soft limit!
             return softLimitMs;
-        }
-
-        private Move RunMicroBlunderWatchdog(
-            in Board rootBoard,
-            Move candidateMove,
-            int candidateScore,
-            int currentDepth,
-            int expectedDepth,
-            IMultiTierEvaluator multiTier,
-            CancellationToken cancellationToken)
-        {
-            if (candidateMove.IsNull || cancellationToken.IsCancellationRequested || _engine._stopped)
-            {
-                return candidateMove;
-            }
-
-            // Compute dynamic Micro budget based on TimeBudget, CurrentDepth, and Eval
-            bool isStable = _engine._timeManager.StableMoveDepths >= 2;
-            long microBudgetMs = _engine._timeManager.ComputeMicroBudget(currentDepth, expectedDepth, candidateScore, isStable);
-
-            // If budget is 0 (due to time crunch, low depth, bad position, etc.), skip completely
-            if (microBudgetMs <= 0)
-            {
-                return candidateMove;
-            }
-
-            long startTime = _engine._timeManager.ElapsedMilliseconds;
-            long deadline = startTime + microBudgetMs;
-
-            // Evaluate root position with Micro to establish baseline Micro score
-            int rootMicro = multiTier.EvaluateMicro(in rootBoard).Raw;
-
-            // Play candidate move to inspect opponent's responses
-            Board boardAfter = rootBoard;
-            boardAfter.MakeMove(candidateMove, out BoardState state);
-
-            // Check opponent's legal moves for immediate tactical refutations
-            MoveList oppMoves = default;
-            MoveGenerator.GenerateLegalMoves(in boardAfter, ref oppMoves);
-
-            bool isRefuted = false;
-
-            for (int i = 0; i < oppMoves.Count; i++)
-            {
-                if (_engine._timeManager.ElapsedMilliseconds >= deadline)
-                {
-                    break;
-                }
-
-                Move oppMove = oppMoves[i];
-
-                // 1. Static Exchange Evaluation (SEE): does opponent have a winning capture?
-                // e.g. hanging queen, rook, or minor piece (SEE >= 200 cp)
-                if (oppMove.IsCapture || oppMove.IsPromotion)
-                {
-                    int see = StaticExchangeEvaluator.Evaluate(in boardAfter, oppMove);
-                    if (see >= 200)
-                    {
-                        isRefuted = true;
-                        break;
-                    }
-                }
-
-                // 2. Micro neural evaluation on tactical checks and captures
-                boardAfter.MakeMove(oppMove, out BoardState replyState);
-                bool inCheck = boardAfter.IsInCheck();
-                bool checkOrTactical = inCheck || oppMove.IsCapture || oppMove.IsPromotion;
-
-                if (checkOrTactical)
-                {
-                    int oppMicro = multiTier.EvaluateMicro(in boardAfter).Raw;
-                    int ourScoreAfter = -oppMicro;
-
-                    // If Micro score collapses by > 280 cp compared to root Micro score
-                    if (rootMicro - ourScoreAfter > 280)
-                    {
-                        isRefuted = true;
-                        boardAfter.UnmakeMove(oppMove, in replyState);
-                        break;
-                    }
-                }
-                boardAfter.UnmakeMove(oppMove, in replyState);
-            }
-
-            boardAfter.UnmakeMove(candidateMove, in state);
-
-            // If candidate move is refuted, look for a safe alternative among root candidates from main search
-            if (isRefuted && _rootCandidates.Count > 1 && _engine._timeManager.ElapsedMilliseconds < deadline)
-            {
-                for (int i = 0; i < _rootCandidates.Count; i++)
-                {
-                    Move altMove = _rootCandidates[i].Move;
-                    if (altMove == candidateMove || altMove.IsNull) continue;
-
-                    // Only consider alternatives that scored within 80 cp of the candidate move in the main search!
-                    // Never switch to an alternative that the main search evaluated as significantly worse!
-                    if (_rootCandidates[i].ScoreCp < candidateScore - 80)
-                    {
-                        continue;
-                    }
-
-                    // Test if altMove is safe from refutation
-                    Board altBoard = rootBoard;
-                    altBoard.MakeMove(altMove, out BoardState altState);
-
-                    MoveList altOppMoves = default;
-                    MoveGenerator.GenerateLegalMoves(in altBoard, ref altOppMoves);
-
-                    bool altIsSafe = true;
-                    for (int j = 0; j < altOppMoves.Count; j++)
-                    {
-                        Move altOppMove = altOppMoves[j];
-                        if (altOppMove.IsCapture || altOppMove.IsPromotion)
-                        {
-                            if (StaticExchangeEvaluator.Evaluate(in altBoard, altOppMove) >= 200)
-                            {
-                                altIsSafe = false;
-                                break;
-                            }
-                        }
-                    }
-
-                    altBoard.UnmakeMove(altMove, in altState);
-
-                    if (altIsSafe)
-                    {
-                        // Found a safe alternative from main search that doesn't hang material!
-                        return altMove;
-                    }
-                }
-            }
-
-            return candidateMove;
         }
 
         /// <summary>
@@ -1044,6 +904,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             {
                 Piece movedPiece = board.GetPieceAt(move.From);
                 board.MakeMove(move, out BoardState state, movedPiece);
+                _engine._searchTrace?.WriteEdge(key, board.ZobristKey, move);
                 _tt.Prefetch(board.ZobristKey);
                 Nodes++;
                 _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
@@ -1387,6 +1248,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 int nullDepth = depth - 1 - r;
 
                 board.MakeNullMove(out BoardState nullState);
+                _engine._searchTrace?.WriteEdge(key, board.ZobristKey, Move.Null);
                 _tt.Prefetch(board.ZobristKey);
                 _incEval?.PushNullMove(in board);
                 _stack[ply].CurrentMove = Move.Null;
@@ -1530,6 +1392,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
                 Piece movedPiece = board.GetPieceAt(move.From);
                 board.MakeMove(move, out BoardState state, movedPiece);
+                _engine._searchTrace?.WriteEdge(key, board.ZobristKey, move);
                 _tt.Prefetch(board.ZobristKey);
                 Nodes++;
                 _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);

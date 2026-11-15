@@ -41,13 +41,6 @@ public sealed class TimeManager
     public int TimeScoreDropScale { get; set; } = 131;
     public int TimeFailLowScale { get; set; } = 140;
 
-    // SPSA-tuned parameters for dynamic Micro budgeting (converged across 2,400 games)
-    public float MicroMaxShare { get; set; } = 0.06f; // Max 6% of soft limit
-    public int MicroMinTimeThresholdMs { get; set; } = 25; // 25ms cutoff (guarantees 0 timeouts across 10k games)
-    public float MicroDepthGateRatio { get; set; } = 0.85f; // SPSA tuned: 85% of expected depth
-    public float MicroAheadWeight { get; set; } = 1.0f; // SPSA tuned: 100% weight when ahead
-    public float MicroEqualWeight { get; set; } = 0.73f; // SPSA tuned: 73% weight in equal positions
-
     /// <summary>
     /// Gets the estimated target depth achievable within the soft time limit.
     /// In blitz (25ms), typically depth 9-10; in classical, depth 16-22.
@@ -61,54 +54,6 @@ public sealed class TimeManager
         if (_softLimitMs < 1000) return 15;
         if (_softLimitMs < 5000) return 18;
         return 22;
-    }
-
-    /// <summary>
-    /// Computes the dynamic time budget allocated to the Micro blunder watchdog
-    /// based on remaining time budget, current search depth vs expected depth, and evaluation score.
-    /// </summary>
-    public long ComputeMicroBudget(int currentDepth, int expectedDepth, int scoreCp, bool isMoveStable)
-    {
-        if (!_hasTimeLimit || IsTimeCrunch || _softLimitMs <= MicroMinTimeThresholdMs)
-        {
-            return 0;
-        }
-
-        // 1. Time Factor (scales smoothly with surplus time up to MicroMaxShare)
-        float surplusTime = _softLimitMs - MicroMinTimeThresholdMs;
-        float rTime = Math.Clamp(surplusTime / 200.0f, 0.0f, MicroMaxShare);
-
-        // 2. Depth Factor (unlocks as current depth nears or exceeds expected target depth)
-        float rDepth = 1.0f;
-        if (expectedDepth > 0)
-        {
-            float depthRatio = (float)currentDepth / expectedDepth;
-            if (depthRatio < MicroDepthGateRatio)
-            {
-                return 0;
-            }
-            rDepth = Math.Clamp((depthRatio - MicroDepthGateRatio) / (1.0f - MicroDepthGateRatio + 0.01f), 0.0f, 1.0f);
-        }
-        else if (currentDepth < 8)
-        {
-            return 0;
-        }
-
-        // 3. Eval Factor
-        if (scoreCp <= -50 || Math.Abs(scoreCp) >= Value.MateValue - 100)
-        {
-            return 0; // Pos is bad or mate found: 0% to Micro, 100% to main search
-        }
-
-        float rEval = scoreCp >= 150
-            ? (isMoveStable ? MicroAheadWeight : MicroAheadWeight * 0.5f)
-            : MicroEqualWeight;
-
-        long budget = (long)(_softLimitMs * rTime * rDepth * rEval);
-
-        // Safety guarantee: Micro budget must never exceed the safety margin between soft and hard limits
-        long safetyRoom = Math.Max(0, _hardLimitMs - _stopwatch.ElapsedMilliseconds - SafetyLagMs);
-        return Math.Clamp(budget, 0, safetyRoom);
     }
 
     /// <summary>
