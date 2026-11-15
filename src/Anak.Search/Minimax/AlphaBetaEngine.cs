@@ -1057,6 +1057,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 return _evaluator.Evaluate(in board).Raw;
             }
 
+            // Clear child killers so stale siblings don't pollute move ordering
+            if (ply + 1 < MaxStackSize)
+            {
+                _stack[ply + 1].Killer0 = Move.Null;
+                _stack[ply + 1].Killer1 = Move.Null;
+            }
+
             // Periodic time management & cancellation check (dynamically masked for low-time safety)
             if ((Nodes & _engine._timeManager.CheckMask) == 0)
             {

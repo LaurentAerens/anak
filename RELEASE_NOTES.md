@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.23` (Estimated Rating: **2686 Elo**)  
+> **Current Active Version:** `v1.0.24` (Estimated Rating: **2693 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.24` (2026-11-15) — Clear Child Killer Moves in AlphaBeta (BUG-02)
+- **Category:** Search Move Ordering (Patch Release)
+- **Estimated Elo:** **2693 &plusmn; 7** (+6.86 Elo / +7.84 nElo over v1.0.23 in 8,000 games, 97.82% LOS)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,242 wins, 3,084 losses, 1,674 draws (50.99% score, 0 crashes).
+- **Highlights:**
+  - **Clear Child Killers (`AlphaBetaEngine.cs`):** Cleared `_stack[ply + 1].Killer0` and `_stack[ply + 1].Killer1` on entry to non-leaf `AlphaBeta` nodes so stale sibling killer moves no longer pollute move ordering across branches.
 
 ### `v1.0.23` (2026-11-15) — Exempt Checking Moves & Mate Threats from Pre-Move Pruning
 - **Category:** Search Tactical Accuracy (Patch Release)
