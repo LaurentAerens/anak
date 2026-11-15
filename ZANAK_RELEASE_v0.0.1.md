@@ -1,26 +1,24 @@
-# Zanak v0.0.1 — First Milestone Release (ZAP Architecture)
+# Zanak v0.0.1 — Experimental Release
 
-**Zanak** is an experimental chess engine built in the Anak repository to validate **ZAP (Zero-branching Accelerated Probe)**—an alternative search paradigm that replaces traditional minimax/alpha-beta trees and MCTS with linear greedy trajectories and asynchronous worker refutation.
-
-![Zanak ZAP Search Demo](https://raw.githubusercontent.com/laerens/anak/zanak-v0.0.1/docs/zanak-v0.0.1-demo.gif)
+**Zanak** is a fun, experimental side-project in the Anak repository. Rather than aiming to beat traditional engines or be a breakthrough, it's a playground for exploring a different way to structure search—combining ideas from **Principal Variation Search (PVS) / null-window-style refutation** and **Proof-Number Search (PNS)-style priority expansion** along greedy principal lines (nicknamed **ZAP**).
 
 ---
 
-## What is ZAP (Zero-branching Accelerated Probe)?
+## How It Works
 
-Traditional engines build exponentially branching game trees via minimax, alpha-beta pruning, LMR, and PVS. **Zanak has zero minimax routines and zero multi-ply branch trees.** Instead, it models search in four phases:
+Instead of a standard recursive alpha-beta tree, Zanak organizes search into four stages:
 
-1. **Phase 1 — Root Expansion & Linear Greedy Spines (`ZapProbe` + `ZapPolicy`)**
-   * Generates all legal root moves and traces a single, fast, linear greedy trajectory ("spine") for each candidate using `ZapPolicy.TryGetQuickMove`—a 25-step bitboard-first decision cascade (checks, free/winning captures, piece evasions, simplifying trades when ahead, safe checks, safe pawn pushes) with zero move-list allocation along the spine.
-2. **Phase 2 — Retrospective Discrepancy & Crosspoint Extraction (`ZapWorkQueue`)**
-   * Evaluates `Δeval` along each spine to assign **blame/responsibility** to the moves that allowed tactical swings, rather than the capture that collected them.
+1. **Phase 1 — Root Expansion & Greedy Spines (`ZapProbe` + `ZapPolicy`)**
+   * Generates all legal root moves and traces a fast linear greedy line ("spine") for each candidate using `ZapPolicy.TryGetQuickMove`—a 25-step bitboard-first decision cascade (checks, free/winning captures, piece evasions, simplifying trades when ahead, safe checks, safe pawn pushes) with zero move-list allocation along the line.
+2. **Phase 2 — Discrepancy & Crosspoint Extraction (`ZapWorkQueue`)**
+   * Evaluates `Δeval` along each spine to identify moves that caused tactical swings.
    * Extracts prioritized `ZapCrosspoint` work items, giving immediate root-proximity priority to `Ply 1` and `Ply 2` replies.
 3. **Phase 3 — Dual-Role Worker Squads & Subtree Splicing (`ZapWorkerPool` + `ZapSharedState`)**
-   * **Refutation Squads** (opponent turns) search for sibling replies that disprove optimistic lines and clamp the candidate's `AgentCeiling`.
-   * **Promotion Squads** (engine turns) look for stronger continuations, bounded by any refutation ceiling.
+   * **Refutation Squads** (opponent turns) run null-window-like refutation checks for sibling replies that disprove optimistic lines and clamp the candidate's `AgentCeiling`.
+   * **Promotion Squads** (engine turns) look for stronger continuations, bounded by any refutation ceiling (similar in spirit to PNS-style best-first expansion).
    * Accepted improvements splice directly into the spine (`SpliceTrajectoryTail`) and trigger **Back Credit** (`CreditEarlierDecisions`) to reopen earlier junctions whose context changed.
 4. **Phase 4 — Anytime Decision (`ZapSharedState`)**
-   * Guarantees a valid `bestmove` at any millisecond, using multi-tier NNUE evaluation (`ZanakNnueEvaluator`) and Syzygy tablebase probing.
+   * Returns a valid `bestmove` at any millisecond, using multi-tier NNUE evaluation (`ZanakNnueEvaluator`) and Syzygy tablebase probing.
 
 ---
 
