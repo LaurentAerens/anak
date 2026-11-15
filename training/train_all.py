@@ -28,18 +28,18 @@ from tqdm import tqdm
 
 from model import (
     StandardNNUE,
-    MicroNNUE,
+    SharedMoENNUE,
     ModelEMA,
     clamp_nnue_weights,
     enforce_perspective_antisymmetry,
     evaluate_benchmark_positions,
 )
 
-from loss import ModernNNUELoss, BlunderLoss
-from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
+from loss import ModernNNUELoss
+from fast_loader import FastMemoryMappedBatchLoader, MultiExpertBatchLoader, resolve_binpack_files
 from binpack import BinpackReader, BinpackWriter, read_binpack_count
 from preprocess import preprocess_data
-from export import export_standard, export_micro
+from export import export_standard, export_moe
 from dataset import find_pgn_files, encode_board_features, calculate_openness
 from download_data import download_stockfish_d9_binpacks, convert_stockfish_d9_to_anak, STOCKFISH_D9_URLS
 from generate_data import BuiltinTacticalEvaluator, load_seed_openings
@@ -71,18 +71,7 @@ def save_pipeline_state(checkpoints_dir: str, state: dict):
         json.dump(state, f, indent=2)
 
 
-ALL_8_MODELS = [
-    "open",
-    "closed",
-    "endgame",
-    "queenless",
-    "imbalance",
-    "attack",
-    "micro",
-    "volatility",
-]
-
-IMPACTED_MODELS = [
+ALL_EXPERT_MODELS = [
     "open",
     "closed",
     "endgame",
@@ -91,9 +80,7 @@ IMPACTED_MODELS = [
     "attack",
 ]
 
-
-def is_micro_model(model_name: str) -> bool:
-    return model_name in ("micro", "small", "volatility")
+IMPACTED_MODELS = ALL_EXPERT_MODELS
 
 
 def ensure_stockfish_d9_binpacks(
@@ -106,29 +93,26 @@ def ensure_stockfish_d9_binpacks(
     include_d11: bool = True,
 ):
     """
-    Ensures all expert/helper .binpack files in preprocessed_dir exist and are populated
+    Ensures all expert .binpack files in preprocessed_dir exist and are populated
     from the Stockfish Depth-9 & Depth-11 multi-hundred-million evaluation database.
     """
     os.makedirs(preprocessed_dir, exist_ok=True)
-    target_models = required_models or ALL_8_MODELS
+    target_models = required_models or ALL_EXPERT_MODELS
 
     needs_build = force_rebuild
     if not needs_build:
         for m in target_models:
-            tag = "micro" if m == "small" else m
-            path = os.path.join(preprocessed_dir, f"{tag}.binpack")
+            path = os.path.join(preprocessed_dir, f"{m}.binpack")
             count = read_binpack_count(path)
-            # Specialized expert categories (endgame, queenless, imbalance, attack, volatility)
-            # scale with min_records_per_pack // 2, with no artificial 50k ceiling!
-            min_req = min_records_per_pack if tag in ("open", "closed", "micro") else max(250_000, min_records_per_pack // 2)
+            min_req = min_records_per_pack if m in ("open", "closed") else max(250_000, min_records_per_pack // 2)
             if count < min_req:
-                print(f"  [Check] {tag}.binpack has {count:,} finalized records (target >= {min_req:,}) -> rebuild needed.", flush=True)
+                print(f"  [Check] {m}.binpack has {count:,} finalized records (target >= {min_req:,}) -> rebuild needed.", flush=True)
                 needs_build = True
                 break
 
     if not needs_build:
-        print_banner("STEP 1 & 2: STOCKFISH DEPTH-9/11 8-EXPERT BINPACKS READY")
-        for m in ALL_8_MODELS:
+        print_banner("STEP 1 & 2: STOCKFISH DEPTH-9/11 6-EXPERT BINPACKS READY")
+        for m in ALL_EXPERT_MODELS:
             path = os.path.join(preprocessed_dir, f"{m}.binpack")
             count = read_binpack_count(path)
             if count > 0:
@@ -198,6 +182,9 @@ def train_single_model(
     workers: Optional[int] = None,
     prefetch_batches: Optional[int] = None,
     chunk_size: Optional[int] = None,
+    eval_scale: float = 2.50,
+    blunder_weight: float = 5.0,
+    warm_start_weights: Optional[str] = None,
 ) -> str:
     """
     Trains one NNUE model on its preprocessed Stockfish d9/d11 binpack using 100% trainable weights,
@@ -248,12 +235,18 @@ def train_single_model(
     else:
         print("Mixed Precision:   DISABLED (CPU float32)")
 
-    if is_micro_model(model_name):
-        model = MicroNNUE().to(device)
-        criterion = BlunderLoss(blunder_weight=5.0)
+    is_moe = (model_name == "moe")
+    if is_moe:
+        model = SharedMoENNUE().to(device)
     else:
         model = StandardNNUE().to(device)
-        criterion = ModernNNUELoss(lambda_wdl=lambda_wdl, eval_scale=2.50)
+    criterion = ModernNNUELoss(lambda_wdl=lambda_wdl, eval_scale=eval_scale)
+
+    if warm_start_weights and os.path.isfile(warm_start_weights):
+        raw = torch.load(warm_start_weights, map_location=device)
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+        model.load_state_dict(sd)
+        print(f"--> Warm-started {model_name.upper()} from {warm_start_weights}")
 
     if compile_model and is_cuda and hasattr(torch, "compile"):
         try:
@@ -262,11 +255,10 @@ def train_single_model(
         except Exception as e:
             print(f"Notice: torch.compile skipped ({e})")
 
-    is_micro = is_micro_model(model_name)
-    ema = ModelEMA(model, decay=0.990 if is_micro else 0.999)
+    ema = ModelEMA(model, decay=0.999)
 
     # Fused AdamW optimizer on CUDA (single kernel launch for all parameters and momentum buffers)
-    adamw_kwargs = {"lr": lr, "weight_decay": 0.0 if is_micro else 1e-5}
+    adamw_kwargs = {"lr": lr, "weight_decay": 1e-5}
     if is_cuda:
         try:
             optimizer = torch.optim.AdamW(model.parameters(), fused=True, **adamw_kwargs)
@@ -293,7 +285,7 @@ def train_single_model(
     best_metric = float("inf")
     epochs_without_improvement = 0
     start_epoch = 1
-    out_tag = "micro" if model_name == "small" else model_name
+    out_tag = model_name
     best_path = os.path.join(checkpoints_dir, f"{out_tag}_best.pt")
     latest_path = os.path.join(checkpoints_dir, f"{out_tag}_latest.pt")
 
@@ -331,33 +323,61 @@ def train_single_model(
         verify_model_sanity(model, model_name)
         return best_path
 
-    train_loader = FastMemoryMappedBatchLoader(
-        binpack_files,
-        batch_size=effective_batch_size,
-        shuffle=True,
-        device=device,
-        val_split=val_split,
-        is_validation=False,
-        augment_flip=augment_flip,
-        mix_sources=mix_sources,
-        mix_ratio=mix_ratio,
-        prefetch_batches=prefetch_batches or (16 if is_cuda else 4),
-        num_workers=workers,
-        chunk_size=chunk_size or 65536,
-    )
-    val_batch_size = (effective_batch_size * 2) if is_cuda else effective_batch_size
-    val_loader = FastMemoryMappedBatchLoader(
-        binpack_files,
-        batch_size=val_batch_size,
-        shuffle=False,
-        device=device,
-        val_split=val_split,
-        is_validation=True,
-        augment_flip=False,
-        prefetch_batches=2,
-        num_workers=2,
-        chunk_size=chunk_size or 65536,
-    ) if val_split > 0 else None
+    if is_moe:
+        moe_dir = binpack_path if isinstance(binpack_path, str) and os.path.isdir(binpack_path) else os.path.dirname(binpack_files[0])
+        train_loader = MultiExpertBatchLoader(
+            data_dir=moe_dir,
+            batch_size=effective_batch_size,
+            shuffle=True,
+            device=device,
+            val_split=val_split,
+            is_validation=False,
+            augment_flip=augment_flip,
+            prefetch_batches=prefetch_batches or (16 if is_cuda else 4),
+            num_workers=workers,
+            chunk_size=chunk_size or 65536,
+        )
+        val_batch_size = (effective_batch_size * 2) if is_cuda else effective_batch_size
+        val_loader = MultiExpertBatchLoader(
+            data_dir=moe_dir,
+            batch_size=val_batch_size,
+            shuffle=False,
+            device=device,
+            val_split=val_split,
+            is_validation=True,
+            augment_flip=False,
+            prefetch_batches=2,
+            num_workers=2,
+            chunk_size=chunk_size or 65536,
+        ) if val_split > 0 else None
+    else:
+        train_loader = FastMemoryMappedBatchLoader(
+            binpack_files,
+            batch_size=effective_batch_size,
+            shuffle=True,
+            device=device,
+            val_split=val_split,
+            is_validation=False,
+            augment_flip=augment_flip,
+            mix_sources=mix_sources,
+            mix_ratio=mix_ratio,
+            prefetch_batches=prefetch_batches or (16 if is_cuda else 4),
+            num_workers=workers,
+            chunk_size=chunk_size or 65536,
+        )
+        val_batch_size = (effective_batch_size * 2) if is_cuda else effective_batch_size
+        val_loader = FastMemoryMappedBatchLoader(
+            binpack_files,
+            batch_size=val_batch_size,
+            shuffle=False,
+            device=device,
+            val_split=val_split,
+            is_validation=True,
+            augment_flip=False,
+            prefetch_batches=2,
+            num_workers=2,
+            chunk_size=chunk_size or 65536,
+        ) if val_split > 0 else None
 
     try:
         for epoch in range(start_epoch, epochs + 1):
@@ -369,18 +389,20 @@ def train_single_model(
 
             pbar = tqdm(train_loader, desc=f"{model_name.capitalize()} Epoch {epoch}/{epochs}", leave=False)
             for batch in pbar:
-                our_in = batch.get("our_indices", batch["our_features"]).to(device, non_blocking=is_cuda)
-                their_in = batch.get("their_indices", batch["their_features"]).to(device, non_blocking=is_cuda)
+                our_in = (batch["our_indices"] if "our_indices" in batch else batch["our_features"]).to(device, non_blocking=is_cuda)
+                their_in = (batch["their_indices"] if "their_indices" in batch else batch["their_features"]).to(device, non_blocking=is_cuda)
                 target_wdl = batch["target_wdl"].to(device, non_blocking=is_cuda)
                 target_eval = batch["target_eval"].to(device, non_blocking=is_cuda)
 
                 optimizer.zero_grad(set_to_none=True)
                 with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
-                    preds = model(our_in, their_in)
-                    if is_micro_model(model_name):
-                        loss = criterion(preds, target_eval)
+                    if is_moe:
+                        expert_ids = batch["expert_ids"].to(device, non_blocking=is_cuda)
+                        openness = batch["openness"].to(device, non_blocking=is_cuda)
+                        preds = model(our_in, their_in, expert_ids=expert_ids, openness=openness)
                     else:
-                        loss = criterion(preds, target_wdl, target_eval)
+                        preds = model(our_in, their_in)
+                    loss = criterion(preds, target_wdl, target_eval)
 
                 if scaler.is_enabled():
                     scaler.scale(loss).backward()
@@ -415,16 +437,18 @@ def train_single_model(
                 val_batches = 0
                 with torch.inference_mode():
                     for v_batch in val_loader:
-                        v_our_in = v_batch.get("our_indices", v_batch["our_features"]).to(device, non_blocking=is_cuda)
-                        v_their_in = v_batch.get("their_indices", v_batch["their_features"]).to(device, non_blocking=is_cuda)
+                        v_our_in = (v_batch["our_indices"] if "our_indices" in v_batch else v_batch["our_features"]).to(device, non_blocking=is_cuda)
+                        v_their_in = (v_batch["their_indices"] if "their_indices" in v_batch else v_batch["their_features"]).to(device, non_blocking=is_cuda)
                         v_target_wdl = v_batch["target_wdl"].to(device, non_blocking=is_cuda)
                         v_target_eval = v_batch["target_eval"].to(device, non_blocking=is_cuda)
                         with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
-                            preds = model(v_our_in, v_their_in)
-                            if is_micro_model(model_name):
-                                v_l = criterion(preds, v_target_eval)
+                            if is_moe:
+                                v_expert_ids = v_batch["expert_ids"].to(device, non_blocking=is_cuda)
+                                v_openness = v_batch["openness"].to(device, non_blocking=is_cuda)
+                                preds = model(v_our_in, v_their_in, expert_ids=v_expert_ids, openness=v_openness)
                             else:
-                                v_l = criterion(preds, v_target_wdl, v_target_eval)
+                                preds = model(v_our_in, v_their_in)
+                            v_l = criterion(preds, v_target_wdl, v_target_eval)
                         val_loss += v_l.item()
                         val_batches += 1
                 if val_batches > 0:
@@ -460,10 +484,10 @@ def train_single_model(
                     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
                     net_dir = os.path.join(repo_root, "networks")
                     os.makedirs(net_dir, exist_ok=True)
-                    out_nnue_name = f"{out_tag}.nnue"
+                    out_nnue_name = "anak.nnue" if is_moe else f"{out_tag}.nnue"
                     nnue_dest = os.path.join(net_dir, out_nnue_name)
-                    if is_micro_model(model_name):
-                        export_micro(model, nnue_dest)
+                    if is_moe:
+                        export_moe(model, nnue_dest)
                     else:
                         export_standard(model, nnue_dest)
                 except Exception:
@@ -524,13 +548,132 @@ def parse_models_arg(models_arg: List[str], impacted_only: bool = False) -> List
                     if exp not in selected:
                         selected.append(exp)
                 continue
-            if m == "small":
-                m = "micro"
-            if m in ALL_8_MODELS and m not in selected:
+            if m in (ALL_EXPERT_MODELS + ["moe"]) and m not in selected:
                 selected.append(m)
-            elif m not in ALL_8_MODELS:
-                raise ValueError(f"Unknown model '{m}'. Valid choices: {ALL_8_MODELS + ['small', 'all', 'impacted', 'expert']}")
+            elif m not in (ALL_EXPERT_MODELS + ["moe"]):
+                raise ValueError(f"Unknown model '{m}'. Valid choices: {ALL_EXPERT_MODELS + ['moe', 'all', 'impacted', 'expert']}")
     return selected or default_set
+
+
+def execute_experiment(
+    exp_id: str,
+    recipe: dict,
+    args: argparse.Namespace,
+    device: torch.device,
+    repo_root: str,
+    script_dir: str,
+):
+    print_banner(f"EXPERIMENT RUNNER: {exp_id.upper()}")
+    print(f"Goal: {recipe.get('description', '')}")
+    target_models = recipe.get("target_models", ["all"])
+    if "all" in target_models:
+        target_models = ALL_8_MODELS
+
+    exp_checkpoints = os.path.join(repo_root, "checkpoints", "experiments", exp_id)
+    exp_networks = os.path.join(repo_root, "networks", "experiments", exp_id)
+    os.makedirs(exp_checkpoints, exist_ok=True)
+    os.makedirs(exp_networks, exist_ok=True)
+
+    # 1. Populate isolated network folder with current baseline networks
+    # This guarantees untouched models remain playable in multi-expert matches
+    base_networks = os.path.join(repo_root, "networks")
+    for m in ALL_8_MODELS:
+        src_net = os.path.join(base_networks, f"{m}.nnue")
+        dst_net = os.path.join(exp_networks, f"{m}.nnue")
+        if os.path.isfile(src_net) and not os.path.isfile(dst_net):
+            shutil.copy2(src_net, dst_net)
+
+    # 2. Extract hyperparameters
+    hp = recipe.get("hyperparameters", {})
+    exp_epochs = hp.get("epochs", 15 if args.from_baseline else args.epochs)
+    exp_lr = hp.get("lr", args.lr)
+    exp_lambda_wdl = hp.get("lambda_wdl", args.lambda_wdl)
+    exp_eval_scale = hp.get("eval_scale", 2.50)
+    exp_blunder_weight = hp.get("blunder_weight", 5.0)
+
+    # 3. Ensure binpacks are available
+    ensure_stockfish_d9_binpacks(
+        raw_data_dir=args.data_dir,
+        preprocessed_dir=args.preprocessed_dir,
+        min_records_per_pack=min(args.positions_per_model, 1_000_000 if args.from_baseline else args.positions_per_model),
+        chunks_per_file=args.d9_chunks,
+        required_models=target_models,
+        force_rebuild=args.force_rebuild,
+        include_d11=args.include_d11,
+    )
+
+    trained_pts = {}
+    for m in target_models:
+        bin_path = os.path.join(args.preprocessed_dir, f"{m}.binpack")
+        warm_pt = None
+        if args.from_baseline:
+            candidate_base_pt = os.path.join(repo_root, "checkpoints", f"{m}_best.pt")
+            if os.path.isfile(candidate_base_pt):
+                warm_pt = candidate_base_pt
+
+        m_batch_size = args.batch_size
+        m_lr = exp_lr
+
+        other_binpacks = [os.path.join(args.preprocessed_dir, f"{other}.binpack") for other in ALL_EXPERT_MODELS if other != m]
+        valid_mix = [p for p in other_binpacks if os.path.isfile(p)]
+
+        best_pt = train_single_model(
+            model_name=m,
+            binpack_path=bin_path,
+            epochs=exp_epochs,
+            batch_size=m_batch_size,
+            lr=m_lr,
+            device=device,
+            checkpoints_dir=exp_checkpoints,
+            warmup_epochs=1 if args.from_baseline else args.warmup_epochs,
+            val_split=args.val_split,
+            augment_flip=args.augment_flip,
+            lambda_wdl=exp_lambda_wdl,
+            patience=args.patience,
+            min_delta=args.min_delta,
+            mix_sources=valid_mix,
+            mix_ratio=args.mix_ratio,
+            resume=False,
+            compile_model=bool(args.compile),
+            workers=args.workers,
+            prefetch_batches=args.prefetch_batches,
+            chunk_size=args.chunk_size,
+            eval_scale=exp_eval_scale,
+            blunder_weight=exp_blunder_weight,
+            warm_start_weights=warm_pt,
+        )
+        trained_pts[m] = best_pt
+
+        # Export into isolated networks directory
+        out_path = os.path.join(exp_networks, "anak.nnue" if m == "moe" else f"{m}.nnue")
+        raw = torch.load(best_pt, map_location="cpu")
+        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+        if m == "moe":
+            net = SharedMoENNUE()
+            net.load_state_dict(sd)
+            export_moe(net, out_path)
+        else:
+            net = StandardNNUE()
+            net.load_state_dict(sd)
+            export_standard(net, out_path)
+
+    print_banner(f"EXPERIMENT {exp_id.upper()} COMPLETE")
+    print(f"Networks deployed to: {exp_networks}")
+
+    if args.auto_eval:
+        print_banner(f"RUNNING TIER 1 EVALUATION (250 GAMES @ 50,000 NODES)")
+        bench_script = os.path.join(repo_root, "tools", "fastchess", "run_elo_bench.py")
+        if os.path.isfile(bench_script):
+            cmd = [
+                sys.executable,
+                bench_script,
+                "--games", "250",
+                "--nodes", "50000",
+                "--candidate-nnue-dir", exp_networks,
+                "--concurrency", "8",
+            ]
+            print(f"Command: {' '.join(cmd)}")
+            subprocess.run(cmd, cwd=repo_root)
 
 
 def main():
@@ -544,7 +687,7 @@ def main():
         type=str,
         nargs="+",
         default=["all"],
-        help="Models to train (default: all 8 models: open, closed, endgame, queenless, imbalance, attack, micro, volatility)",
+        help="Models to train (default: all 6 expert models: open, closed, endgame, queenless, imbalance, attack; or moe)",
     )
     parser.add_argument(
         "--preset",
@@ -597,7 +740,55 @@ def main():
         default=False,
         help="Only train and deploy models impacted by the King-Bucketed NNUE + SCReLU upgrade (open, closed, endgame, queenless, imbalance, attack)",
     )
+    parser.add_argument(
+        "--experiment",
+        type=str,
+        default=None,
+        help="Named experiment ID, comma-separated list of IDs, or 'all' from training/experiments/experiments.json",
+    )
+    parser.add_argument(
+        "--from-baseline",
+        action="store_true",
+        default=False,
+        help="Warm-start fine-tuning from existing baseline checkpoints/networks",
+    )
+    parser.add_argument(
+        "--no-auto-eval",
+        dest="auto_eval",
+        action="store_false",
+        default=True,
+        help="Disable automatic fastchess Tier 1 benchmark gate on experiment completion",
+    )
     args = parser.parse_args()
+
+    # Determine execution device
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # If --experiment is specified, dispatch to experiment runner
+    if args.experiment:
+        experiments_path = os.path.join(script_dir, "experiments", "experiments.json")
+        if not os.path.isfile(experiments_path):
+            raise FileNotFoundError(f"Experiment definitions file not found: {experiments_path}")
+        with open(experiments_path, "r", encoding="utf-8") as f:
+            experiments_catalog = json.load(f)
+
+        if args.experiment.lower() == "all":
+            exp_list = list(experiments_catalog.keys())
+        else:
+            exp_list = [e.strip() for e in args.experiment.split(",") if e.strip()]
+
+        for eid in exp_list:
+            if eid not in experiments_catalog:
+                raise ValueError(f"Unknown experiment ID: '{eid}'. Available: {list(experiments_catalog.keys())}")
+            execute_experiment(
+                exp_id=eid,
+                recipe=experiments_catalog[eid],
+                args=args,
+                device=device,
+                repo_root=repo_root,
+                script_dir=script_dir,
+            )
+        return
 
     # Apply preset configurations if specified
     if args.preset == "quick":
@@ -692,7 +883,7 @@ def main():
 
     trained_checkpoints = {}
     for m in selected_models:
-        out_tag = "micro" if m == "small" else m
+        out_tag = m
         best_pt = os.path.join(args.checkpoints_dir, f"{out_tag}_best.pt")
 
         if args.resume and m in pipeline_state.get("completed_models", []) and os.path.isfile(best_pt):
@@ -700,22 +891,21 @@ def main():
             trained_checkpoints[m] = best_pt
             continue
 
-        bin_path = os.path.join(args.preprocessed_dir, f"{m}.binpack")
+        bin_path = args.preprocessed_dir if m == "moe" else os.path.join(args.preprocessed_dir, f"{m}.binpack")
         # Combine with external data if specified
-        if args.external_data:
+        if args.external_data and m != "moe":
             resolved_ext = resolve_binpack_files(args.external_data)
             if resolved_ext:
                 bin_path = [bin_path] + resolved_ext
 
-        is_micro = is_micro_model(m)
-        model_batch_size = (effective_batch_size * 2) if (is_micro and device.type == "cuda") else effective_batch_size
-        model_lr = (args.lr * 2.0) if is_micro else args.lr
-        model_epochs = max(10, args.epochs // 2) if is_micro else args.epochs
-        model_patience = max(3, args.patience // 2) if (is_micro and args.patience > 0) else args.patience
+        model_batch_size = effective_batch_size
+        model_lr = args.lr
+        model_epochs = args.epochs
+        model_patience = args.patience
 
         # Collect mix sources from all other expert binpacks that exist on disk
-        other_binpacks = [os.path.join(args.preprocessed_dir, f"{other}.binpack") for other in ALL_8_MODELS if other != m]
-        valid_mix = [p for p in other_binpacks if os.path.isfile(p)]
+        other_binpacks = [os.path.join(args.preprocessed_dir, f"{other}.binpack") for other in ALL_EXPERT_MODELS if other != m]
+        valid_mix = [p for p in other_binpacks if os.path.isfile(p)] if m != "moe" else []
 
         best_pt = train_single_model(
             model_name=m,
@@ -750,19 +940,19 @@ def main():
 
     exported_files = []
     for m in selected_models:
-        out_tag = "micro" if m == "small" else m
+        out_tag = m
         best_pt = trained_checkpoints.get(m) or os.path.join(args.checkpoints_dir, f"{out_tag}_best.pt")
         if not os.path.isfile(best_pt):
             continue
 
-        out_path = os.path.join(args.deploy_dir, f"{m}.nnue")
+        out_path = os.path.join(args.deploy_dir, "anak.nnue" if m == "moe" else f"{m}.nnue")
         raw = torch.load(best_pt, map_location="cpu")
         sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
 
-        if is_micro_model(m):
-            net = MicroNNUE()
+        if m == "moe":
+            net = SharedMoENNUE()
             net.load_state_dict(sd)
-            export_micro(net, out_path)
+            export_moe(net, out_path)
         else:
             net = StandardNNUE()
             net.load_state_dict(sd)

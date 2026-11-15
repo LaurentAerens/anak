@@ -33,7 +33,7 @@ from fast_loader import (
     FastMemoryMappedBatchLoader,
     resolve_binpack_files,
 )
-from model import StandardNNUE, MicroNNUE
+from model import StandardNNUE, SharedMoENNUE
 
 
 class TestQueryAndMetrics(unittest.TestCase):
@@ -204,13 +204,13 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         model = StandardNNUE()
         self.assertEqual(model.hidden_dim, 512)
         self.assertEqual(model.l1_dim, 64)
-        self.assertEqual(tuple(model.ft.weight.shape), (512, 768))
+        self.assertEqual(tuple(model.ft.weight.shape), (512, 12288))
         self.assertEqual(tuple(model.l1.weight.shape), (64, 1024))
         self.assertEqual(tuple(model.output.weight.shape), (1, 64))
 
         nnue_path = os.path.join(self.temp_dir, "test_standard.nnue")
         export_standard(model, nnue_path)
-        self.assertEqual(os.path.getsize(nnue_path), 460_052)
+        self.assertEqual(os.path.getsize(nnue_path), 6_358_292)
 
         with open(nnue_path, "rb") as f:
             hdr = f.read(16)
@@ -220,6 +220,51 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         self.assertEqual(arch_id, 1)
         self.assertEqual(hidden_dim, 512)
         self.assertEqual(l1_dim, 64)
+
+    def test_shared_moe_nnue_architecture_blending_and_export(self):
+        from export import export_moe
+        from model import enforce_perspective_antisymmetry
+        import struct
+
+        model = SharedMoENNUE()
+        self.assertEqual(model.hidden_dim, 512)
+        self.assertEqual(model.l1_dim, 64)
+        self.assertEqual(model.expert_count, 6)
+        self.assertEqual(tuple(model.ft.weight.shape), (512, 12288))
+        self.assertEqual(tuple(model.l1_weight.shape), (6, 64, 1024))
+        self.assertEqual(tuple(model.out_weight.shape), (6, 1, 64))
+
+        enforce_perspective_antisymmetry(model)
+
+        # Verify smooth Open/Closed boundary blending vs direct expert routing
+        b = chess.Board()
+        our_idx, their_idx, _ = encode_features_to_indices(b)
+        sparse_our = torch.from_numpy(np.array([our_idx], dtype=np.int32))
+        sparse_their = torch.from_numpy(np.array([their_idx], dtype=np.int32))
+
+        with torch.inference_mode():
+            p_open = model(sparse_our, sparse_their, expert_ids=torch.tensor([0]), openness=torch.tensor([0.80])).item()
+            p_closed = model(sparse_our, sparse_their, expert_ids=torch.tensor([1]), openness=torch.tensor([0.20])).item()
+            p_mid = model(sparse_our, sparse_their, expert_ids=torch.tensor([0]), openness=torch.tensor([0.49])).item()
+            self.assertAlmostEqual(p_mid, 0.5 * (p_open + p_closed), places=5)
+
+            p_endgame_mid = model(sparse_our, sparse_their, expert_ids=torch.tensor([2]), openness=torch.tensor([0.49])).item()
+            p_endgame_hi = model(sparse_our, sparse_their, expert_ids=torch.tensor([2]), openness=torch.tensor([0.80])).item()
+            self.assertAlmostEqual(p_endgame_mid, p_endgame_hi, places=5)
+
+        nnue_path = os.path.join(self.temp_dir, "anak.nnue")
+        export_moe(model, nnue_path)
+
+        with open(nnue_path, "rb") as f:
+            hdr = f.read(16)
+        magic, version, arch_id, hidden_dim, l1_dim, packed = struct.unpack("<IIHHHH", hdr)
+        self.assertEqual(magic, 0x4B414E41)
+        self.assertEqual(version, 1)
+        self.assertEqual(arch_id, 3)
+        self.assertEqual(hidden_dim, 512)
+        self.assertEqual(l1_dim, 64)
+        self.assertEqual(packed >> 8, 6)
+        self.assertEqual(packed & 0xFF, 16)
 
 
     def test_multi_file_sharded_binpack_loader(self):
@@ -401,33 +446,29 @@ class TestBinpackAndFastLoader(unittest.TestCase):
         self.assertIn("chunk_size", cfg)
         self.assertGreaterEqual(cfg["chunk_size"], 1024)
 
-        # Micro vs Standard NNUE profile differentiation
-        cfg_std = auto_tune_hardware(is_micro=False, verbose=False)
-        cfg_micro = auto_tune_hardware(is_micro=True, verbose=False)
-        self.assertGreaterEqual(cfg_micro["batch_size"], cfg_std["batch_size"])
-        self.assertGreaterEqual(cfg_micro["lr"], cfg_std["lr"])
-        self.assertLessEqual(cfg_micro["weight_decay"], cfg_std["weight_decay"])
-        self.assertLessEqual(cfg_micro["recommended_epochs"], cfg_std["recommended_epochs"])
+        cfg_std = auto_tune_hardware(verbose=False)
+        self.assertIn("batch_size", cfg_std)
+        self.assertIn("lr", cfg_std)
 
     def test_sparse_embedding_forward_parity(self):
-        from model import StandardNNUE, MicroNNUE, evaluate_benchmark_positions
+        from model import StandardNNUE, SharedMoENNUE, evaluate_benchmark_positions
         from binpack import encode_features_to_indices
 
         device = torch.device("cpu")
         std_model = StandardNNUE().to(device)
-        micro_model = MicroNNUE().to(device)
+        moe_model = SharedMoENNUE().to(device)
 
         b = chess.Board()
         our_idx, their_idx, _ = encode_features_to_indices(b)
 
         # Dense float tensors
-        dense_our = torch.zeros((1, 768), dtype=torch.float32)
-        dense_their = torch.zeros((1, 768), dtype=torch.float32)
+        dense_our = torch.zeros((1, 12288), dtype=torch.float32)
+        dense_their = torch.zeros((1, 12288), dtype=torch.float32)
         for idx in our_idx:
-            if idx < 768:
+            if idx < 12288:
                 dense_our[0, idx] = 1.0
         for idx in their_idx:
-            if idx < 768:
+            if idx < 12288:
                 dense_their[0, idx] = 1.0
 
         # Sparse int tensors
@@ -439,9 +480,9 @@ class TestBinpackAndFastLoader(unittest.TestCase):
             std_sparse = std_model(sparse_our, sparse_their).item()
             self.assertAlmostEqual(std_dense, std_sparse, places=4)
 
-            micro_dense = micro_model(dense_our, dense_their).item()
-            micro_sparse = micro_model(sparse_our, sparse_their).item()
-            self.assertAlmostEqual(micro_dense, micro_sparse, places=4)
+            moe_dense = moe_model(dense_our, dense_their).item()
+            moe_sparse = moe_model(sparse_our, sparse_their).item()
+            self.assertAlmostEqual(moe_dense, moe_sparse, places=4)
 
         # Test benchmark evaluator
         summary = evaluate_benchmark_positions(std_model, device)

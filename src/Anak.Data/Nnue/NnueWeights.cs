@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using File = System.IO.File;
 
@@ -6,7 +7,7 @@ namespace Anak.Data.Nnue;
 
 /// <summary>
 /// Contiguous 64-byte aligned memory container for quantized INT8/INT16 NNUE network weights.
-/// Supports both Standard (768 -> 512x2 -> 64 -> 1, plus legacy 768 -> 256x2 -> 32 -> 1) and Micro (768 -> 16x2 -> 1) architectures.
+/// Supports Standard (12,288 -> 512x2 -> 64 -> 1) and Shared-FT Multi-Expert MoE (12,288 -> 512x2 -> 6 x [64 -> 1]) architectures.
 /// </summary>
 public sealed unsafe class NnueWeights : IDisposable
 {
@@ -14,21 +15,39 @@ public sealed unsafe class NnueWeights : IDisposable
     private nuint _totalBytes;
     private bool _disposed;
 
+    private sbyte*[] _expertHiddenWeights = [];
+    private short*[] _expertHiddenBiases = [];
+    private short*[] _expertOutputWeights = [];
+    private int[] _expertOutputBiases = [];
+
     public ushort ArchId { get; private set; }
     public int HiddenDim { get; private set; }
     public int L1Dim { get; private set; }
     public int Buckets { get; private set; }
+    public int Experts { get; private set; } = 1;
 
-    // Pointers into 64-byte aligned memory block
+    // Pointers into 64-byte aligned memory block (for head 0 / Standard)
     public sbyte* FeatureWeights { get; private set; }   // [FeatureCount * HiddenDim]
     public short* FeatureBiases { get; private set; }    // [HiddenDim]
-    public sbyte* HiddenWeights { get; private set; }    // [HiddenDim * 2 * L1Dim] (Standard only)
-    public short* HiddenBiases { get; private set; }     // [L1Dim] (Standard only)
-    public short* OutputWeights { get; private set; }    // [L1Dim] (Standard) or [HiddenDim * 2] (Micro)
+    public sbyte* HiddenWeights { get; private set; }    // [HiddenDim * 2 * L1Dim]
+    public short* HiddenBiases { get; private set; }     // [L1Dim]
+    public short* OutputWeights { get; private set; }    // [L1Dim]
     public int OutputBias { get; private set; }
 
-    public bool IsMicro => ArchId == NnueConstants.ArchMicro;
     public bool IsStandard => ArchId == NnueConstants.ArchStandard;
+    public bool IsMoE => ArchId == NnueConstants.ArchMoE;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public sbyte* GetHiddenWeights(int expert) => (uint)expert < (uint)Experts ? _expertHiddenWeights[expert] : HiddenWeights;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public short* GetHiddenBiases(int expert) => (uint)expert < (uint)Experts ? _expertHiddenBiases[expert] : HiddenBiases;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public short* GetOutputWeights(int expert) => (uint)expert < (uint)Experts ? _expertOutputWeights[expert] : OutputWeights;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetOutputBias(int expert) => (uint)expert < (uint)Experts ? _expertOutputBiases[expert] : OutputBias;
 
     ~NnueWeights()
     {
@@ -111,35 +130,29 @@ public sealed unsafe class NnueWeights : IDisposable
             ushort archId = BinaryPrimitives.ReadUInt16LittleEndian(span[8..10]);
             ushort headerHiddenDim = BinaryPrimitives.ReadUInt16LittleEndian(span[10..12]);
             ushort headerL1Dim = BinaryPrimitives.ReadUInt16LittleEndian(span[12..14]);
-            ushort headerBuckets = BinaryPrimitives.ReadUInt16LittleEndian(span[14..16]);
+            ushort headerPacked = BinaryPrimitives.ReadUInt16LittleEndian(span[14..16]);
             ReadOnlySpan<byte> payload = span[16..];
 
             int hiddenDim;
             int l1Dim;
             int buckets;
+            int experts;
 
             if (archId == NnueConstants.ArchStandard)
             {
                 hiddenDim = headerHiddenDim > 0 ? headerHiddenDim : NnueConstants.StandardHiddenDim;
                 l1Dim = headerL1Dim > 0 ? headerL1Dim : NnueConstants.StandardL1Dim;
-                buckets = headerBuckets > 0 ? headerBuckets : NnueConstants.KingBuckets;
+                buckets = headerPacked > 0 ? headerPacked : NnueConstants.KingBuckets;
+                experts = 1;
             }
-            else if (archId == NnueConstants.ArchMicro)
+            else if (archId == NnueConstants.ArchMoE)
             {
-                hiddenDim = headerHiddenDim > 0 ? headerHiddenDim : NnueConstants.MicroHiddenDim;
-                l1Dim = 0;
-                if (headerBuckets > 0)
-                {
-                    buckets = headerBuckets;
-                }
-                else if (payload.Length >= NnueConstants.KingBuckets * NnueConstants.RawFeatureCount * hiddenDim)
-                {
-                    buckets = NnueConstants.KingBuckets;
-                }
-                else
-                {
-                    buckets = 1;
-                }
+                hiddenDim = headerHiddenDim > 0 ? headerHiddenDim : NnueConstants.StandardHiddenDim;
+                l1Dim = headerL1Dim > 0 ? headerL1Dim : NnueConstants.StandardL1Dim;
+                int lowByte = headerPacked & 0xFF;
+                int highByte = (headerPacked >> 8) & 0xFF;
+                buckets = lowByte > 0 ? lowByte : NnueConstants.KingBuckets;
+                experts = highByte > 0 ? highByte : NnueConstants.ExpertCount;
             }
             else
             {
@@ -151,10 +164,11 @@ public sealed unsafe class NnueWeights : IDisposable
                 ArchId = archId,
                 HiddenDim = hiddenDim,
                 L1Dim = l1Dim,
-                Buckets = buckets
+                Buckets = buckets,
+                Experts = experts
             };
 
-            weights.AllocateAndLoad(payload, archId, hiddenDim, l1Dim, buckets);
+            weights.AllocateAndLoad(payload, hiddenDim, l1Dim, buckets, experts);
             return weights;
         }
         catch
@@ -163,25 +177,31 @@ public sealed unsafe class NnueWeights : IDisposable
         }
     }
 
-    private void AllocateAndLoad(ReadOnlySpan<byte> payload, ushort archId, int hiddenDim, int l1Dim, int buckets)
+    private void AllocateAndLoad(ReadOnlySpan<byte> payload, int hiddenDim, int l1Dim, int buckets, int experts)
     {
         int featureCount = buckets * NnueConstants.RawFeatureCount;
         int ftWeightsBytes = featureCount * hiddenDim * sizeof(sbyte);
         int ftBiasesBytes = hiddenDim * sizeof(short);
 
-        int hiddenWeightsBytes = archId == NnueConstants.ArchStandard ? (hiddenDim * 2 * l1Dim * sizeof(sbyte)) : 0;
-        int hiddenBiasesBytes = archId == NnueConstants.ArchStandard ? (l1Dim * sizeof(short)) : 0;
-        int outputWeightsBytes = (archId == NnueConstants.ArchStandard ? l1Dim : (hiddenDim * 2)) * sizeof(short);
+        int hiddenWeightsBytes = hiddenDim * 2 * l1Dim * sizeof(sbyte);
+        int hiddenBiasesBytes = l1Dim * sizeof(short);
+        int outputWeightsBytes = l1Dim * sizeof(short);
         int outputBiasBytes = sizeof(int);
 
-        _totalBytes = (nuint)(ftWeightsBytes + ftBiasesBytes + hiddenWeightsBytes + hiddenBiasesBytes + outputWeightsBytes + outputBiasBytes + 256);
+        int perExpertAlignedBytes = Align64(hiddenWeightsBytes) + Align64(hiddenBiasesBytes) + Align64(outputWeightsBytes);
+        _totalBytes = (nuint)(Align64(ftWeightsBytes) + Align64(ftBiasesBytes) + (experts * perExpertAlignedBytes) + 256);
         _memoryBlock = NativeMemory.AlignedAlloc(_totalBytes, 64);
         NativeMemory.Clear(_memoryBlock, _totalBytes);
+
+        _expertHiddenWeights = new sbyte*[experts];
+        _expertHiddenBiases = new short*[experts];
+        _expertOutputWeights = new short*[experts];
+        _expertOutputBiases = new int[experts];
 
         byte* ptr = (byte*)_memoryBlock;
         int offset = 0;
 
-        // 1. Feature Weights
+        // 1. Shared Feature Weights
         FeatureWeights = (sbyte*)ptr;
         int copyLen = Math.Min(ftWeightsBytes, payload.Length - offset);
         if (copyLen > 0)
@@ -194,7 +214,7 @@ public sealed unsafe class NnueWeights : IDisposable
         }
         ptr += Align64(ftWeightsBytes);
 
-        // 2. Feature Biases
+        // 2. Shared Feature Biases
         FeatureBiases = (short*)ptr;
         copyLen = Math.Min(ftBiasesBytes, payload.Length - offset);
         if (copyLen > 0)
@@ -207,51 +227,60 @@ public sealed unsafe class NnueWeights : IDisposable
         }
         ptr += Align64(ftBiasesBytes);
 
-        // 3. Hidden layer (Standard only)
-        if (archId == NnueConstants.ArchStandard)
+        // 3. Per-Expert Heads (HiddenWeights, HiddenBiases, OutputWeights, OutputBias)
+        for (int e = 0; e < experts; e++)
         {
-            HiddenWeights = (sbyte*)ptr;
-            copyLen = Math.Min(hiddenWeightsBytes, payload.Length - offset);
+            sbyte* hwPtr = (sbyte*)ptr;
+            _expertHiddenWeights[e] = hwPtr;
+            copyLen = Math.Min(hiddenWeightsBytes, Math.Max(0, payload.Length - offset));
             if (copyLen > 0)
             {
                 fixed (byte* pSrc = payload.Slice(offset, copyLen))
                 {
-                    Buffer.MemoryCopy(pSrc, HiddenWeights, hiddenWeightsBytes, copyLen);
+                    Buffer.MemoryCopy(pSrc, hwPtr, hiddenWeightsBytes, copyLen);
                 }
                 offset += copyLen;
             }
             ptr += Align64(hiddenWeightsBytes);
 
-            HiddenBiases = (short*)ptr;
-            copyLen = Math.Min(hiddenBiasesBytes, payload.Length - offset);
+            short* hbPtr = (short*)ptr;
+            _expertHiddenBiases[e] = hbPtr;
+            copyLen = Math.Min(hiddenBiasesBytes, Math.Max(0, payload.Length - offset));
             if (copyLen > 0)
             {
                 fixed (byte* pSrc = payload.Slice(offset, copyLen))
                 {
-                    Buffer.MemoryCopy(pSrc, HiddenBiases, hiddenBiasesBytes, copyLen);
+                    Buffer.MemoryCopy(pSrc, hbPtr, hiddenBiasesBytes, copyLen);
                 }
                 offset += copyLen;
             }
             ptr += Align64(hiddenBiasesBytes);
-        }
 
-        // 4. Output Weights
-        OutputWeights = (short*)ptr;
-        copyLen = Math.Min(outputWeightsBytes, payload.Length - offset);
-        if (copyLen > 0)
-        {
-            fixed (byte* pSrc = payload.Slice(offset, copyLen))
+            short* owPtr = (short*)ptr;
+            _expertOutputWeights[e] = owPtr;
+            copyLen = Math.Min(outputWeightsBytes, Math.Max(0, payload.Length - offset));
+            if (copyLen > 0)
             {
-                Buffer.MemoryCopy(pSrc, OutputWeights, outputWeightsBytes, copyLen);
+                fixed (byte* pSrc = payload.Slice(offset, copyLen))
+                {
+                    Buffer.MemoryCopy(pSrc, owPtr, outputWeightsBytes, copyLen);
+                }
+                offset += copyLen;
             }
-            offset += copyLen;
+            ptr += Align64(outputWeightsBytes);
+
+            if (payload.Length >= offset + outputBiasBytes)
+            {
+                _expertOutputBiases[e] = BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(offset, outputBiasBytes));
+                offset += outputBiasBytes;
+            }
         }
 
-        // 5. Output Bias
-        if (payload.Length >= offset + sizeof(int))
-        {
-            OutputBias = BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(offset, sizeof(int)));
-        }
+        // Alias head 0 for Standard / single-head accessors
+        HiddenWeights = _expertHiddenWeights[0];
+        HiddenBiases = _expertHiddenBiases[0];
+        OutputWeights = _expertOutputWeights[0];
+        OutputBias = _expertOutputBiases[0];
     }
 
     private static int Align64(int bytes) => (bytes + 63) & ~63;

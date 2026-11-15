@@ -13,15 +13,15 @@ public class TranspositionTableTests
         ulong key = 0x123456789ABCDEF0UL;
         Move move = new Move(Square.E2, Square.E4, MoveType.DoublePawnPush);
 
-        tt.Store(key, move, visits: 42, value: 0.65f, prior: 0.8f, age: tt.CurrentAge, flags: TTFlags.Exact);
+        tt.Store(key, move, depth: 8, score: 65, age: tt.CurrentAge, flags: TTFlags.Exact, expertId: 0, staticEval: 42);
 
         bool found = tt.TryGet(key, out TTEntry entry);
         Assert.True(found);
         Assert.Equal(key, entry.Key);
         Assert.Equal(move, entry.BestMove);
-        Assert.Equal(42u, entry.Visits);
-        Assert.InRange(entry.Value, 0.64f, 0.66f);
-        Assert.InRange(entry.Prior, 0.79f, 0.81f);
+        Assert.Equal(8, entry.Depth);
+        Assert.Equal(65, entry.Score);
+        Assert.Equal(42, entry.StaticEval);
         Assert.Equal(tt.CurrentAge, entry.Age);
         Assert.Equal(TTFlags.Exact, entry.Flags);
     }
@@ -36,16 +36,16 @@ public class TranspositionTableTests
         Move move1 = new Move(Square.E2, Square.E4);
         Move move2 = new Move(Square.D2, Square.D4);
 
-        tt.Store(key1, move1, visits: 10, value: 0.1f, prior: 0.5f, age: tt.CurrentAge);
-        tt.Store(key2, move2, visits: 20, value: 0.2f, prior: 0.6f, age: tt.CurrentAge);
+        tt.Store(key1, move1, depth: 5, score: 10, age: tt.CurrentAge, flags: TTFlags.Exact);
+        tt.Store(key2, move2, depth: 7, score: 20, age: tt.CurrentAge, flags: TTFlags.LowerBound);
 
         Assert.True(tt.TryGet(key1, out var e1));
         Assert.Equal(move1, e1.BestMove);
-        Assert.Equal(10u, e1.Visits);
+        Assert.Equal(5, e1.Depth);
 
         Assert.True(tt.TryGet(key2, out var e2));
         Assert.Equal(move2, e2.BestMove);
-        Assert.Equal(20u, e2.Visits);
+        Assert.Equal(7, e2.Depth);
     }
 
     [Fact]
@@ -56,22 +56,21 @@ public class TranspositionTableTests
     }
 
     [Fact]
-    public void DAG_TranspositionReuse_MergesEntries()
+    public void SameKey_UpdatesWhenDeeperOrExact()
     {
         var tt = new TranspositionTable(1);
         ulong key = 0xDEADBEEFCAFE1234UL;
         Move move1 = new Move(Square.G1, Square.F3);
+        Move move2 = new Move(Square.E2, Square.E4);
 
-        tt.Store(key, move1, visits: 10, value: 0.4f, prior: 0.5f, age: 1);
+        tt.Store(key, move1, depth: 4, score: 40, age: 1, flags: TTFlags.LowerBound);
+        tt.Store(key, move2, depth: 6, score: 80, age: 1, flags: TTFlags.Exact);
 
-        // Store again with the same key but different visits and value
-        tt.Store(key, move1, visits: 30, value: 0.8f, prior: 0.5f, age: 1);
-
-        Assert.True(tt.TryGet(key, out var merged));
-        Assert.Equal(key, merged.Key);
-        Assert.Equal(30u, merged.Visits);
-        // Weighted average: (0.4 * 10 + 0.8 * 30) / 40 = (4 + 24) / 40 = 28 / 40 = 0.70
-        Assert.InRange(merged.Value, 0.69f, 0.71f);
+        Assert.True(tt.TryGet(key, out var updated));
+        Assert.Equal(key, updated.Key);
+        Assert.Equal(move2, updated.BestMove);
+        Assert.Equal(6, updated.Depth);
+        Assert.Equal(80, updated.Score);
     }
 
     [Theory]
@@ -86,7 +85,7 @@ public class TranspositionTableTests
 
         Assert.True(tt.SizeMb >= 1);
         Assert.True(tt.ClusterCount > 0);
-        Assert.Equal(tt.ClusterCount * 2, tt.EntryCount);
+        Assert.Equal(tt.ClusterCount * 3, tt.EntryCount);
     }
 
     [Fact]
@@ -94,7 +93,7 @@ public class TranspositionTableTests
     {
         var tt = new TranspositionTable(1);
         ulong key = 0x1234UL;
-        tt.Store(key, new Move(Square.E2, Square.E4), visits: 10, value: 0.5f, prior: 0.5f, age: 1);
+        tt.Store(key, new Move(Square.E2, Square.E4), depth: 4, score: 50, age: 1, flags: TTFlags.Exact);
 
         Assert.True(tt.TryGet(key, out _));
 
@@ -107,25 +106,24 @@ public class TranspositionTableTests
     public void ReplacementPolicy_ReplacesOlderAgeEntry()
     {
         var tt = new TranspositionTable(1);
-        // Target index 0 by using keys with low bits 0
-        ulong mask = tt.ClusterCount - 1;
         ulong step = tt.ClusterCount;
 
         ulong key1 = step * 1;
         ulong key2 = step * 2;
         ulong key3 = step * 3;
+        ulong key4 = step * 4;
 
-        // Store key1 with old age 1
-        tt.Store(key1, new Move(Square.A2, Square.A3), visits: 100, value: 0.1f, prior: 0.5f, age: 1);
-        // Store key2 with current age 2
-        tt.Store(key2, new Move(Square.B2, Square.B3), visits: 5, value: 0.2f, prior: 0.5f, age: 2);
+        // Fill all 3 slots in cluster 0: key1 has old age 1, key2 and key3 have current age 2
+        tt.Store(key1, new Move(Square.A2, Square.A3), depth: 10, score: 10, age: 1, flags: TTFlags.Exact);
+        tt.Store(key2, new Move(Square.B2, Square.B3), depth: 5, score: 20, age: 2, flags: TTFlags.Exact);
+        tt.Store(key3, new Move(Square.C2, Square.C3), depth: 8, score: 30, age: 2, flags: TTFlags.Exact);
 
-        // Both slots in the cluster are now occupied.
-        // Inserting key3 with age 2 should replace key1 (older age 1), preserving key2 (current age 2)
-        tt.Store(key3, new Move(Square.C2, Square.C3), visits: 10, value: 0.3f, prior: 0.5f, age: 2);
+        // Inserting key4 with age 2 should replace key1 (older age 1), preserving key2 and key3
+        tt.Store(key4, new Move(Square.D2, Square.D3), depth: 4, score: 40, age: 2, flags: TTFlags.Exact);
 
-        Assert.True(tt.TryGet(key3, out _));
+        Assert.True(tt.TryGet(key4, out _));
         Assert.True(tt.TryGet(key2, out _));
+        Assert.True(tt.TryGet(key3, out _));
         Assert.False(tt.TryGet(key1, out _));
     }
 
@@ -135,10 +133,9 @@ public class TranspositionTableTests
         var tt = new TranspositionTable(1);
         Assert.Equal(0, tt.HashfullPermille());
 
-        // Fill some entries with current age
         for (ulong i = 1; i <= 50; i++)
         {
-            tt.Store(i * 10007, new Move(Square.E2, Square.E4), visits: 1, value: 0.1f, prior: 0.1f, age: tt.CurrentAge);
+            tt.Store(i * 10007, new Move(Square.E2, Square.E4), depth: 3, score: 10, age: tt.CurrentAge, flags: TTFlags.Exact);
         }
 
         int hashfull = tt.HashfullPermille();
@@ -146,29 +143,31 @@ public class TranspositionTableTests
     }
 
     [Fact]
-    public void CollisionHandling_TwoKeysSameCluster_BothPreserved()
+    public void CollisionHandling_ThreeKeysSameCluster_AllPreserved()
     {
         var tt = new TranspositionTable(1);
         ulong step = tt.ClusterCount;
 
-        // Two keys mapping to the exact same cluster index (e.g. index 5)
         ulong key1 = 5UL;
         ulong key2 = 5UL + step;
+        ulong key3 = 5UL + (2 * step);
 
         Move move1 = new Move(Square.E2, Square.E4);
         Move move2 = new Move(Square.D2, Square.D4);
+        Move move3 = new Move(Square.C2, Square.C4);
 
-        tt.Store(key1, move1, visits: 10, value: 0.1f, prior: 0.5f, age: tt.CurrentAge);
-        tt.Store(key2, move2, visits: 20, value: 0.2f, prior: 0.6f, age: tt.CurrentAge);
+        tt.Store(key1, move1, depth: 5, score: 10, age: tt.CurrentAge, flags: TTFlags.Exact);
+        tt.Store(key2, move2, depth: 6, score: 20, age: tt.CurrentAge, flags: TTFlags.Exact);
+        tt.Store(key3, move3, depth: 7, score: 30, age: tt.CurrentAge, flags: TTFlags.Exact);
 
-        // Both slots in the cluster should store their respective key
         Assert.True(tt.TryGet(key1, out var e1));
-        Assert.Equal(key1, e1.Key);
         Assert.Equal(move1, e1.BestMove);
 
         Assert.True(tt.TryGet(key2, out var e2));
-        Assert.Equal(key2, e2.Key);
         Assert.Equal(move2, e2.BestMove);
+
+        Assert.True(tt.TryGet(key3, out var e3));
+        Assert.Equal(move3, e3.BestMove);
     }
 
     [Fact]
@@ -178,7 +177,6 @@ public class TranspositionTableTests
         ulong key = 0xFEEDFACECAFEBEEFUL;
         Move move = new Move(Square.E2, Square.E4);
 
-        // Store with expert 4 (Imbalance)
         tt.Store(key, move, depth: 6, score: 120, age: tt.CurrentAge, flags: TTFlags.Exact, expertId: 4);
 
         Assert.True(tt.TryGet(key, out var entry));
@@ -188,7 +186,6 @@ public class TranspositionTableTests
         Assert.Equal(120, entry.Score);
         Assert.Equal(4, entry.ExpertId);
 
-        // Update with expert 0 (Open)
         Move move2 = new Move(Square.D2, Square.D4);
         tt.Store(key, move2, depth: 7, score: 85, age: tt.CurrentAge, flags: TTFlags.Exact, expertId: 0);
 
@@ -199,4 +196,3 @@ public class TranspositionTableTests
         Assert.Equal(0, updated.ExpertId);
     }
 }
-

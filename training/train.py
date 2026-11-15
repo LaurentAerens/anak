@@ -9,6 +9,7 @@ Supports:
 """
 
 import argparse
+import json
 import math
 import os
 import sys
@@ -20,16 +21,16 @@ from tqdm import tqdm
 
 from model import (
     StandardNNUE,
-    MicroNNUE,
+    SharedMoENNUE,
     ModelEMA,
     clamp_nnue_weights,
     enforce_perspective_antisymmetry,
     evaluate_benchmark_positions,
 )
-from export import export_standard, export_micro
+from export import export_standard, export_moe
 from dataset import TcecDataset, find_pgn_files
-from loss import ModernNNUELoss, TcecBlendedLoss, BlunderLoss
-from fast_loader import FastMemoryMappedBatchLoader, resolve_binpack_files
+from loss import ModernNNUELoss, TcecBlendedLoss
+from fast_loader import FastMemoryMappedBatchLoader, MultiExpertBatchLoader, resolve_binpack_files
 from query import PositionQuery
 from binpack import BinpackReader
 from hardware import auto_tune_hardware, HardwareProfiler
@@ -117,17 +118,31 @@ def find_preprocessed_binpacks(model_name: str, explicit_path: Optional[str] = N
         return []
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    model_tag = "micro" if model_name in ("micro", "small") else model_name
     candidates = [
-        os.path.join(script_dir, "data", "preprocessed", f"{model_tag}.binpack"),
-        os.path.join(os.getcwd(), "training", "data", "preprocessed", f"{model_tag}.binpack"),
-        os.path.join(os.getcwd(), "data", "preprocessed", f"{model_tag}.binpack"),
-        os.path.join(script_dir, "data", f"{model_tag}.binpack"),
+        os.path.join(script_dir, "data", "preprocessed", f"{model_name}.binpack"),
+        os.path.join(os.getcwd(), "training", "data", "preprocessed", f"{model_name}.binpack"),
+        os.path.join(os.getcwd(), "data", "preprocessed", f"{model_name}.binpack"),
+        os.path.join(script_dir, "data", f"{model_name}.binpack"),
     ]
     for c in candidates:
         if os.path.isfile(c):
             return [os.path.abspath(c)]
     return []
+
+
+def find_preprocessed_dir(explicit_path: Optional[str] = None) -> Optional[str]:
+    """Auto-detects the preprocessed binpack directory for SharedMoENNUE training."""
+    if explicit_path and os.path.isdir(explicit_path):
+        return os.path.abspath(explicit_path)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    for d in (
+        os.path.join(script_dir, "data", "preprocessed"),
+        os.path.join(os.getcwd(), "training", "data", "preprocessed"),
+        os.path.join(os.getcwd(), "data", "preprocessed"),
+    ):
+        if os.path.isdir(d):
+            return os.path.abspath(d)
+    return None
 
 
 def find_preprocessed_binpack(model_name: str, explicit_path: Optional[str] = None) -> Optional[str]:
@@ -137,26 +152,20 @@ def find_preprocessed_binpack(model_name: str, explicit_path: Optional[str] = No
 
 
 ALL_MODEL_CHOICES = [
+    "moe",
     "open",
     "closed",
     "endgame",
     "queenless",
     "imbalance",
     "attack",
-    "micro",
-    "small",
-    "volatility",
 ]
-
-
-def is_micro_architecture(model_name: str) -> bool:
-    return model_name in ("micro", "small", "volatility")
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train Anak NNUE models on Preprocessed Binary Packs or Multi-Source Datasets")
-    parser.add_argument("--model", type=str, choices=ALL_MODEL_CHOICES, default="open",
-                        help="Target network to train (open, closed, endgame, queenless, imbalance, attack, micro/small, volatility)")
+    parser.add_argument("--model", type=str, choices=ALL_MODEL_CHOICES, default="moe",
+                        help="Target network to train (moe, open, closed, endgame, queenless, imbalance, attack)")
     parser.add_argument("--binpack", type=str, default=None,
                         help="Path to preprocessed .binpack file, directory of shards, or glob pattern (e.g. 'data/*.binpack')")
     parser.add_argument("--source", type=str, default="all",
@@ -209,7 +218,7 @@ def main():
     os.makedirs(args.output, exist_ok=True)
 
     # Target Model Architecture Classification
-    is_micro = is_micro_architecture(args.model)
+    is_moe = (args.model == "moe")
 
     # Automatic Hardware Detection & Profile Pinning
     if args.auto:
@@ -217,7 +226,6 @@ def main():
             user_batch_size=args.batch_size,
             user_workers=args.workers,
             user_compile=args.compile,
-            is_micro=is_micro,
             verbose=True,
         )
         effective_batch_size = hw_cfg["batch_size"]
@@ -237,16 +245,16 @@ def main():
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         is_cuda = (device.type == "cuda")
         has_bf16 = is_cuda and hasattr(torch.cuda, "is_bf16_supported") and torch.cuda.is_bf16_supported()
-        effective_batch_size = args.batch_size or ((65536 if is_micro else 16384) if is_cuda else (16384 if is_micro else 8192))
+        effective_batch_size = args.batch_size or (16384 if is_cuda else 8192)
         effective_workers = args.workers
         effective_prefetch = args.prefetch_batches or (16 if is_cuda else 4)
         effective_chunk_size = args.chunk_size or 65536
         compile_model = bool(args.compile)
-        effective_lr = args.lr or (2e-3 if is_micro else 1e-3)
-        effective_weight_decay = 0.0 if is_micro else 1e-4
-        effective_ema_decay = 0.990 if is_micro else 0.995
-        effective_epochs = args.epochs or (20 if is_micro else 40)
-        effective_patience = args.patience if args.patience is not None else (4 if is_micro else 8)
+        effective_lr = args.lr or 1e-3
+        effective_weight_decay = 1e-4
+        effective_ema_decay = 0.995
+        effective_epochs = args.epochs or 40
+        effective_patience = args.patience if args.patience is not None else 8
         if device.type == "cpu":
             torch.set_num_threads(os.cpu_count() or 4)
 
@@ -256,8 +264,9 @@ def main():
     scaler = torch.amp.GradScaler("cuda", enabled=(is_cuda and amp_dtype == torch.float16))
 
     # 1. Check for Preprocessed Binary Pack(s)
-    binpack_files = find_preprocessed_binpacks(args.model, explicit_path=args.binpack)
-    use_fast_loader = len(binpack_files) > 0
+    moe_data_dir = find_preprocessed_dir(args.binpack) if is_moe else None
+    binpack_files = [] if is_moe else find_preprocessed_binpacks(args.model, explicit_path=args.binpack)
+    use_fast_loader = (moe_data_dir is not None) if is_moe else (len(binpack_files) > 0)
 
     if not args.auto:
         print("=" * 75)
@@ -269,7 +278,13 @@ def main():
         else:
             print(f"--> Mixed Precision (AMP): DISABLED (CPU float32)")
 
-    if use_fast_loader:
+    if is_moe:
+        if moe_data_dir is None:
+            print("\nERROR: Preprocessed expert directory not found for SharedMoENNUE!")
+            print("Run: python preprocess.py --input ./training/data --output ./training/data/preprocessed")
+            sys.exit(1)
+        print(f"--> High-Speed MoE Mode: Streaming 6 expert binpacks from {moe_data_dir}")
+    elif use_fast_loader:
         total_bytes = sum(os.path.getsize(f) for f in binpack_files)
         print(f"--> High-Speed Mode: Using {len(binpack_files)} memory-mapped binpack file(s) ({total_bytes:,} bytes)")
         for f in binpack_files[:3]:
@@ -297,12 +312,11 @@ def main():
     print("=" * 75)
 
     # 2. Instantiate Model & Loss
-    if is_micro:
-        model = MicroNNUE().to(device)
-        criterion = BlunderLoss()
+    if is_moe:
+        model = SharedMoENNUE().to(device)
     else:
         model = StandardNNUE().to(device)
-        criterion = ModernNNUELoss(lambda_wdl=args.lambda_wdl, eval_scale=2.50)
+    criterion = ModernNNUELoss(lambda_wdl=args.lambda_wdl, eval_scale=2.50)
 
     ema = ModelEMA(model, decay=effective_ema_decay)
 
@@ -354,22 +368,78 @@ def main():
                 model.load_state_dict(ckpt["model_state_dict"])
                 if "ema_shadow" in ckpt and ckpt["ema_shadow"] and hasattr(ema, "shadow"):
                     ema.shadow = {k: v.to(device) for k, v in ckpt["ema_shadow"].items()}
+                else:
+                    ema = ModelEMA(model, decay=effective_ema_decay)
                 if "optimizer_state_dict" in ckpt:
                     optimizer.load_state_dict(ckpt["optimizer_state_dict"])
                 if "scheduler_state_dict" in ckpt:
                     scheduler.load_state_dict(ckpt["scheduler_state_dict"])
                 if "scaler_state_dict" in ckpt and ckpt["scaler_state_dict"] and scaler.is_enabled():
                     scaler.load_state_dict(ckpt["scaler_state_dict"])
-                if "best_metric" in ckpt:
-                    best_metric = ckpt["best_metric"]
+                if "best_metric" in ckpt and ckpt["best_metric"] is not None:
+                    best_metric = float(ckpt["best_metric"])
                 start_epoch = ckpt.get("epoch", 0) + 1
             elif isinstance(ckpt, dict):
                 model.load_state_dict(ckpt)
-            print(f"--> Checkpoint loaded successfully! Resuming at Epoch {start_epoch}")
+                ema = ModelEMA(model, decay=effective_ema_decay)
+
+            # Recover best_metric from companion metadata JSON or sibling *_latest.pt if not in ckpt
+            if best_metric == float("inf"):
+                meta_path = os.path.splitext(args.resume)[0] + ".json"
+                if os.path.isfile(meta_path):
+                    try:
+                        with open(meta_path, "r", encoding="utf-8") as mf:
+                            meta = json.load(mf)
+                        if meta.get("best_metric") is not None:
+                            best_metric = float(meta["best_metric"])
+                    except Exception:
+                        pass
+            if best_metric == float("inf"):
+                sibling_candidates = [os.path.join(args.output, f"{args.model}_latest.pt")]
+                if args.resume.endswith("_best.pt"):
+                    sibling_candidates.insert(0, args.resume[:-8] + "_latest.pt")
+                for sib in sibling_candidates:
+                    if os.path.isfile(sib):
+                        try:
+                            sib_ckpt = torch.load(sib, map_location="cpu")
+                            if isinstance(sib_ckpt, dict) and sib_ckpt.get("best_metric") is not None:
+                                best_metric = float(sib_ckpt["best_metric"])
+                                break
+                        except Exception:
+                            pass
+
+            best_str = f"{best_metric:.4f}" if best_metric < float("inf") else "N/A"
+            print(f"--> Checkpoint loaded successfully! Resuming at Epoch {start_epoch} (Best Metric: {best_str})")
         else:
             print(f"Warning: Checkpoint path '{args.resume}' not found, starting from scratch.")
 
-    if use_fast_loader:
+    if is_moe:
+        train_loader = MultiExpertBatchLoader(
+            data_dir=moe_data_dir,
+            batch_size=effective_batch_size,
+            shuffle=True,
+            device=device,
+            val_split=args.val_split,
+            is_validation=False,
+            augment_flip=args.augment_flip,
+            prefetch_batches=effective_prefetch,
+            num_workers=effective_workers,
+            chunk_size=effective_chunk_size,
+        )
+        val_batch_size = (effective_batch_size * 2) if is_cuda else effective_batch_size
+        val_loader = MultiExpertBatchLoader(
+            data_dir=moe_data_dir,
+            batch_size=val_batch_size,
+            shuffle=False,
+            device=device,
+            val_split=args.val_split,
+            is_validation=True,
+            augment_flip=False,
+            prefetch_batches=2,
+            num_workers=2,
+            chunk_size=effective_chunk_size,
+        ) if args.val_split > 0 else None
+    elif use_fast_loader:
         total_raw = sum(len(BinpackReader(f)) for f in binpack_files)
         train_count = int(total_raw * (1.0 - args.val_split)) if args.val_split > 0 else total_raw
         effective_batch_size = min(effective_batch_size, max(256, train_count))
@@ -416,18 +486,20 @@ def main():
             if use_fast_loader:
                 pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{effective_epochs} [Mmap Binpack]")
                 for batch in pbar:
-                    our_in = batch.get("our_indices", batch["our_features"]).to(device, non_blocking=is_cuda)
-                    their_in = batch.get("their_indices", batch["their_features"]).to(device, non_blocking=is_cuda)
+                    our_in = (batch["our_indices"] if "our_indices" in batch else batch["our_features"]).to(device, non_blocking=is_cuda)
+                    their_in = (batch["their_indices"] if "their_indices" in batch else batch["their_features"]).to(device, non_blocking=is_cuda)
                     target_wdl = batch["target_wdl"].to(device, non_blocking=is_cuda)
                     target_eval = batch["target_eval"].to(device, non_blocking=is_cuda)
 
                     optimizer.zero_grad(set_to_none=True)
                     with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
-                        preds = model(our_in, their_in)
-                        if is_micro_architecture(args.model):
-                            loss = criterion(preds, target_eval)
+                        if is_moe:
+                            expert_ids = batch["expert_ids"].to(device, non_blocking=is_cuda)
+                            openness = batch["openness"].to(device, non_blocking=is_cuda)
+                            preds = model(our_in, their_in, expert_ids=expert_ids, openness=openness)
                         else:
-                            loss = criterion(preds, target_wdl, target_eval)
+                            preds = model(our_in, their_in)
+                        loss = criterion(preds, target_wdl, target_eval)
 
                     if scaler.is_enabled():
                         scaler.scale(loss).backward()
@@ -467,16 +539,18 @@ def main():
                     val_batches = 0
                     with torch.inference_mode():
                         for v_batch in val_loader:
-                            v_our_in = v_batch.get("our_indices", v_batch["our_features"]).to(device, non_blocking=is_cuda)
-                            v_their_in = v_batch.get("their_indices", v_batch["their_features"]).to(device, non_blocking=is_cuda)
+                            v_our_in = (v_batch["our_indices"] if "our_indices" in v_batch else v_batch["our_features"]).to(device, non_blocking=is_cuda)
+                            v_their_in = (v_batch["their_indices"] if "their_indices" in v_batch else v_batch["their_features"]).to(device, non_blocking=is_cuda)
                             v_target_wdl = v_batch["target_wdl"].to(device, non_blocking=is_cuda)
                             v_target_eval = v_batch["target_eval"].to(device, non_blocking=is_cuda)
                             with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
-                                preds = model(v_our_in, v_their_in)
-                                if is_micro_architecture(args.model):
-                                    v_l = criterion(preds, v_target_eval)
+                                if is_moe:
+                                    v_expert_ids = v_batch["expert_ids"].to(device, non_blocking=is_cuda)
+                                    v_openness = v_batch["openness"].to(device, non_blocking=is_cuda)
+                                    preds = model(v_our_in, v_their_in, expert_ids=v_expert_ids, openness=v_openness)
                                 else:
-                                    v_l = criterion(preds, v_target_wdl, v_target_eval)
+                                    preds = model(v_our_in, v_their_in)
+                                v_l = criterion(preds, v_target_wdl, v_target_eval)
                             val_loss += v_l.item()
                             val_batches += 1
                             if args.max_val_batches and val_batches >= args.max_val_batches:
@@ -501,10 +575,7 @@ def main():
                     optimizer.zero_grad(set_to_none=True)
                     with torch.amp.autocast("cuda" if is_cuda else "cpu", enabled=amp_enabled, dtype=amp_dtype):
                         preds = model(our_feat, their_feat)
-                        if is_micro_architecture(args.model):
-                            loss = criterion(preds, target_eval)
-                        else:
-                            loss = criterion(preds, target_wdl, target_eval)
+                        loss = criterion(preds, target_wdl, target_eval)
 
                     if scaler.is_enabled():
                         scaler.scale(loss).backward()
@@ -545,7 +616,43 @@ def main():
 
             # Checkpointing: track validation loss if available, otherwise training loss
             eval_metric = avg_val_loss if avg_val_loss is not None else avg_loss
-            names = ["micro", "small"] if args.model in ("micro", "small") else [args.model]
+            names = [args.model]
+            early_stopped = False
+
+            if eval_metric < best_metric:
+                best_metric = eval_metric
+                epochs_without_improvement = 0
+                backup = ema.store_and_apply(model)
+                for name in names:
+                    best_path = os.path.join(args.output, f"{name}_best.pt")
+                    torch.save(model.state_dict(), best_path)
+                    meta_path = os.path.join(args.output, f"{name}_best.json")
+                    with open(meta_path, "w", encoding="utf-8") as mf:
+                        json.dump({"best_metric": best_metric, "epoch": epoch, "arch": args.model}, mf)
+
+                metric_tag = "Val Loss" if avg_val_loss is not None else "Train Loss"
+                print(f"--> Saved new best checkpoint (EMA) [{metric_tag}: {eval_metric:.4f}]: {os.path.join(args.output, f'{args.model}_best.pt')}")
+
+                # Automatic .nnue binary export to networks/
+                if args.auto_export:
+                    try:
+                        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+                        net_dir = os.path.join(repo_root, "networks")
+                        os.makedirs(net_dir, exist_ok=True)
+                        out_name = "anak.nnue" if is_moe else f"{args.model}.nnue"
+                        target_nnue = os.path.join(net_dir, out_name)
+                        if is_moe:
+                            export_moe(model, target_nnue)
+                        else:
+                            export_standard(model, target_nnue)
+                    except Exception as e:
+                        print(f"Notice: Auto-export skipped ({e})")
+
+                ema.restore(model, backup)
+            else:
+                epochs_without_improvement += 1
+                if effective_patience and epochs_without_improvement >= effective_patience:
+                    early_stopped = True
 
             ckpt_payload = {
                 "epoch": epoch,
@@ -562,38 +669,9 @@ def main():
                 checkpoint_path = os.path.join(args.output, f"{name}_latest.pt")
                 torch.save(ckpt_payload, checkpoint_path)
 
-            if eval_metric < best_metric:
-                best_metric = eval_metric
-                epochs_without_improvement = 0
-                backup = ema.store_and_apply(model)
-                for name in names:
-                    best_path = os.path.join(args.output, f"{name}_best.pt")
-                    torch.save(model.state_dict(), best_path)
-
-                metric_tag = "Val Loss" if avg_val_loss is not None else "Train Loss"
-                print(f"--> Saved new best checkpoint (EMA) [{metric_tag}: {eval_metric:.4f}]: {os.path.join(args.output, f'{args.model}_best.pt')}")
-
-                # Automatic .nnue binary export to networks/
-                if args.auto_export:
-                    try:
-                        repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-                        net_dir = os.path.join(repo_root, "networks")
-                        os.makedirs(net_dir, exist_ok=True)
-                        out_name = "micro.nnue" if is_micro_architecture(args.model) else f"{args.model}.nnue"
-                        target_nnue = os.path.join(net_dir, out_name)
-                        if is_micro_architecture(args.model):
-                            export_micro(model, target_nnue)
-                        else:
-                            export_standard(model, target_nnue)
-                    except Exception as e:
-                        print(f"Notice: Auto-export skipped ({e})")
-
-                ema.restore(model, backup)
-            else:
-                epochs_without_improvement += 1
-                if effective_patience and epochs_without_improvement >= effective_patience:
-                    print(f"\n--> Early stopping triggered: validation metric hasn't improved for {effective_patience} epochs.")
-                    break
+            if early_stopped:
+                print(f"\n--> Early stopping triggered: validation metric hasn't improved for {effective_patience} epochs.")
+                break
     finally:
         if train_loader:
             train_loader.close()
@@ -609,7 +687,7 @@ def main():
             from deploy_best import deploy_model, find_repo_root
             repo_root = find_repo_root()
             net_dir = os.path.join(repo_root, "networks")
-            out_name = "micro.nnue" if args.model in ("micro", "small") else f"{args.model}.nnue"
+            out_name = "anak.nnue" if is_moe else f"{args.model}.nnue"
             target_path = os.path.join(net_dir, out_name)
             best_ckpt = os.path.join(args.output, f"{args.model}_best.pt")
             deploy_model(args.model, best_ckpt, target_path)

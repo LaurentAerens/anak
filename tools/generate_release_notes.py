@@ -502,7 +502,7 @@ def render_distribution_section(tag: str = "") -> list[str]:
         "## 📦 Release Assets & Distribution",
         "",
         "Each release includes standalone, self-contained single-file executables bundled with all companion assets:",
-        "- **Bundled Networks**: `networks/open.nnue`, `networks/closed.nnue`, `networks/micro.nnue`, `networks/volatility.nnue`",
+        "- **Bundled Networks**: `networks/anak.nnue` (or `networks/open.nnue`, `networks/closed.nnue`)",
         "- **Opening Book**: `book.bin` (PolyGlot)",
         "- **Syzygy Tablebases**: `syzygy/` (3-piece and 4-piece tables)",
         "",

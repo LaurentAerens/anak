@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.21` (Estimated Rating: **2670 Elo**)  
+> **Current Active Version:** `v1.0.22` (Estimated Rating: **2677 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,17 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.22` (2026-11-15) — Unified Shared-FT MoE NNUE, 20-Byte TTEntry & Legacy Cleanup
+- **Category:** NNUE Architecture, Transposition Table Density & Cleanup
+- **Estimated Elo:** **2677 &plusmn; 5** (+6.56 nElo / +5.95 Elo over v1.0.21 in 8,000 games)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,086 wins, 2,949 losses, 1,965 draws (50.86% score, 0 crashes, 1 timeout).
+- **Highlights:**
+  - **Unified Shared-FT MoE NNUE (`ArchMoE = 0x0003`, `networks/anak.nnue`):** Replaced multi-model switching with a shared `12288 -> 512x2` Feature Transformer feeding 6 specialized expert heads (`open`, `closed`, `endgame`, `queenless`, `imbalance`, `attack`), leaf-level expert routing, integer Open/Closed boundary blending, and unified search history/TT across phase transitions.
+  - **20-Byte `TTEntry` (3 Entries / 64-Byte Cluster):** Shrunk `TTEntry` from 32 bytes to 20 bytes (+50% TT capacity).
+  - **Removed Legacy MCTS & Unused Micro/Volatility Models:** Stripped `MCTSEngine`, `NodeArena`, `micro.nnue`, and `volatility.nnue` from engine, UCI options, tests, and Python training pipeline.
+
+---
 
 ### `v1.0.21` (2026-11-10) — Move Generation Throughput & Hardware Intrinsic Optimizations (Patch Release)
 - **Category:** Performance & Move Generation Throughput (Patch Release)

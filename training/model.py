@@ -1,11 +1,12 @@
 """
 Enhanced Anak NNUE Neural Network Architectures (PyTorch).
-Defines StandardNNUE (768 -> 512x2 -> 64 -> 1) and MicroNNUE (768 -> 16x2 -> 1).
+Defines StandardNNUE (12,288 -> 512x2 -> 64 -> 1) and SharedMoENNUE
+(Shared 12,288 -> 512x2 Feature Transformer + 6 x [1024 -> 64 -> 1] Expert Heads).
 All weights and piece-square features are 100% trainable from data, with quantization-aware
 weight clamping, perspective-twin antisymmetry, and step-aware Model EMA with warmup.
 """
 
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import torch
 import torch.nn as nn
@@ -16,7 +17,10 @@ KING_BUCKETS = 16        # 16 king safety zones with horizontal symmetry (ranks 
 FEATURE_COUNT = KING_BUCKETS * RAW_FEATURE_COUNT  # 12,288 bucketed HalfKP features
 STANDARD_HIDDEN_DIM = 512
 STANDARD_L1_DIM = 64
-MICRO_HIDDEN_DIM = 16
+EXPERT_COUNT = 6
+EXPERT_NAMES = ("open", "closed", "endgame", "queenless", "imbalance", "attack")
+ARCH_STANDARD = 0x0001
+ARCH_MOE = 0x0003
 
 
 class ClippedReLU(nn.Module):
@@ -69,10 +73,28 @@ def enforce_perspective_antisymmetry(model: nn.Module):
     """
     with torch.no_grad():
         hidden_dim = model.hidden_dim
-        if hasattr(model, "l1"):
+        if hasattr(model, "l1_weight"):
+            # SharedMoENNUE: (E, l1_dim, 2 * hidden_dim)
+            l1_dim = model.l1_weight.shape[1]
+            half_l1 = l1_dim // 2
+            w_our = 0.5 * (model.l1_weight[:, :half_l1, :hidden_dim] + model.l1_weight[:, half_l1:l1_dim, hidden_dim:])
+            w_their = 0.5 * (model.l1_weight[:, :half_l1, hidden_dim:] + model.l1_weight[:, half_l1:l1_dim, :hidden_dim])
+            model.l1_weight[:, :half_l1, :hidden_dim].copy_(w_our)
+            model.l1_weight[:, :half_l1, hidden_dim:].copy_(w_their)
+            model.l1_weight[:, half_l1:l1_dim, :hidden_dim].copy_(w_their)
+            model.l1_weight[:, half_l1:l1_dim, hidden_dim:].copy_(w_our)
+
+            b_twin = 0.5 * (model.l1_bias[:, :half_l1] + model.l1_bias[:, half_l1:l1_dim])
+            model.l1_bias[:, :half_l1].copy_(b_twin)
+            model.l1_bias[:, half_l1:l1_dim].copy_(b_twin)
+
+            out_twin = 0.5 * (model.out_weight[:, 0, :half_l1] - model.out_weight[:, 0, half_l1:l1_dim])
+            model.out_weight[:, 0, :half_l1].copy_(out_twin)
+            model.out_weight[:, 0, half_l1:l1_dim].copy_(-out_twin)
+            model.out_bias.clamp_(0.15, 0.25)
+        elif hasattr(model, "l1"):
             l1_dim = model.l1.weight.shape[0]
             half_l1 = l1_dim // 2
-            # StandardNNUE: pair hidden units 0..half_l1-1 with half_l1..l1_dim-1 as perspective twins
             w_our = 0.5 * (model.l1.weight[:half_l1, :hidden_dim] + model.l1.weight[half_l1:l1_dim, hidden_dim:])
             w_their = 0.5 * (model.l1.weight[:half_l1, hidden_dim:] + model.l1.weight[half_l1:l1_dim, :hidden_dim])
             model.l1.weight[:half_l1, :hidden_dim].copy_(w_our)
@@ -87,14 +109,7 @@ def enforce_perspective_antisymmetry(model: nn.Module):
             out_twin = 0.5 * (model.output.weight[0, :half_l1] - model.output.weight[0, half_l1:l1_dim])
             model.output.weight[0, :half_l1].copy_(out_twin)
             model.output.weight[0, half_l1:l1_dim].copy_(-out_twin)
-        else:
-            # MicroNNUE: pair our_acc (0..15) with their_acc (16..31) antisymmetrically
-            out_twin = 0.5 * (model.output.weight[0, :hidden_dim] - model.output.weight[0, hidden_dim:2 * hidden_dim])
-            model.output.weight[0, :hidden_dim].copy_(out_twin)
-            model.output.weight[0, hidden_dim:2 * hidden_dim].copy_(-out_twin)
-
-        # Keep side-to-move tempo bonus bounded in [+15cp, +25cp]
-        model.output.bias.clamp_(0.15, 0.25)
+            model.output.bias.clamp_(0.15, 0.25)
 
 
 def init_nnue_weights(model: nn.Module):
@@ -110,26 +125,25 @@ def init_nnue_weights(model: nn.Module):
                 nn.init.normal_(param, mean=0.0, std=0.04)
             elif "ft.bias" in name:
                 nn.init.constant_(param, 0.15)
-            elif "l1.weight" in name:
+            elif "l1.weight" in name or "l1_weight" in name:
                 nn.init.normal_(param, mean=0.0, std=0.06)
-            elif "l1.bias" in name:
+            elif "l1.bias" in name or "l1_bias" in name:
                 nn.init.constant_(param, 0.10)
-            elif "output.weight" in name:
+            elif "output.weight" in name or "out_weight" in name:
                 nn.init.normal_(param, mean=0.0, std=0.05)
-            elif "output.bias" in name:
+            elif "output.bias" in name or "out_bias" in name:
                 nn.init.constant_(param, 0.20)
 
         # Warm-start square-uniform material across all buckets
         model.ft.weight[:6, :].zero_()
         model.ft.bias[:6].zero_()
         num_buckets = max(1, model.ft.weight.shape[1] // RAW_FEATURE_COUNT)
-        is_screlu = isinstance(getattr(model, "act", None), SCReLU)
 
-        pawn_val = 0.45 if is_screlu else 0.20
-        knight_val = 0.57 if is_screlu else 0.32
-        bishop_val = 0.57 if is_screlu else 0.33
-        rook_val = 0.69 if is_screlu else 0.48
-        queen_val = 0.95 if is_screlu else 0.90
+        pawn_val = 0.45
+        knight_val = 0.57
+        bishop_val = 0.57
+        rook_val = 0.69
+        queen_val = 0.95
 
         for b in range(num_buckets):
             b_offset = b * RAW_FEATURE_COUNT
@@ -147,7 +161,19 @@ def init_nnue_weights(model: nn.Module):
             dtype=model.ft.weight.dtype,
         )
         hidden_dim = model.hidden_dim
-        if hasattr(model, "l1"):
+        if hasattr(model, "l1_weight"):
+            l1_dim = model.l1_weight.shape[1]
+            half_l1 = l1_dim // 2
+            model.l1_weight[:, :6, :].zero_()
+            model.l1_weight[:, half_l1:half_l1 + 6, :].zero_()
+            model.l1_bias[:, :6].zero_()
+            model.l1_bias[:, half_l1:half_l1 + 6].zero_()
+            for c in range(6):
+                model.l1_weight[:, c, c] = 1.0
+                model.l1_weight[:, half_l1 + c, hidden_dim + c] = 1.0
+            model.out_weight[:, 0, :6] = scales
+            model.out_weight[:, 0, half_l1:half_l1 + 6] = -scales
+        elif hasattr(model, "l1"):
             l1_dim = model.l1.weight.shape[0]
             half_l1 = l1_dim // 2
             model.l1.weight[:6, :].zero_()
@@ -159,9 +185,6 @@ def init_nnue_weights(model: nn.Module):
                 model.l1.weight[half_l1 + c, hidden_dim + c] = 1.0
             model.output.weight[0, :6] = scales
             model.output.weight[0, half_l1:half_l1 + 6] = -scales
-        else:
-            model.output.weight[0, :6] = scales
-            model.output.weight[0, hidden_dim:hidden_dim + 6] = -scales
 
         enforce_perspective_antisymmetry(model)
 
@@ -174,9 +197,9 @@ def clamp_nnue_weights(model: nn.Module, max_val: float = 1.98, enforce_symmetry
     """
     with torch.no_grad():
         for name, param in model.named_parameters():
-            if "ft.weight" in name or "l1.weight" in name:
+            if "ft.weight" in name or "l1.weight" in name or "l1_weight" in name:
                 param.clamp_(-max_val, max_val)
-            elif "output.weight" in name:
+            elif "output.weight" in name or "out_weight" in name:
                 # output.weight is quantized to INT16 [-32768, 32767] with factor 64
                 param.clamp_(-250.0, 250.0)
 
@@ -289,45 +312,99 @@ class StandardNNUE(nn.Module):
         return out.squeeze(-1)
 
 
-class MicroNNUE(nn.Module):
+class SharedMoENNUE(nn.Module):
     """
-    Micro NNUE Architecture for Tactical Blunder and Trap Checking:
-    768 sparse features -> 16 (per perspective) -> 32 combined -> 1.
-    Optimized for single 256-bit SIMD register evaluation.
+    Shared Feature-Transformer Multi-Expert NNUE Architecture (ArchMoE = 0x0003):
+    12,288 sparse features (16 king buckets x 768) -> 512x2 (shared FT) -> 6 x [1024 -> 64 -> 1] expert heads.
+    Supports leaf-level expert routing and smooth Open/Closed boundary interpolation.
     """
-    def __init__(self, hidden_dim: int = MICRO_HIDDEN_DIM):
+    def __init__(
+        self,
+        hidden_dim: int = STANDARD_HIDDEN_DIM,
+        l1_dim: int = STANDARD_L1_DIM,
+        expert_count: int = EXPERT_COUNT,
+    ):
         super().__init__()
         self.hidden_dim = hidden_dim
-        self.arch_id = 0x0002
+        self.l1_dim = l1_dim
+        self.expert_count = expert_count
+        self.arch_id = ARCH_MOE
 
-        # Feature Transformer (16 dimensions per perspective)
+        # Shared Feature Transformer (16 king buckets x 768 HalfKP features)
         self.ft = nn.Linear(FEATURE_COUNT, hidden_dim)
 
-        # Direct Output Layer: 16 * 2 = 32 -> 1
-        self.output = nn.Linear(hidden_dim * 2, 1)
+        # 6 Specialized Expert Heads: (E, L1Dim, 2*HiddenDim) -> (E, 1, L1Dim)
+        self.l1_weight = nn.Parameter(torch.empty(expert_count, l1_dim, hidden_dim * 2))
+        self.l1_bias = nn.Parameter(torch.empty(expert_count, l1_dim))
+        self.out_weight = nn.Parameter(torch.empty(expert_count, 1, l1_dim))
+        self.out_bias = nn.Parameter(torch.empty(expert_count, 1))
 
-        self.act = ClippedReLU()
+        self.act = SCReLU()
         init_nnue_weights(self)
 
-    def forward(self, our_features: torch.Tensor, their_features: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass for micro model in pawns (1.0 = 100 centipawns).
-        Supports both sparse indices and dense feature tensors.
-        """
+    def encode_shared_features(self, our_features: torch.Tensor, their_features: torch.Tensor) -> torch.Tensor:
+        """Computes the shared SCReLU-activated (batch_size, 2 * hidden_dim) representation once."""
         if our_features.dtype in (torch.int16, torch.int32, torch.int64):
-            our_idx = torch.clamp(our_features.to(torch.int64), 0, FEATURE_COUNT)
-            their_idx = torch.clamp(their_features.to(torch.int64), 0, FEATURE_COUNT)
+            our_idx = map_raw_indices_to_buckets(our_features.to(torch.int64))
+            their_idx = map_raw_indices_to_buckets(their_features.to(torch.int64))
             pad = torch.zeros(1, self.hidden_dim, device=self.ft.weight.device, dtype=self.ft.weight.dtype)
             w_padded = torch.cat([self.ft.weight.t(), pad], dim=0)
             our_acc = self.act(F.embedding_bag(our_idx, w_padded, mode="sum") + self.ft.bias)
             their_acc = self.act(F.embedding_bag(their_idx, w_padded, mode="sum") + self.ft.bias)
         else:
-            our_acc = self.act(self.ft(our_features))
-            their_acc = self.act(self.ft(their_features))
+            if our_features.shape[-1] == RAW_FEATURE_COUNT:
+                offset = 3 * RAW_FEATURE_COUNT
+                our_dense = torch.zeros(our_features.shape[0], FEATURE_COUNT, device=our_features.device, dtype=our_features.dtype)
+                their_dense = torch.zeros(their_features.shape[0], FEATURE_COUNT, device=their_features.device, dtype=their_features.dtype)
+                our_dense[:, offset:offset + RAW_FEATURE_COUNT] = our_features
+                their_dense[:, offset:offset + RAW_FEATURE_COUNT] = their_features
+                our_acc = self.act(self.ft(our_dense))
+                their_acc = self.act(self.ft(their_dense))
+            else:
+                our_acc = self.act(self.ft(our_features))
+                their_acc = self.act(self.ft(their_features))
 
-        combined = torch.cat([our_acc, their_acc], dim=-1)
-        out = self.output(combined)
-        return out.squeeze(-1)
+        return torch.cat([our_acc, their_acc], dim=-1)
+
+    def forward(
+        self,
+        our_features: torch.Tensor,
+        their_features: torch.Tensor,
+        expert_ids: Optional[torch.Tensor] = None,
+        openness: Optional[torch.Tensor] = None,
+        open_threshold: float = 0.49,
+    ) -> torch.Tensor:
+        """
+        Forward pass with shared FT and fused multi-head evaluation.
+        If expert_ids is provided, routes each sample to its corresponding expert head.
+        If openness is also provided, smoothly blends Open (0) and Closed (1) in [open_threshold - 0.08, open_threshold + 0.08].
+        """
+        combined = self.encode_shared_features(our_features, their_features)  # (B, 1024)
+
+        # Fused evaluation of all 6 heads: (B, 1024) @ (1024, 6*64) -> (B, 6, 64)
+        w_flat = self.l1_weight.reshape(self.expert_count * self.l1_dim, self.hidden_dim * 2)
+        all_l1 = F.linear(combined, w_flat, self.l1_bias.reshape(-1)).view(-1, self.expert_count, self.l1_dim)
+        all_hidden = self.act(all_l1)  # (B, 6, 64)
+
+        # (B, 6, 64) * (6, 64) -> sum -> (B, 6)
+        all_out = (all_hidden * self.out_weight.squeeze(1).unsqueeze(0)).sum(dim=-1) + self.out_bias.squeeze(-1).unsqueeze(0)
+
+        if expert_ids is None:
+            return all_out[:, 0]
+
+        idx = expert_ids.to(torch.int64).clamp(0, self.expert_count - 1)
+        preds = all_out.gather(1, idx.unsqueeze(1)).squeeze(1)
+
+        if openness is not None:
+            low = open_threshold - 0.08
+            high = open_threshold + 0.08
+            in_band = ((idx == 0) | (idx == 1)) & (openness > low) & (openness < high)
+            if in_band.any():
+                alpha = torch.clamp((openness - low) / 0.16, 0.0, 1.0)
+                blended = ((1.0 - alpha) * all_out[:, 1]) + (alpha * all_out[:, 0])
+                preds = torch.where(in_band, blended, preds)
+
+        return preds
 
 
 BENCHMARK_POSITIONS: List[Tuple[str, str]] = [

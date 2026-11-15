@@ -1,8 +1,7 @@
 namespace Anak.Core;
 
 /// <summary>
-/// Extended evaluation interface supporting multi-expert routing
-/// and ultra-fast tactical watchdog and volatility micro-evaluations.
+/// Extended evaluation interface supporting multi-expert routing.
 /// </summary>
 public interface IMultiTierEvaluator : IEvaluator
 {
@@ -10,6 +9,12 @@ public interface IMultiTierEvaluator : IEvaluator
     /// Gets the active root expert classified during <see cref="SetRootTopology"/>.
     /// </summary>
     NnueExpertType ActiveRootExpert { get; }
+
+    /// <summary>
+    /// Gets whether the evaluator is running a unified Shared-FT Multi-Head (ArchMoE) network
+    /// where all expert heads share a single calibrated scale and feature transformer.
+    /// </summary>
+    bool IsUnifiedMoE => false;
 
     /// <summary>
     /// Classifies the board position into one of the specialized NNUE experts.
@@ -21,25 +26,4 @@ public interface IMultiTierEvaluator : IEvaluator
     /// Called once at search initialization.
     /// </summary>
     void SetRootTopology(in Board rootBoard);
-
-    /// <summary>
-    /// Gets whether the ultra-compact Micro-NNUE watchdog model is loaded.
-    /// </summary>
-    bool HasMicroModel { get; }
-
-    /// <summary>
-    /// Gets whether the blunder watchdog is enabled.
-    /// </summary>
-    bool BlunderWatchdog => false;
-
-    /// <summary>
-    /// Evaluates the position using the ultra-compact Micro-NNUE model for fast blunder and trap checking.
-    /// </summary>
-    Value EvaluateMicro(in Board board);
-
-    /// <summary>
-    /// Evaluates the tactical sharpness / volatility of the position using the micro volatility network
-    /// or fast bitboard tension fallback.
-    /// </summary>
-    Value EvaluateVolatility(in Board board);
 }

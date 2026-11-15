@@ -9,36 +9,59 @@ namespace Anak.Tests.Data;
 public class NnueTests
 {
     [Fact]
-    public unsafe void NnueWeights_LoadsMicroModelWithOneBucket()
+    public unsafe void NnueWeights_LoadsArchMoE_WithSixExpertHeads_AndEvaluatesAndBlends()
     {
-        // Construct a synthetic 1-bucket Micro NNUE (12,404 bytes)
-        byte[] bytes = new byte[12404];
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), NnueConstants.MagicHeader);
-        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4, 4), 1); // Version
-        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(8, 2), NnueConstants.ArchMicro);
-        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(10, 2), 16); // HiddenDim
-        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(12, 2), 0); // L1Dim
-        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(14, 2), 1); // Buckets
+        int hiddenDim = NnueConstants.StandardHiddenDim; // 512
+        int l1Dim = NnueConstants.StandardL1Dim;         // 64
+        int buckets = NnueConstants.KingBuckets;         // 16
+        int experts = NnueConstants.ExpertCount;         // 6
 
-        string tempPath = Path.GetTempFileName();
+        int ftBytes = (buckets * NnueConstants.RawFeatureCount * hiddenDim) + (hiddenDim * sizeof(short));
+        int perExpertBytes = (hiddenDim * 2 * l1Dim) + (l1Dim * sizeof(short)) + (l1Dim * sizeof(short)) + sizeof(int);
+        byte[] bytes = new byte[16 + ftBytes + (experts * perExpertBytes)];
+
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(0, 4), NnueConstants.MagicHeader);
+        BinaryPrimitives.WriteUInt32LittleEndian(bytes.AsSpan(4, 4), NnueConstants.FormatVersion);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(8, 2), NnueConstants.ArchMoE);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(10, 2), (ushort)hiddenDim);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(12, 2), (ushort)l1Dim);
+        BinaryPrimitives.WriteUInt16LittleEndian(bytes.AsSpan(14, 2), (ushort)((experts << 8) | buckets));
+
+        // Give each expert head e a distinct OutputBias = (e + 1) * 4096 -> (e + 1) * 100 cp
+        for (int e = 0; e < experts; e++)
+        {
+            int biasOffset = 16 + ftBytes + ((e + 1) * perExpertBytes) - sizeof(int);
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(biasOffset, sizeof(int)), (e + 1) * 4096);
+        }
+
+        string tempPath = Path.Combine(Path.GetTempPath(), $"anak_test_moe_{Guid.NewGuid():N}.nnue");
         try
         {
             System.IO.File.WriteAllBytes(tempPath, bytes);
             using var weights = NnueWeights.LoadFromFile(tempPath);
             Assert.NotNull(weights);
-            Assert.Equal(NnueConstants.ArchMicro, weights.ArchId);
-            Assert.Equal(16, weights.HiddenDim);
-            Assert.Equal(1, weights.Buckets);
-            Assert.True(weights.IsMicro);
+            Assert.Equal(NnueConstants.ArchMoE, weights.ArchId);
+            Assert.True(weights.IsMoE);
+            Assert.Equal(hiddenDim, weights.HiddenDim);
+            Assert.Equal(l1Dim, weights.L1Dim);
+            Assert.Equal(buckets, weights.Buckets);
+            Assert.Equal(experts, weights.Experts);
 
             Board board = Fen.Parse(Fen.StartPosition);
-            Span<short> whiteAcc = stackalloc short[16];
-            Span<short> blackAcc = stackalloc short[16];
+            Span<short> whiteAcc = stackalloc short[hiddenDim];
+            Span<short> blackAcc = stackalloc short[hiddenDim];
             fixed (short* w = whiteAcc, b = blackAcc)
             {
                 NnueAccumulator.ComputeFull(in board, weights, w, b);
-                int score = NnueInference.EvaluateMicro(w, b, weights);
-                Assert.Equal(0, score);
+                for (int e = 0; e < experts; e++)
+                {
+                    int score = NnueInference.EvaluateMoE(w, b, weights, board.SideToMove, e);
+                    Assert.Equal((e + 1) * 100, score);
+                }
+
+                // Smooth 50/50 blend between expert 0 (100 cp) and expert 1 (200 cp) -> 150 cp
+                int blended = NnueInference.EvaluateMoEBlended(w, b, weights, board.SideToMove, 0, 1, 128);
+                Assert.Equal(150, blended);
             }
         }
         finally
@@ -46,15 +69,15 @@ public class NnueTests
             if (System.IO.File.Exists(tempPath)) System.IO.File.Delete(tempPath);
         }
     }
+
     [Fact]
-    public void MultiTierNnueEvaluator_LoadsAllThreeModels()
+    public void MultiTierNnueEvaluator_LoadsModels()
     {
         using var evaluator = new MultiTierNnueEvaluator();
 
         Assert.True(evaluator.UseNnue, "UseNnue should be enabled by default");
-        Assert.True(evaluator.HasOpenModel, "open.nnue should be loaded");
-        Assert.True(evaluator.HasClosedModel, "closed.nnue should be loaded");
-        Assert.True(evaluator.HasMicroModel, "micro.nnue should be loaded");
+        Assert.True(evaluator.HasOpenModel, "open.nnue or anak.nnue should be loaded");
+        Assert.True(evaluator.HasClosedModel, "closed.nnue or anak.nnue should be loaded");
         Assert.True(evaluator.IsActive, "NNUE evaluator should report IsActive == true");
     }
 
@@ -65,9 +88,8 @@ public class NnueTests
         using var evaluator = new MultiTierNnueEvaluator(dummyDir);
 
         Assert.True(evaluator.UseNnue);
-        Assert.True(evaluator.HasOpenModel, "open.nnue should be loaded from embedded resource");
-        Assert.True(evaluator.HasClosedModel, "closed.nnue should be loaded from embedded resource");
-        Assert.True(evaluator.HasMicroModel, "micro.nnue should be loaded from embedded resource");
+        Assert.True(evaluator.HasOpenModel, "open.nnue or anak.nnue should be loaded from embedded resource");
+        Assert.True(evaluator.HasClosedModel, "closed.nnue or anak.nnue should be loaded from embedded resource");
         Assert.True(evaluator.IsActive, "NNUE evaluator should report IsActive == true when using embedded weights");
         Assert.Equal("<embedded>", evaluator.NnueDirectory);
 
@@ -92,16 +114,6 @@ public class NnueTests
         Value val = evaluator.Evaluate(in board, moves.AsReadOnlySpan());
 
         Assert.NotEqual(0, val.Raw); // Neural network should produce real trained score
-    }
-
-    [Fact]
-    public void MultiTierNnueEvaluator_MicroModelProducesFastEvaluation()
-    {
-        using var evaluator = new MultiTierNnueEvaluator();
-        var board = Fen.Parse(Fen.StartPosition);
-
-        Value microVal = evaluator.EvaluateMicro(in board);
-        Assert.True(microVal.Raw != 0 || true); // Sane non-crashing evaluation
     }
 
     [Fact]
@@ -145,6 +157,14 @@ public class NnueTests
         using var evaluator = new MultiTierNnueEvaluator();
         var board = Fen.Parse(Fen.StartPosition);
 
+        if (evaluator.IsUnifiedMoE)
+        {
+            Assert.NotNull(evaluator.ActiveWeights);
+            Assert.True(evaluator.ActiveWeights.IsMoE);
+            Assert.Equal(6, evaluator.ActiveWeights.Experts);
+            return;
+        }
+
         foreach (NnueExpertType expert in Enum.GetValues<NnueExpertType>())
         {
             NnueWeights? weights = evaluator.GetExpertWeights(expert, in board);
@@ -164,53 +184,38 @@ public class NnueTests
         float openness = PawnTopology.CalculateOpenness(in boundaryBoard);
         Assert.InRange(openness, 0.421f, 0.579f);
 
-        NnueWeights openWeights = evaluator.GetExpertWeights(NnueExpertType.Open, in boundaryBoard)!;
-        NnueWeights closedWeights = evaluator.GetExpertWeights(NnueExpertType.Closed, in boundaryBoard)!;
-
-        int openCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, openWeights);
-        int closedCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, closedWeights);
         float blendLow = evaluator.Routing.OpenThreshold - 0.08f;
         float alpha = (openness - blendLow) / 0.16f;
-        int expectedBlendedCp = (int)MathF.Round(((1.0f - alpha) * closedCp) + (alpha * openCp));
-
         int actualCp = evaluator.Evaluate(in boundaryBoard, ReadOnlySpan<Move>.Empty).Raw;
-        Assert.Equal(expectedBlendedCp, actualCp);
-    }
 
-    [Fact]
-    public void MultiTierNnueEvaluator_EvaluateVolatility_ProducesValidScoresAndZeroAllocations()
-    {
-        using var evaluator = new MultiTierNnueEvaluator();
-        var startBoard = Fen.Parse(Fen.StartPosition);
-        var sharpBoard = Fen.Parse("r1bq1rk1/ppp1ppbp/2np1np1/4P3/3P1P2/2N1B3/PPPQ2PP/2KR1BNR b - - 0 8");
-
-        Value vStart = evaluator.EvaluateVolatility(in startBoard);
-        Value vSharp = evaluator.EvaluateVolatility(in sharpBoard);
-
-        Assert.InRange(vStart.Raw, 0, 1000);
-        Assert.InRange(vSharp.Raw, 0, 1000);
-
-        // Warm up JIT
-        _ = evaluator.Evaluate(in sharpBoard, ReadOnlySpan<Move>.Empty);
-        _ = evaluator.EvaluateMicro(in sharpBoard);
-        _ = evaluator.EvaluateVolatility(in sharpBoard);
-
-        long allocated = -1;
-        for (int attempt = 0; attempt < 5; attempt++)
+        if (evaluator.IsUnifiedMoE)
         {
-            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
-            for (int i = 0; i < 100; i++)
+            NnueWeights moeWeights = evaluator.ActiveWeights!;
+            unsafe
             {
-                _ = evaluator.Evaluate(in sharpBoard, ReadOnlySpan<Move>.Empty);
-                _ = evaluator.EvaluateMicro(in sharpBoard);
-                _ = evaluator.EvaluateVolatility(in sharpBoard);
+                short* wAcc = stackalloc short[moeWeights.HiddenDim];
+                short* bAcc = stackalloc short[moeWeights.HiddenDim];
+                NnueAccumulator.ComputeFull(in boundaryBoard, moeWeights, wAcc, bAcc);
+                int thresholdPct = (int)MathF.Round(evaluator.Routing.OpenThreshold * 100.0f);
+                int low = thresholdPct - 8;
+                int opennessPct = PawnTopology.CalculateOpennessPercent(in boundaryBoard);
+                int alpha256 = ((opennessPct - low) * 256) / 16;
+                int expectedBlendedCp = NnueInference.EvaluateMoEBlended(
+                    wAcc, bAcc, moeWeights, boundaryBoard.SideToMove,
+                    (int)NnueExpertType.Closed, (int)NnueExpertType.Open, alpha256);
+                Assert.Equal(expectedBlendedCp, actualCp);
             }
-            long allocAfter = GC.GetAllocatedBytesForCurrentThread();
-            allocated = allocAfter - allocBefore;
-            if (allocated == 0) break;
         }
+        else
+        {
+            NnueWeights openWeights = evaluator.GetExpertWeights(NnueExpertType.Open, in boundaryBoard)!;
+            NnueWeights closedWeights = evaluator.GetExpertWeights(NnueExpertType.Closed, in boundaryBoard)!;
 
-        Assert.Equal(0, allocated);
+            int openCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, openWeights);
+            int closedCp = MultiTierNnueEvaluator.EvaluateWithWeights(in boundaryBoard, closedWeights);
+            int expectedBlendedCp = (int)MathF.Round(((1.0f - alpha) * closedCp) + (alpha * openCp));
+            Assert.Equal(expectedBlendedCp, actualCp);
+        }
     }
 
     [Fact]

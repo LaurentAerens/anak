@@ -15,13 +15,14 @@ import chess
 try:
     from model import (
         StandardNNUE,
-        MicroNNUE,
+        SharedMoENNUE,
         RAW_FEATURE_COUNT,
         KING_BUCKETS,
         FEATURE_COUNT,
         STANDARD_HIDDEN_DIM,
         STANDARD_L1_DIM,
-        MICRO_HIDDEN_DIM,
+        EXPERT_COUNT,
+        EXPERT_NAMES,
         get_king_bucket,
         clamp_nnue_weights,
     )
@@ -29,13 +30,14 @@ try:
 except ImportError:
     from training.model import (
         StandardNNUE,
-        MicroNNUE,
+        SharedMoENNUE,
         RAW_FEATURE_COUNT,
         KING_BUCKETS,
         FEATURE_COUNT,
         STANDARD_HIDDEN_DIM,
         STANDARD_L1_DIM,
-        MICRO_HIDDEN_DIM,
+        EXPERT_COUNT,
+        EXPERT_NAMES,
         get_king_bucket,
         clamp_nnue_weights,
     )
@@ -44,7 +46,7 @@ except ImportError:
 MAGIC_HEADER = 0x4B414E41  # "ANAK"
 FORMAT_VERSION = 1
 ARCH_STANDARD = 0x0001
-ARCH_MICRO = 0x0002
+ARCH_MOE = 0x0003
 
 WEIGHT_SCALE = 64
 BIAS_SCALE = 64
@@ -113,29 +115,28 @@ def simulate_csharp_standard(
     return int((final_sum * OUTPUT_SCALE) // (WEIGHT_SCALE * WEIGHT_SCALE))
 
 
-def simulate_csharp_micro(
+def simulate_csharp_moe(
     ft_weights: np.ndarray,
     ft_biases: np.ndarray,
-    output_weights: np.ndarray,
-    output_bias_val: int,
+    expert_hidden_weights: list,
+    expert_hidden_biases: list,
+    expert_output_weights: list,
+    expert_output_biases: list,
+    expert_idx: int,
     our_idx: list,
     their_idx: list,
 ) -> int:
-    """Simulates exact C# NnueInference.EvaluateMicro integer arithmetic."""
-    our_acc = ft_biases.astype(np.int32).copy()
-    for idx in our_idx:
-        our_acc += ft_weights[idx].astype(np.int32)
-
-    their_acc = ft_biases.astype(np.int32).copy()
-    for idx in their_idx:
-        their_acc += ft_weights[idx].astype(np.int32)
-
-    our_clipped = np.clip(our_acc, 0, CLIPPED_RELU_MAX)
-    their_clipped = np.clip(their_acc, 0, CLIPPED_RELU_MAX)
-    combined = np.concatenate([our_clipped, their_clipped])  # (32,)
-
-    final_sum = int(output_bias_val) + int(np.dot(combined, output_weights.astype(np.int32)))
-    return int((final_sum * OUTPUT_SCALE) // (WEIGHT_SCALE * WEIGHT_SCALE))
+    """Simulates exact C# NnueInference.EvaluateMoE integer arithmetic for a specific expert head."""
+    return simulate_csharp_standard(
+        ft_weights,
+        ft_biases,
+        expert_hidden_weights[expert_idx],
+        expert_hidden_biases[expert_idx],
+        expert_output_weights[expert_idx],
+        expert_output_biases[expert_idx],
+        our_idx,
+        their_idx,
+    )
 
 
 def export_standard(model: StandardNNUE, output_path: str):
@@ -189,40 +190,61 @@ def export_standard(model: StandardNNUE, output_path: str):
     print(f"  [Quantized C# Eval Check] StartPos: {cp_start:+d} cp | +Queen: {cp_plus_q:+d} cp | -Queen: {cp_minus_q:+d} cp")
 
 
-def export_micro(model: MicroNNUE, output_path: str):
-    """Exports MicroNNUE (768 -> 16x2 -> 1) to binary and verifies quantization parity."""
+def export_moe(model: SharedMoENNUE, output_path: str):
+    """Exports SharedMoENNUE (12288 -> 512x2 -> 6 x (64 -> 1)) to ArchMoE binary and verifies parity."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     clamp_nnue_weights(model)
 
-    # 1. Feature Transformer: PyTorch ft.weight is (16, 768) -> transpose to (768, 16)
-    ft_weights = quantize_sbyte(model.ft.weight.T)  # (768, 16) int8
-    ft_biases = quantize_short(model.ft.bias)       # (16,) int16
+    ft_weights = quantize_sbyte(model.ft.weight.T)  # (12288, 512) int8
+    ft_biases = quantize_short(model.ft.bias)       # (512,) int16
 
-    # 2. Direct Output: PyTorch output.weight is (1, 32)
-    output_weights = quantize_short(model.output.weight.squeeze(0))  # (32,) int16
-    output_bias_val = int(round(model.output.bias.item() * (WEIGHT_SCALE * BIAS_SCALE)))
+    expert_count = model.expert_count
+    expert_hidden_weights = []
+    expert_hidden_biases = []
+    expert_output_weights = []
+    expert_output_biases = []
+
+    for e in range(expert_count):
+        expert_hidden_weights.append(quantize_sbyte(model.l1_weight[e]))
+        expert_hidden_biases.append(quantize_short(model.l1_bias[e]))
+        expert_output_weights.append(quantize_short(model.out_weight[e].squeeze(0)))
+        expert_output_biases.append(int(round(model.out_bias[e].item() * (WEIGHT_SCALE * BIAS_SCALE))))
+
+    packed_counts = ((expert_count & 0xFF) << 8) | (KING_BUCKETS & 0xFF)
 
     with open(output_path, "wb") as f:
-        # Header: Magic (4B), Version (4B), ArchId (2B), Reserved (6B)
-        header = struct.pack("<IIH6s", MAGIC_HEADER, FORMAT_VERSION, ARCH_MICRO, b"\x00" * 6)
+        header = struct.pack(
+            "<IIHHHH",
+            MAGIC_HEADER,
+            FORMAT_VERSION,
+            ARCH_MOE,
+            model.hidden_dim,
+            model.l1_dim,
+            packed_counts,
+        )
         f.write(header)
-
-        # Write payload
         f.write(ft_weights.tobytes())
         f.write(ft_biases.tobytes())
-        f.write(output_weights.tobytes())
-        f.write(struct.pack("<i", output_bias_val))
+        for e in range(expert_count):
+            f.write(expert_hidden_weights[e].tobytes())
+            f.write(expert_hidden_biases[e].tobytes())
+            f.write(expert_output_weights[e].tobytes())
+            f.write(struct.pack("<i", expert_output_biases[e]))
 
     b_start = chess.Board(chess.STARTING_FEN)
     b_plus_q = chess.Board("rnb1kbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
     b_minus_q = chess.Board("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNB1KBNR w KQkq - 0 1")
+    f_start = encode_board_features(b_start)
+    f_plus_q = encode_board_features(b_plus_q)
+    f_minus_q = encode_board_features(b_minus_q)
 
-    cp_start = simulate_csharp_micro(ft_weights, ft_biases, output_weights, output_bias_val, *encode_board_features(b_start))
-    cp_plus_q = simulate_csharp_micro(ft_weights, ft_biases, output_weights, output_bias_val, *encode_board_features(b_plus_q))
-    cp_minus_q = simulate_csharp_micro(ft_weights, ft_biases, output_weights, output_bias_val, *encode_board_features(b_minus_q))
-
-    print(f"Successfully exported Micro NNUE to: {output_path} ({os.path.getsize(output_path)} bytes)")
-    print(f"  [Quantized C# Eval Check] StartPos: {cp_start:+d} cp | +Queen: {cp_plus_q:+d} cp | -Queen: {cp_minus_q:+d} cp")
+    print(f"Successfully exported Unified MoE NNUE to: {output_path} ({os.path.getsize(output_path)} bytes)")
+    for e in range(expert_count):
+        name = EXPERT_NAMES[e] if e < len(EXPERT_NAMES) else f"expert_{e}"
+        cp_start = simulate_csharp_moe(ft_weights, ft_biases, expert_hidden_weights, expert_hidden_biases, expert_output_weights, expert_output_biases, e, *f_start)
+        cp_plus_q = simulate_csharp_moe(ft_weights, ft_biases, expert_hidden_weights, expert_hidden_biases, expert_output_weights, expert_output_biases, e, *f_plus_q)
+        cp_minus_q = simulate_csharp_moe(ft_weights, ft_biases, expert_hidden_weights, expert_hidden_biases, expert_output_weights, expert_output_biases, e, *f_minus_q)
+        print(f"  [Expert {e}: {name:9s}] StartPos: {cp_start:+d} cp | +Queen: {cp_plus_q:+d} cp | -Queen: {cp_minus_q:+d} cp")
 
 
 def main():
@@ -231,27 +253,26 @@ def main():
     parser.add_argument(
         "--model",
         type=str,
-        choices=["open", "closed", "endgame", "queenless", "imbalance", "attack", "micro", "small", "volatility"],
+        choices=["moe", "open", "closed", "endgame", "queenless", "imbalance", "attack"],
         required=True,
-        help="Model architecture type (open, closed, endgame, queenless, imbalance, attack, micro/small, volatility)",
+        help="Model architecture type (moe, open, closed, endgame, queenless, imbalance, attack)",
     )
     parser.add_argument("--output", type=str, default=None, help="Output .nnue binary file path")
     args = parser.parse_args()
 
-    model_name = "micro" if args.model == "small" else args.model
-    output_file = args.output or f"./networks/{model_name}.nnue"
+    default_name = "anak" if args.model == "moe" else args.model
+    output_file = args.output or f"./networks/{default_name}.nnue"
 
-    if args.model in ("micro", "small", "volatility"):
-        net = MicroNNUE()
-        raw = torch.load(args.checkpoint, map_location="cpu")
-        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+    raw = torch.load(args.checkpoint, map_location="cpu")
+    sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
+
+    if args.model == "moe":
+        net = SharedMoENNUE()
         net.load_state_dict(sd)
         net.eval()
-        export_micro(net, output_file)
+        export_moe(net, output_file)
     else:
         net = StandardNNUE()
-        raw = torch.load(args.checkpoint, map_location="cpu")
-        sd = raw["model_state_dict"] if isinstance(raw, dict) and "model_state_dict" in raw else raw
         net.load_state_dict(sd)
         net.eval()
         export_standard(net, output_file)

@@ -10,7 +10,7 @@ namespace Anak.Protocol.Uci;
 
 /// <summary>
 /// Glues the UCI protocol commands to the underlying chess engine components:
-/// Board state, MCTSEngine search, PolyGlot opening book, Syzygy tablebases, and evaluation.
+/// Board state, AlphaBetaEngine search, PolyGlot opening book, Syzygy tablebases, and evaluation.
 /// </summary>
 public sealed class UciEngineAdapter
 {
@@ -18,8 +18,6 @@ public sealed class UciEngineAdapter
     private readonly UciOptionRegistry _options;
     private readonly IEvaluator _evaluator;
     private readonly AlphaBetaEngine _alphaBetaEngine;
-    private readonly MCTSEngine _mctsEngine;
-    private ISearchEngine _activeEngine;
     private Board _board;
     private readonly List<Move> _gameMoves = new();
     private readonly Anak.Data.PolyGlot.PolyGlotBook _book = new();
@@ -35,7 +33,7 @@ public sealed class UciEngineAdapter
     public IReadOnlyList<Move> GameMoves => _gameMoves;
     public bool IsSearching => _searchTask != null && !_searchTask.IsCompleted;
     public IEvaluator Evaluator => _evaluator;
-    public ISearchEngine ActiveEngine => _activeEngine;
+    public ISearchEngine ActiveEngine => _alphaBetaEngine;
 
     public UciEngineAdapter(Action<string> outputWriter)
     {
@@ -45,32 +43,15 @@ public sealed class UciEngineAdapter
         // Instantiate evaluation engine
         _evaluator = CreateEvaluator();
 
-        // Instantiate search engines (AlphaBeta Minimax as default, MCTS as alternative)
+        // Instantiate Alpha-Beta search engine
         _alphaBetaEngine = new AlphaBetaEngine(_evaluator, defaultHashMb: _options.Hash.Value)
         {
             Threads = _options.Threads.Value
         };
-        _mctsEngine = new MCTSEngine(_evaluator, defaultHashMb: _options.Hash.Value)
-        {
-            Threads = _options.Threads.Value
-        };
-        _activeEngine = _options.SearchAlgorithm.Value.Equals("Mcts", StringComparison.OrdinalIgnoreCase)
-            ? _mctsEngine
-            : _alphaBetaEngine;
 
         // Subscribe to UCI option change notifications
-        _options.SearchAlgorithm.ValueChanged += alg =>
-        {
-            lock (_syncLock)
-            {
-                _activeEngine = alg.Equals("Mcts", StringComparison.OrdinalIgnoreCase)
-                    ? _mctsEngine
-                    : _alphaBetaEngine;
-            }
-        };
         _options.Hash.ValueChanged += OnHashChanged;
         _options.Threads.ValueChanged += OnThreadsChanged;
-
 
         // Wire opening book
         _book.LoadOrDefault(_options.BookFile.Value);
@@ -81,19 +62,11 @@ public sealed class UciEngineAdapter
         _options.OwnBook.ValueChanged += enabled => _book.OwnBook = enabled;
         _options.BookMode.ValueChanged += modeStr => _book.Mode = ParseBookMode(modeStr);
 
-        // Wire MCTS search randomness and temperature
-        _mctsEngine.Parameters.MoveRandomness = _options.MoveRandomness.Value;
-        _mctsEngine.Parameters.Temperature = _options.Temperature.Value / 100.0f;
-
-        _options.MoveRandomness.ValueChanged += val => _mctsEngine.Parameters.MoveRandomness = val;
-        _options.Temperature.ValueChanged += val => _mctsEngine.Parameters.Temperature = val / 100.0f;
-
         // Wire NNUE evaluator options
         if (_evaluator is Anak.Data.Nnue.MultiTierNnueEvaluator nnue)
         {
             nnue.UseNnue = _options.UseNnue.Value;
             nnue.NnueDirectory = _options.NnuePath.Value;
-            nnue.BlunderWatchdog = _options.BlunderWatchdog.Value;
             nnue.LoadFromDirectory(_options.NnuePath.Value);
 
             _options.UseNnue.ValueChanged += val => nnue.UseNnue = val;
@@ -102,7 +75,6 @@ public sealed class UciEngineAdapter
                 nnue.NnueDirectory = path;
                 nnue.LoadFromDirectory(path);
             };
-            _options.BlunderWatchdog.ValueChanged += val => nnue.BlunderWatchdog = val;
 
             // Tunable expert routing: rebuild the immutable routing config whenever any routing option changes
             void RebuildRouting()
@@ -157,11 +129,6 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.RfpImprovingMultiplier = _options.RfpImprovingMultiplier.Value;
         _alphaBetaEngine.SingularMargin = _options.SingularMargin.Value;
         _alphaBetaEngine.QsDeltaMargin = _options.QsDeltaMargin.Value;
-        _alphaBetaEngine.MicroMaxShare = _options.MicroMaxShare.Value;
-        _alphaBetaEngine.MicroMinTime = _options.MicroMinTime.Value;
-        _alphaBetaEngine.MicroDepthGate = _options.MicroDepthGate.Value;
-        _alphaBetaEngine.MicroAheadWeight = _options.MicroAheadWeight.Value;
-        _alphaBetaEngine.MicroEqualWeight = _options.MicroEqualWeight.Value;
         _alphaBetaEngine.TimeMovesToGo = _options.TimeMovesToGo.Value;
         _alphaBetaEngine.TimeIncFactor = _options.TimeIncFactor.Value;
         _alphaBetaEngine.TimeHardMultiplier = _options.TimeHardMultiplier.Value;
@@ -188,11 +155,6 @@ public sealed class UciEngineAdapter
         _options.HistoryMaxMalus.ValueChanged += val => HistoryTable.MaxMalus = val;
         _options.CorrHistDivisor.ValueChanged += val => CorrectionHistory.WeightDivisor = val;
         _options.CorrHistMax.ValueChanged += val => CorrectionHistory.MaxCorrection = val;
-        _options.MicroMaxShare.ValueChanged += val => _alphaBetaEngine.MicroMaxShare = val;
-        _options.MicroMinTime.ValueChanged += val => _alphaBetaEngine.MicroMinTime = val;
-        _options.MicroDepthGate.ValueChanged += val => _alphaBetaEngine.MicroDepthGate = val;
-        _options.MicroAheadWeight.ValueChanged += val => _alphaBetaEngine.MicroAheadWeight = val;
-        _options.MicroEqualWeight.ValueChanged += val => _alphaBetaEngine.MicroEqualWeight = val;
         _options.TimeMovesToGo.ValueChanged += val => _alphaBetaEngine.TimeMovesToGo = val;
         _options.TimeIncFactor.ValueChanged += val => _alphaBetaEngine.TimeIncFactor = val;
         _options.TimeHardMultiplier.ValueChanged += val => _alphaBetaEngine.TimeHardMultiplier = val;
@@ -211,7 +173,6 @@ public sealed class UciEngineAdapter
         lock (_syncLock)
         {
             _alphaBetaEngine.TranspositionTable.Resize(hashMb);
-            _mctsEngine.TranspositionTable.Resize(hashMb);
         }
     }
 
@@ -221,7 +182,6 @@ public sealed class UciEngineAdapter
         {
             int t = Math.Max(1, threads);
             _alphaBetaEngine.Threads = t;
-            _mctsEngine.Threads = t;
         }
     }
 
@@ -254,8 +214,6 @@ public sealed class UciEngineAdapter
             _alphaBetaEngine.TranspositionTable.Clear();
             _alphaBetaEngine.ClearHistory();
             _alphaBetaEngine.ResetLastRootExpert();
-            _mctsEngine.TranspositionTable.Clear();
-            _mctsEngine.ClearHistory();
             _gameMoves.Clear();
             _board = Fen.Parse(Fen.StartPosition);
         }
@@ -345,7 +303,7 @@ public sealed class UciEngineAdapter
             {
                 try
                 {
-                    Move bestMove = _activeEngine.Search(
+                    Move bestMove = _alphaBetaEngine.Search(
                         in searchBoard,
                         in limits,
                         stats =>

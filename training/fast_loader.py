@@ -91,8 +91,8 @@ def fast_scatter_features(
     batch_size = indices.shape[0]
     target_device = device or indices.device
 
-    # Use int32 for index clamping and scatter to save 50% memory bandwidth
-    clamped = torch.clamp(indices.to(target_device, dtype=torch.int32), 0, FEATURE_COUNT)
+    # Clamping and scatter requires int64 indices on CPU / CUDA
+    clamped = torch.clamp(indices.to(target_device, dtype=torch.int64), 0, FEATURE_COUNT)
 
     # 769 slots (0..767 are HalfKP features, 768 is dummy bucket for sentinels)
     dense = torch.zeros((batch_size, FEATURE_COUNT + 1), dtype=torch.float32, device=target_device)
@@ -100,6 +100,39 @@ def fast_scatter_features(
 
     # Discard dummy bucket
     return dense[:, :FEATURE_COUNT]
+
+
+class BatchDict(dict):
+    """
+    High-performance dictionary for binpack training batches.
+    Provides zero-overhead lazy generation of dense scatter features ('our_features',
+    'their_features') so that sparse-index models (like MicroNNUE and StandardNNUE)
+    avoid allocating, pinning, and DMA-transferring hundreds of megabytes of dense matrices.
+    """
+    def __getitem__(self, key: str):
+        if key == "our_features" and not super().__contains__("our_features"):
+            indices = super().__getitem__("our_indices")
+            feat = fast_scatter_features(indices, device=indices.device)
+            super().__setitem__("our_features", feat)
+            return feat
+        if key == "their_features" and not super().__contains__("their_features"):
+            indices = super().__getitem__("their_indices")
+            feat = fast_scatter_features(indices, device=indices.device)
+            super().__setitem__("their_features", feat)
+            return feat
+        return super().__getitem__(key)
+
+    def get(self, key: str, default=None):
+        if super().__contains__(key):
+            return super().__getitem__(key)
+        if key in ("our_features", "their_features"):
+            return self[key]
+        return default
+
+    def __contains__(self, key: object) -> bool:
+        if super().__contains__(key):
+            return True
+        return key in ("our_features", "their_features")
 
 
 class FastBinpackDataset(Dataset):
@@ -265,6 +298,7 @@ class FastMemoryMappedBatchLoader:
                 self.num_batches = math.ceil(self.total_records / self.primary_batch_size)
 
         self._stop_event = threading.Event()
+        self._worker_error: Optional[Exception] = None
         self._workers: List[threading.Thread] = []
         self._batch_queue = None
 
@@ -317,112 +351,114 @@ class FastMemoryMappedBatchLoader:
         mix_chunk_order: Optional[np.ndarray],
     ):
         """Worker thread function: pulls chunks, slices batches, applies vector flip, and pushes batches."""
-        rng = np.random.default_rng()
+        try:
+            rng = np.random.default_rng()
 
-        mix_chunk_buf = None
-        mix_chunk_idx = 0
-        mix_order_idx = 0
+            mix_chunk_buf = None
+            mix_chunk_idx = 0
+            mix_order_idx = 0
 
-        def pull_mix_records(n: int) -> np.ndarray:
-            nonlocal mix_chunk_buf, mix_chunk_idx, mix_order_idx
-            if mix_chunk_buf is None or (mix_chunk_idx + n) > len(mix_chunk_buf):
-                with self._mix_lock:
-                    c = mix_chunk_order[mix_order_idx % len(mix_chunk_order)]
-                    mix_order_idx += 1
-                    c_start = c * self.chunk_size
-                    c_end = min(self.mix_total_records, (c + 1) * self.chunk_size)
-                    mix_chunk_buf = self._get_mix_slice(c_start, c_end)
+            def pull_mix_records(n: int) -> np.ndarray:
+                nonlocal mix_chunk_buf, mix_chunk_idx, mix_order_idx
+                if mix_chunk_buf is None or (mix_chunk_idx + n) > len(mix_chunk_buf):
+                    with self._mix_lock:
+                        c = mix_chunk_order[mix_order_idx % len(mix_chunk_order)]
+                        mix_order_idx += 1
+                        c_start = c * self.chunk_size
+                        c_end = min(self.mix_total_records, (c + 1) * self.chunk_size)
+                        mix_chunk_buf = self._get_mix_slice(c_start, c_end)
+                    if self.shuffle:
+                        rng.shuffle(mix_chunk_buf)
+                    mix_chunk_idx = 0
+
+                res = mix_chunk_buf[mix_chunk_idx : mix_chunk_idx + n]
+                mix_chunk_idx += n
+                return res
+
+            while not self._stop_event.is_set():
+                try:
+                    c_idx = chunk_q.get(timeout=0.05)
+                except queue.Empty:
+                    break
+
+                chunk_start = self.range_start + c_idx * self.chunk_size
+                chunk_end = min(self.range_end, chunk_start + self.chunk_size)
+                if chunk_start >= chunk_end:
+                    continue
+
+                chunk_records = self._get_record_slice(chunk_start, chunk_end)
                 if self.shuffle:
-                    rng.shuffle(mix_chunk_buf)
-                mix_chunk_idx = 0
+                    rng.shuffle(chunk_records)
 
-            res = mix_chunk_buf[mix_chunk_idx : mix_chunk_idx + n]
-            mix_chunk_idx += n
-            return res
-
-        while not self._stop_event.is_set():
-            try:
-                c_idx = chunk_q.get(timeout=0.05)
-            except queue.Empty:
-                break
-
-            chunk_start = self.range_start + c_idx * self.chunk_size
-            chunk_end = min(self.range_end, chunk_start + self.chunk_size)
-            if chunk_start >= chunk_end:
-                continue
-
-            chunk_records = self._get_record_slice(chunk_start, chunk_end)
-            if self.shuffle:
-                rng.shuffle(chunk_records)
-
-            c_len = len(chunk_records)
-            for b_offset in range(0, c_len, self.primary_batch_size):
-                if self._stop_event.is_set():
-                    break
-
-                batch_records = chunk_records[b_offset : b_offset + self.primary_batch_size]
-                if self.drop_last and len(batch_records) < self.primary_batch_size:
-                    break
-
-                # Cross-domain mixture
-                if self.mix_batch_size > 0 and self.mix_total_records > 0:
-                    needed_mix = int(round(len(batch_records) * (self.mix_batch_size / self.primary_batch_size)))
-                    if needed_mix > 0:
-                        m_recs = pull_mix_records(needed_mix)
-                        batch_records = np.concatenate([batch_records, m_recs])
-                        if self.shuffle:
-                            rng.shuffle(batch_records)
-
-                our_idx = batch_records["our_indices"].astype(np.int32)
-                their_idx = batch_records["their_indices"].astype(np.int32)
-
-                # Vectorized NumPy board reflection
-                if self.augment_flip:
-                    flip = rng.integers(0, 2, size=(len(batch_records), 1), dtype=np.int32)
-                    mask_our = (our_idx != SENTINEL_INDEX) & (our_idx < FEATURE_COUNT)
-                    our_idx ^= (flip * 7) * mask_our
-                    mask_their = (their_idx != SENTINEL_INDEX) & (their_idx < FEATURE_COUNT)
-                    their_idx ^= (flip * 7) * mask_their
-
-                our_idx_t = torch.from_numpy(our_idx)
-                their_idx_t = torch.from_numpy(their_idx)
-                target_eval_t = torch.from_numpy(batch_records["target_eval"].copy())
-                target_wdl_t = torch.from_numpy(batch_records["target_wdl"].copy())
-
-                # Generate dense scatter features on CPU (backward compatible)
-                our_features = fast_scatter_features(our_idx_t, device=torch.device("cpu"))
-                their_features = fast_scatter_features(their_idx_t, device=torch.device("cpu"))
-
-                # Zero-copy pinned memory for high-speed asynchronous PCIe DMA to GPU VRAM
-                if self.is_cuda:
-                    our_idx_t = our_idx_t.pin_memory()
-                    their_idx_t = their_idx_t.pin_memory()
-                    target_eval_t = target_eval_t.pin_memory()
-                    target_wdl_t = target_wdl_t.pin_memory()
-                    our_features = our_features.pin_memory()
-                    their_features = their_features.pin_memory()
-
-                batch_dict = {
-                    "our_indices": our_idx_t,
-                    "their_indices": their_idx_t,
-                    "our_features": our_features,
-                    "their_features": their_features,
-                    "target_eval": target_eval_t,
-                    "target_wdl": target_wdl_t,
-                }
-
-                while not self._stop_event.is_set():
-                    try:
-                        batch_q.put(batch_dict, timeout=0.1)
+                c_len = len(chunk_records)
+                for b_offset in range(0, c_len, self.primary_batch_size):
+                    if self._stop_event.is_set():
                         break
-                    except queue.Full:
-                        continue
+
+                    batch_records = chunk_records[b_offset : b_offset + self.primary_batch_size]
+                    if self.drop_last and len(batch_records) < self.primary_batch_size:
+                        break
+
+                    # Cross-domain mixture
+                    if self.mix_batch_size > 0 and self.mix_total_records > 0:
+                        needed_mix = int(round(len(batch_records) * (self.mix_batch_size / self.primary_batch_size)))
+                        if needed_mix > 0:
+                            m_recs = pull_mix_records(needed_mix)
+                            batch_records = np.concatenate([batch_records, m_recs])
+                            if self.shuffle:
+                                rng.shuffle(batch_records)
+
+                    our_idx = batch_records["our_indices"].astype(np.int32)
+                    their_idx = batch_records["their_indices"].astype(np.int32)
+
+                    # Vectorized NumPy board reflection
+                    if self.augment_flip:
+                        flip = rng.integers(0, 2, size=(len(batch_records), 1), dtype=np.int32)
+                        mask_our = (our_idx != SENTINEL_INDEX) & (our_idx < FEATURE_COUNT)
+                        our_idx ^= (flip * 7) * mask_our
+                        mask_their = (their_idx != SENTINEL_INDEX) & (their_idx < FEATURE_COUNT)
+                        their_idx ^= (flip * 7) * mask_their
+
+                    our_idx_t = torch.from_numpy(our_idx)
+                    their_idx_t = torch.from_numpy(their_idx)
+                    target_eval_t = torch.from_numpy(batch_records["target_eval"].copy())
+                    target_wdl_t = torch.from_numpy(batch_records["target_wdl"].copy())
+                    openness_t = torch.from_numpy(batch_records["openness"].copy())
+
+                    # Zero-copy pinned memory for high-speed asynchronous PCIe DMA to GPU VRAM
+                    if self.is_cuda:
+                        our_idx_t = our_idx_t.pin_memory()
+                        their_idx_t = their_idx_t.pin_memory()
+                        target_eval_t = target_eval_t.pin_memory()
+                        target_wdl_t = target_wdl_t.pin_memory()
+                        openness_t = openness_t.pin_memory()
+
+                    # BatchDict provides zero-copy lazy evaluation for dense scatter features
+                    batch_dict = BatchDict({
+                        "our_indices": our_idx_t,
+                        "their_indices": their_idx_t,
+                        "target_eval": target_eval_t,
+                        "target_wdl": target_wdl_t,
+                        "openness": openness_t,
+                    })
+
+                    while not self._stop_event.is_set():
+                        try:
+                            batch_q.put(batch_dict, timeout=0.1)
+                            break
+                        except queue.Full:
+                            continue
+        except Exception as e:
+            self._worker_error = e
+            self._stop_event.set()
+            raise
 
     def __iter__(self):
         if self.total_records == 0 or self.num_batches == 0:
             return
 
         self._stop_event.clear()
+        self._worker_error = None
         num_chunks = math.ceil(self.total_records / self.chunk_size)
         rng = np.random.default_rng()
         chunk_order = rng.permutation(num_chunks) if self.shuffle else np.arange(num_chunks)
@@ -451,12 +487,25 @@ class FastMemoryMappedBatchLoader:
 
         try:
             for _ in range(self.num_batches):
-                item = self._batch_queue.get()
+                while not self._stop_event.is_set():
+                    try:
+                        item = self._batch_queue.get(timeout=0.1)
+                        break
+                    except queue.Empty:
+                        if self._worker_error is not None:
+                            raise self._worker_error
+                        if all(not w.is_alive() for w in self._workers) and self._batch_queue.empty():
+                            return
+                else:
+                    if self._worker_error is not None:
+                        raise self._worker_error
+                    return
+
                 if self.is_cuda:
-                    item = {
+                    item = BatchDict({
                         k: (v.to(self.device, non_blocking=True) if isinstance(v, torch.Tensor) else v)
                         for k, v in item.items()
-                    }
+                    })
                 yield item
         finally:
             self._stop_event.set()
@@ -477,6 +526,151 @@ class FastMemoryMappedBatchLoader:
             r.close()
         for r in getattr(self, "mix_readers", []):
             r.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
+
+class MultiExpertBatchLoader:
+    """
+    Balanced multi-expert batch loader for SharedMoENNUE training.
+    Streams balanced batches across the 6 phase/structural binpacks
+    (open, closed, endgame, queenless, imbalance, attack) and attaches
+    `expert_ids` (0..5) and `openness` to each yielded BatchDict.
+    """
+
+    EXPERT_NAMES = ("open", "closed", "endgame", "queenless", "imbalance", "attack")
+
+    def __init__(
+        self,
+        data_dir: str = "./data/preprocessed",
+        batch_size: int = 8192,
+        shuffle: bool = True,
+        device: Optional[torch.device] = None,
+        drop_last: bool = False,
+        val_split: float = 0.0,
+        is_validation: bool = False,
+        augment_flip: bool = False,
+        chunk_size: int = 65536,
+        prefetch_batches: int = 4,
+        num_workers: Optional[int] = None,
+        expert_paths: Optional[dict] = None,
+    ):
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+        self.device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.loaders: List[tuple] = []  # (expert_id, FastMemoryMappedBatchLoader)
+
+        # First discover available expert binpacks
+        available = []
+        for expert_id, name in enumerate(self.EXPERT_NAMES):
+            candidate = expert_paths.get(name) if expert_paths else None
+            if candidate is None:
+                file_path = os.path.join(data_dir, f"{name}.binpack")
+                dir_path = os.path.join(data_dir, name)
+                candidate = file_path if os.path.exists(file_path) else dir_path
+            files = resolve_binpack_files(candidate)
+            if files:
+                available.append((expert_id, files))
+
+        if not available:
+            raise FileNotFoundError(
+                f"No expert .binpack files found in '{data_dir}' for any of {self.EXPERT_NAMES}"
+            )
+
+        per_expert_bs = max(1, batch_size // len(available))
+        workers_per_expert = max(1, (num_workers or 2) // len(available))
+
+        for expert_id, files in available:
+            loader = FastMemoryMappedBatchLoader(
+                binpack_path=files,
+                batch_size=per_expert_bs,
+                shuffle=shuffle,
+                device=self.device,
+                drop_last=drop_last,
+                val_split=val_split,
+                is_validation=is_validation,
+                augment_flip=augment_flip,
+                chunk_size=chunk_size,
+                prefetch_batches=prefetch_batches,
+                num_workers=workers_per_expert,
+            )
+            if len(loader) > 0:
+                self.loaders.append((expert_id, loader))
+            else:
+                loader.close()
+
+        if not self.loaders:
+            raise RuntimeError(f"All discovered expert loaders in '{data_dir}' are empty.")
+
+        self.total_records = sum(loader.total_records for _, loader in self.loaders)
+        self.num_batches = max(len(loader) for _, loader in self.loaders)
+
+    def __len__(self) -> int:
+        return self.num_batches
+
+    def __iter__(self):
+        if self.num_batches == 0:
+            return
+
+        iters = [(expert_id, iter(loader), loader) for expert_id, loader in self.loaders]
+        for _ in range(self.num_batches):
+            our_parts = []
+            their_parts = []
+            eval_parts = []
+            wdl_parts = []
+            openness_parts = []
+            expert_parts = []
+
+            for i, (expert_id, it, loader) in enumerate(iters):
+                try:
+                    batch = next(it)
+                except StopIteration:
+                    it = iter(loader)
+                    iters[i] = (expert_id, it, loader)
+                    batch = next(it)
+
+                n = batch["target_eval"].shape[0]
+                our_parts.append(batch["our_indices"])
+                their_parts.append(batch["their_indices"])
+                eval_parts.append(batch["target_eval"])
+                wdl_parts.append(batch["target_wdl"])
+                openness_parts.append(batch["openness"])
+                expert_parts.append(
+                    torch.full((n,), expert_id, dtype=torch.long, device=batch["target_eval"].device)
+                )
+
+            our_all = torch.cat(our_parts, dim=0)
+            their_all = torch.cat(their_parts, dim=0)
+            eval_all = torch.cat(eval_parts, dim=0)
+            wdl_all = torch.cat(wdl_parts, dim=0)
+            openness_all = torch.cat(openness_parts, dim=0)
+            expert_all = torch.cat(expert_parts, dim=0)
+
+            if self.shuffle:
+                perm = torch.randperm(eval_all.shape[0], device=eval_all.device)
+                our_all = our_all[perm]
+                their_all = their_all[perm]
+                eval_all = eval_all[perm]
+                wdl_all = wdl_all[perm]
+                openness_all = openness_all[perm]
+                expert_all = expert_all[perm]
+
+            yield BatchDict({
+                "our_indices": our_all,
+                "their_indices": their_all,
+                "target_eval": eval_all,
+                "target_wdl": wdl_all,
+                "openness": openness_all,
+                "expert_ids": expert_all,
+            })
+
+    def close(self):
+        for _, loader in getattr(self, "loaders", []):
+            loader.close()
 
     def __enter__(self):
         return self

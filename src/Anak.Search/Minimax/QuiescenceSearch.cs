@@ -7,7 +7,7 @@ namespace Anak.Search;
 /// <summary>
 /// Quiescence Search (QS) to resolve tactical captures and promotions at leaf nodes.
 /// Features:
-/// - Fast stand-pat score evaluation using IMultiTierEvaluator.EvaluateMicro pre-screening
+/// - Fast stand-pat evaluation with correction history
 /// - Delta pruning to eliminate futile captures
 /// - SEE (Static Exchange Evaluation) filtering to prune losing captures
 /// - MVV-LVA move ordering
