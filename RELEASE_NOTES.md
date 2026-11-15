@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.22` (Estimated Rating: **2677 Elo**)  
+> **Current Active Version:** `v1.0.23` (Estimated Rating: **2686 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,15 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.23` (2026-11-15) — Exempt Checking Moves & Mate Threats from Pre-Move Pruning
+- **Category:** Search Tactical Accuracy (Patch Release)
+- **Estimated Elo:** **2686 &plusmn; 7** (+9.08 Elo / +10.30 nElo over v1.0.22 in 8,000 games, 99.60% LOS)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,345 wins, 3,136 losses, 1,519 draws (51.31% score, 0 crashes).
+- **Highlights:**
+  - **Check & Mate-Threat Exemption in Pre-Move Pruning (`AlphaBetaEngine.cs`):** Exempted moves that give check (`board.GivesCheck(move)`) and positions where a mate threat has been seen (`bestScore <= -TTEntry.MateBound`) from BadCaptures, Shallow Futility, Late Move Pruning (LMP), and SEE pruning, and fixed the depth-3 futility margin to scale monotonically (`120 * depth`).
+
+---
 
 ### `v1.0.22` (2026-11-15) — Unified Shared-FT MoE NNUE, 20-Byte TTEntry & Legacy Cleanup
 - **Category:** NNUE Architecture, Transposition Table Density & Cleanup

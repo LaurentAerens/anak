@@ -1300,55 +1300,59 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     continue;
                 }
 
-                // Bad Captures Pruning at shallow depth
-                if (!isPv && !inCheck && depth <= 2 && picker.Stage == MovePickerStage.BadCaptures)
-                {
-                    break;
-                }
-
                 bool isQuiet = !move.IsCapture && !move.IsPromotion;
 
-                // Shallow Futility Pruning for non-tactical quiet moves at shallow depth
-                if (!isPv && !inCheck && isQuiet && movesSearched > 0)
+                // Pre-move pruning (exempt checking moves and positions where a mate threat was seen)
+                if (!isPv && !inCheck && bestScore > -TTEntry.MateBound)
                 {
-                    if (depth <= 2 && eval + (150 * depth) <= alpha)
+                    // Bad Captures Pruning at shallow depth
+                    if (depth <= 2 && picker.Stage == MovePickerStage.BadCaptures && !board.GivesCheck(move))
                     {
                         continue;
                     }
-                    if (depth == 3 && staticEval + (80 * depth) <= alpha)
-                    {
-                        continue;
-                    }
-                }
 
-                // Late Move Pruning (LMP) for quiet moves
-                if (!isPv && !inCheck && depth <= 3 && isQuiet)
-                {
-                    int lmpThreshold = 3 + (2 * depth * depth);
-                    if (movesSearched >= lmpThreshold)
+                    // Shallow Futility Pruning for non-tactical quiet moves at shallow depth
+                    if (isQuiet && movesSearched > 0)
                     {
-                        continue;
-                    }
-                }
-
-                // Static Exchange Evaluation (SEE) Pruning
-                if (movesSearched > 0 && !isPv && !inCheck)
-                {
-                    // Bad Captures Pruning: Prune clearly losing exchanges at shallow depths
-                    if (depth <= 5 && move.IsCapture && !move.IsPromotion)
-                    {
-                        if (picker.CurrentSee < -60 * depth)
+                        if (depth <= 2 && eval + (150 * depth) <= alpha && !board.GivesCheck(move))
+                        {
+                            continue;
+                        }
+                        if (depth == 3 && staticEval + (120 * depth) <= alpha && !board.GivesCheck(move))
                         {
                             continue;
                         }
                     }
 
-                    // Quiet SEE Pruning: Prune quiet moves that blunder pieces onto attacked squares
-                    if (depth <= 4 && isQuiet)
+                    // Late Move Pruning (LMP) for quiet moves
+                    if (depth <= 3 && isQuiet)
                     {
-                        if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -35 * depth * depth))
+                        int lmpThreshold = 3 + (2 * depth * depth);
+                        if (movesSearched >= lmpThreshold && !board.GivesCheck(move))
                         {
                             continue;
+                        }
+                    }
+
+                    // Static Exchange Evaluation (SEE) Pruning
+                    if (movesSearched > 0)
+                    {
+                        // Bad Captures Pruning: Prune clearly losing exchanges at shallow depths
+                        if (depth <= 5 && move.IsCapture && !move.IsPromotion)
+                        {
+                            if (picker.CurrentSee < -60 * depth && !board.GivesCheck(move))
+                            {
+                                continue;
+                            }
+                        }
+
+                        // Quiet SEE Pruning: Prune quiet moves that blunder pieces onto attacked squares
+                        if (depth <= 4 && isQuiet)
+                        {
+                            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -35 * depth * depth) && !board.GivesCheck(move))
+                            {
+                                continue;
+                            }
                         }
                     }
                 }
