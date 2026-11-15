@@ -74,6 +74,7 @@ public sealed class QuiescenceSearch
         // 1. Transposition Table probe
         TTEntry entry = default;
         bool ttHit = _tt != null && _tt.TryGet(key, out entry);
+        Move ttMove = ttHit ? entry.BestMove : Move.Null;
         if (ttHit && entry.ExpertId == ActiveExpertId)
         {
             int ttScore = TTEntry.ScoreFromTt(entry.Score, ply);
@@ -211,6 +212,11 @@ public sealed class QuiescenceSearch
             {
                 // In check: search all legal evasions, prioritizing captures
                 moveScore = m.IsCapture ? MovePicker.GetMvvLva(in board, m) + 10000 : 0;
+            }
+
+            if (m == ttMove)
+            {
+                moveScore = 1_000_000;
             }
 
             candidateIndices[candidateCount] = (byte)i;

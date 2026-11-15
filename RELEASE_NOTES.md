@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.22` (Estimated Rating: **2677 Elo**)  
+> **Current Active Version:** `v1.0.27` (Estimated Rating: **2708 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,43 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.27` (2026-11-15) — Defer Full Move Generation Past Killer & CounterMove Stages
+- **Category:** Move Ordering Speed & NPS (Patch Release)
+- **Estimated Elo:** **2708 &plusmn; 7** (+4.43 Elo / +5.16 nElo over v1.0.26 in 8,000 games, 90.81% LOS, 100% node-count equivalence)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,169 wins, 3,067 losses, 1,764 draws (50.64% score, 0 crashes).
+- **Highlights:**
+  - **Lazy Quiet Move Generation (`MovePicker.cs`):** Validated `Killer0`, `Killer1`, and `CounterMove` via `_board.IsLegal(...)` before invoking `EnsureAllMovesGenerated()`, avoiding full legal move generation on every beta cutoff produced by killer or countermove stages.
+
+### `v1.0.26` (2026-11-15) — Transposition Table Move Ordering in Quiescence Search
+- **Category:** Search Move Ordering (Patch Release)
+- **Estimated Elo:** **2704 &plusmn; 7** (+10.43 Elo / +12.19 nElo over v1.0.25 in 8,000 games, 99.92% LOS)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,271 wins, 3,031 losses, 1,698 draws (51.50% score, 0 crashes).
+- **Highlights:**
+  - **QS TT Move Prioritization (`QuiescenceSearch.cs`):** Scored `entry.BestMove` from TT hits at `1_000_000` ahead of MVV-LVA captures, checks, and check evasions in Quiescence Search, yielding immediate first-move beta cutoffs and cutting timeouts in half (`57` vs `121`).
+
+### `v1.0.25` (2026-11-15) — Eliminate Duplicate Leaf Pawn Topology Scan in MoE Evaluation
+- **Category:** Evaluation Speed & NPS (Patch Release)
+- **Estimated Elo:** **2694 &plusmn; 7** (+0.91 Elo / +1.06 nElo over v1.0.24 in 8,000 games, 60.76% LOS, 100% node-count equivalence)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,130 wins, 3,109 losses, 1,761 draws (50.13% score, 0 crashes).
+- **Highlights:**
+  - **Single-Pass SWAR Topology Classification (`PawnTopology.cs`, `MultiTierNnueEvaluator.cs`):** Added `ClassifyExpert(..., out int opennessPct)` using integer SWAR `CalculateOpennessPercent` once inside classification and reused `opennessPct` for MoE Open/Closed blending, eliminating both the duplicate bitboard scan and floating-point arithmetic at every Open/Closed leaf node.
+
+### `v1.0.24` (2026-11-15) — Clear Child Killer Moves in AlphaBeta (BUG-02)
+- **Category:** Search Move Ordering (Patch Release)
+- **Estimated Elo:** **2693 &plusmn; 7** (+6.86 Elo / +7.84 nElo over v1.0.23 in 8,000 games, 97.82% LOS)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,242 wins, 3,084 losses, 1,674 draws (50.99% score, 0 crashes).
+- **Highlights:**
+  - **Clear Child Killers (`AlphaBetaEngine.cs`):** Cleared `_stack[ply + 1].Killer0` and `_stack[ply + 1].Killer1` on entry to non-leaf `AlphaBeta` nodes so stale sibling killer moves no longer pollute move ordering across branches.
+
+### `v1.0.23` (2026-11-15) — Exempt Checking Moves & Mate Threats from Pre-Move Pruning
+- **Category:** Search Tactical Accuracy (Patch Release)
+- **Estimated Elo:** **2686 &plusmn; 7** (+9.08 Elo / +10.30 nElo over v1.0.22 in 8,000 games, 99.60% LOS)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,345 wins, 3,136 losses, 1,519 draws (51.31% score, 0 crashes).
+- **Highlights:**
+  - **Check & Mate-Threat Exemption in Pre-Move Pruning (`AlphaBetaEngine.cs`):** Exempted moves that give check (`board.GivesCheck(move)`) and positions where a mate threat has been seen (`bestScore <= -TTEntry.MateBound`) from BadCaptures, Shallow Futility, Late Move Pruning (LMP), and SEE pruning, and fixed the depth-3 futility margin to scale monotonically (`120 * depth`).
+
+---
 
 ### `v1.0.22` (2026-11-15) — Unified Shared-FT MoE NNUE, 20-Byte TTEntry & Legacy Cleanup
 - **Category:** NNUE Architecture, Transposition Table Density & Cleanup

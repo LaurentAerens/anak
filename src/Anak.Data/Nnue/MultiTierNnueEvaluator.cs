@@ -485,13 +485,12 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int EvaluateMoEForBoard(short* whiteAcc, short* blackAcc, NnueWeights moeWeights, in Board board)
     {
-        NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board, _routing);
+        NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board, _routing, out int opennessPct);
         if (leafExpert is NnueExpertType.Open or NnueExpertType.Closed)
         {
             int thresholdPct = (int)MathF.Round(_routing.OpenThreshold * 100.0f);
             int low = thresholdPct - 8;
             int high = thresholdPct + 8;
-            int opennessPct = PawnTopology.CalculateOpennessPercent(in board);
             if (opennessPct > low && opennessPct < high)
             {
                 int alpha256 = ((opennessPct - low) * 256) / 16;

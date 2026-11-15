@@ -90,6 +90,9 @@ public ref struct MovePicker
     private bool _capturesGenerated;
     private bool _allMovesGenerated;
     private bool _ttMovePicked;
+    private bool _killer0Picked;
+    private bool _killer1Picked;
+    private bool _counterMovePicked;
     private MoveBuffer32 _playedGoodCaptures;
     private int _playedGoodCapturesCount;
 
@@ -198,6 +201,21 @@ public ref struct MovePicker
             int ttIdx = FindMove(_ttMove);
             if (ttIdx >= 0) MarkPicked(ttIdx);
         }
+        if (_killer0Picked && !_killer0.IsNull)
+        {
+            int k0Idx = FindMove(_killer0);
+            if (k0Idx >= 0) MarkPicked(k0Idx);
+        }
+        if (_killer1Picked && !_killer1.IsNull)
+        {
+            int k1Idx = FindMove(_killer1);
+            if (k1Idx >= 0) MarkPicked(k1Idx);
+        }
+        if (_counterMovePicked && !_counterMove.IsNull)
+        {
+            int cmIdx = FindMove(_counterMove);
+            if (cmIdx >= 0) MarkPicked(cmIdx);
+        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -213,6 +231,21 @@ public ref struct MovePicker
         {
             int ttIdx = FindMove(_ttMove);
             if (ttIdx >= 0) MarkPicked(ttIdx);
+        }
+        if (_killer0Picked && !_killer0.IsNull)
+        {
+            int k0Idx = FindMove(_killer0);
+            if (k0Idx >= 0) MarkPicked(k0Idx);
+        }
+        if (_killer1Picked && !_killer1.IsNull)
+        {
+            int k1Idx = FindMove(_killer1);
+            if (k1Idx >= 0) MarkPicked(k1Idx);
+        }
+        if (_counterMovePicked && !_counterMove.IsNull)
+        {
+            int cmIdx = FindMove(_counterMove);
+            if (cmIdx >= 0) MarkPicked(cmIdx);
         }
         for (int p = 0; p < _playedGoodCapturesCount; p++)
         {
@@ -295,53 +328,53 @@ public ref struct MovePicker
 
                 case MovePickerStage.Killer0:
                     _stage = MovePickerStage.Killer1;
-                    if (!_killer0.IsNull && !_killer0.IsCapture && !_killer0.IsPromotion && _killer0 != _ttMove)
+                    if (!_killer0.IsNull && !_killer0.IsCapture && !_killer0.IsPromotion && _killer0 != _ttMove && _board.IsLegal(_killer0))
                     {
-                        EnsureAllMovesGenerated();
-                        int k0Idx = FindMove(_killer0);
-                        if (k0Idx >= 0 && !IsPicked(k0Idx))
+                        _killer0Picked = true;
+                        if (_allMovesGenerated)
                         {
-                            MarkPicked(k0Idx);
-                            CurrentStage = MovePickerStage.Killer0;
-                            CurrentSee = int.MinValue;
-                            move = _killer0;
-                            return true;
+                            int k0Idx = FindMove(_killer0);
+                            if (k0Idx >= 0) MarkPicked(k0Idx);
                         }
+                        CurrentStage = MovePickerStage.Killer0;
+                        CurrentSee = int.MinValue;
+                        move = _killer0;
+                        return true;
                     }
                     break;
 
                 case MovePickerStage.Killer1:
                     _stage = MovePickerStage.CounterMove;
-                    if (!_killer1.IsNull && !_killer1.IsCapture && !_killer1.IsPromotion && _killer1 != _ttMove && _killer1 != _killer0)
+                    if (!_killer1.IsNull && !_killer1.IsCapture && !_killer1.IsPromotion && _killer1 != _ttMove && _killer1 != _killer0 && _board.IsLegal(_killer1))
                     {
-                        EnsureAllMovesGenerated();
-                        int k1Idx = FindMove(_killer1);
-                        if (k1Idx >= 0 && !IsPicked(k1Idx))
+                        _killer1Picked = true;
+                        if (_allMovesGenerated)
                         {
-                            MarkPicked(k1Idx);
-                            CurrentStage = MovePickerStage.Killer1;
-                            CurrentSee = int.MinValue;
-                            move = _killer1;
-                            return true;
+                            int k1Idx = FindMove(_killer1);
+                            if (k1Idx >= 0) MarkPicked(k1Idx);
                         }
+                        CurrentStage = MovePickerStage.Killer1;
+                        CurrentSee = int.MinValue;
+                        move = _killer1;
+                        return true;
                     }
                     break;
 
                 case MovePickerStage.CounterMove:
                     _stage = MovePickerStage.ContinuationMoves;
                     if (!_counterMove.IsNull && !_counterMove.IsCapture && !_counterMove.IsPromotion &&
-                        _counterMove != _ttMove && _counterMove != _killer0 && _counterMove != _killer1)
+                        _counterMove != _ttMove && _counterMove != _killer0 && _counterMove != _killer1 && _board.IsLegal(_counterMove))
                     {
-                        EnsureAllMovesGenerated();
-                        int cmIdx = FindMove(_counterMove);
-                        if (cmIdx >= 0 && !IsPicked(cmIdx))
+                        _counterMovePicked = true;
+                        if (_allMovesGenerated)
                         {
-                            MarkPicked(cmIdx);
-                            CurrentStage = MovePickerStage.CounterMove;
-                            CurrentSee = int.MinValue;
-                            move = _counterMove;
-                            return true;
+                            int cmIdx = FindMove(_counterMove);
+                            if (cmIdx >= 0) MarkPicked(cmIdx);
                         }
+                        CurrentStage = MovePickerStage.CounterMove;
+                        CurrentSee = int.MinValue;
+                        move = _counterMove;
+                        return true;
                     }
                     break;
 
