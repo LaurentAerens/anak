@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.26` (Estimated Rating: **2704 Elo**)  
+> **Current Active Version:** `v1.0.27` (Estimated Rating: **2708 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.27` (2026-11-15) — Defer Full Move Generation Past Killer & CounterMove Stages
+- **Category:** Move Ordering Speed & NPS (Patch Release)
+- **Estimated Elo:** **2708 &plusmn; 7** (+4.43 Elo / +5.16 nElo over v1.0.26 in 8,000 games, 90.81% LOS, 100% node-count equivalence)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,169 wins, 3,067 losses, 1,764 draws (50.64% score, 0 crashes).
+- **Highlights:**
+  - **Lazy Quiet Move Generation (`MovePicker.cs`):** Validated `Killer0`, `Killer1`, and `CounterMove` via `_board.IsLegal(...)` before invoking `EnsureAllMovesGenerated()`, avoiding full legal move generation on every beta cutoff produced by killer or countermove stages.
 
 ### `v1.0.26` (2026-11-15) — Transposition Table Move Ordering in Quiescence Search
 - **Category:** Search Move Ordering (Patch Release)
