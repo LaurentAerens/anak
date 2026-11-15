@@ -235,10 +235,20 @@ public static class PawnTopology
     /// Classifies the board using a tunable <see cref="ExpertRouting"/>: override rules are evaluated in
     /// <see cref="ExpertRouting.Order"/> (first match wins), then Open/Closed by the routing's open threshold.
     /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static NnueExpertType ClassifyExpert(in Board board, ExpertRouting routing)
     {
+        return ClassifyExpert(in board, routing, out _);
+    }
+
+    /// <summary>
+    /// Classifies the board using a tunable <see cref="ExpertRouting"/> and outputs the computed
+    /// integer openness percentage (0-100) when evaluated, avoiding duplicate bitboard scans during blending.
+    /// </summary>
+    public static NnueExpertType ClassifyExpert(in Board board, ExpertRouting routing, out int opennessPct)
+    {
         // Openness is only computed when a rule or the fallback needs it.
-        float openness = -1.0f;
+        opennessPct = -1;
 
         foreach (char rule in routing.Rules)
         {
@@ -261,14 +271,16 @@ public static class PawnTopology
                             return NnueExpertType.Attack;
                         }
 
-                        if (openness < 0.0f) openness = CalculateOpenness(in board);
-                        if (openness >= routing.AttackMinOpenness) return NnueExpertType.Attack;
+                        if (opennessPct < 0) opennessPct = CalculateOpennessPercent(in board);
+                        int attackMinPct = (int)MathF.Round(routing.AttackMinOpenness * 100.0f);
+                        if (opennessPct >= attackMinPct) return NnueExpertType.Attack;
                     }
                     break;
             }
         }
 
-        if (openness < 0.0f) openness = CalculateOpenness(in board);
-        return openness >= routing.OpenThreshold ? NnueExpertType.Open : NnueExpertType.Closed;
+        if (opennessPct < 0) opennessPct = CalculateOpennessPercent(in board);
+        int openThresholdPct = (int)MathF.Round(routing.OpenThreshold * 100.0f);
+        return opennessPct >= openThresholdPct ? NnueExpertType.Open : NnueExpertType.Closed;
     }
 }

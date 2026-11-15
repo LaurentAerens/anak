@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.24` (Estimated Rating: **2693 Elo**)  
+> **Current Active Version:** `v1.0.25` (Estimated Rating: **2694 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.25` (2026-11-15) — Eliminate Duplicate Leaf Pawn Topology Scan in MoE Evaluation
+- **Category:** Evaluation Speed & NPS (Patch Release)
+- **Estimated Elo:** **2694 &plusmn; 7** (+0.91 Elo / +1.06 nElo over v1.0.24 in 8,000 games, 60.76% LOS, 100% node-count equivalence)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,130 wins, 3,109 losses, 1,761 draws (50.13% score, 0 crashes).
+- **Highlights:**
+  - **Single-Pass SWAR Topology Classification (`PawnTopology.cs`, `MultiTierNnueEvaluator.cs`):** Added `ClassifyExpert(..., out int opennessPct)` using integer SWAR `CalculateOpennessPercent` once inside classification and reused `opennessPct` for MoE Open/Closed blending, eliminating both the duplicate bitboard scan and floating-point arithmetic at every Open/Closed leaf node.
 
 ### `v1.0.24` (2026-11-15) — Clear Child Killer Moves in AlphaBeta (BUG-02)
 - **Category:** Search Move Ordering (Patch Release)
