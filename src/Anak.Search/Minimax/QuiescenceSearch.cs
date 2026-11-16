@@ -103,6 +103,15 @@ public sealed class QuiescenceSearch
                 ? _correctionHistory.GetAdjustedEval(board.SideToMove, board.PawnKey, rawEval)
                 : rawEval;
 
+            if (ttHit && entry.ExpertId == ActiveExpertId && entry.Flags == TTFlags.LowerBound)
+            {
+                int ttScore = TTEntry.ScoreFromTt(entry.Score, ply);
+                if (ttScore > standPat)
+                {
+                    standPat = ttScore;
+                }
+            }
+
             if (standPat >= beta)
             {
                 return standPat;
