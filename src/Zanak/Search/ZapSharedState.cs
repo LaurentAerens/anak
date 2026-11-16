@@ -62,6 +62,7 @@ public sealed class ZapSharedState
 {
     private readonly object _syncLock = new();
     private ZapRootCandidate[] _candidates = [];
+    private int[] _rootCompletedCrosspoints = [];
     private uint _generation;
     private int _bestCandidateIndex;
     private long _totalNodes;
@@ -160,6 +161,7 @@ public sealed class ZapSharedState
         _completedDepth = 0;
         _bestCandidateIndex = 0;
         _candidates = [];
+        _rootCompletedCrosspoints = [];
     }
 
     public void Reset(Move[] legalRootMoves)
@@ -170,6 +172,7 @@ public sealed class ZapSharedState
         _bestCandidateIndex = 0;
 
         _candidates = new ZapRootCandidate[legalRootMoves.Length];
+        _rootCompletedCrosspoints = new int[legalRootMoves.Length];
         for (int i = 0; i < legalRootMoves.Length; i++)
         {
             _candidates[i] = new ZapRootCandidate(legalRootMoves[i], -30000)
@@ -178,6 +181,23 @@ public sealed class ZapSharedState
                 AgentFloor = int.MinValue
             };
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void IncrementRootCompletedCrosspoints(int rootIndex)
+    {
+        int[] counts = _rootCompletedCrosspoints;
+        if ((uint)rootIndex < (uint)counts.Length)
+        {
+            Interlocked.Increment(ref counts[rootIndex]);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetRootCompletedCrosspoints(int rootIndex)
+    {
+        int[] counts = _rootCompletedCrosspoints;
+        return (uint)rootIndex < (uint)counts.Length ? Volatile.Read(ref counts[rootIndex]) : 0;
     }
 
     public ZapRootCandidate GetCandidate(int index)
@@ -351,7 +371,7 @@ public sealed class ZapSharedState
                     secondIdx = i;
                 }
             }
-            return secondIdx >= 0 ? _candidates[secondIdx] : default;
+            return secondIdx >= 0 ? _candidates[secondIdx] : new ZapRootCandidate(Move.Null, -30000);
         }
     }
 

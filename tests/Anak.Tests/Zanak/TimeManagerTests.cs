@@ -75,14 +75,13 @@ public sealed class TimeManagerTests
         var tm = new TimeManager();
         tm.Start();
 
-        // Iteration 1
-        Assert.False(tm.CheckStableDominance(currentDepth: 8, leaderScore: 200, contenderScore: 10, leaderMoveRaw: 42));
+        int depth = tm.Parameters.StableDominanceMinDepth;
+        for (int i = 1; i < tm.Parameters.StableDominanceIters; i++)
+        {
+            Assert.False(tm.CheckStableDominance(currentDepth: depth++, leaderScore: 200 + i * 10, contenderScore: 10, leaderMoveRaw: 42));
+        }
 
-        // Iteration 2
-        Assert.False(tm.CheckStableDominance(currentDepth: 9, leaderScore: 210, contenderScore: 10, leaderMoveRaw: 42));
-
-        // Iteration 3
-        Assert.True(tm.CheckStableDominance(currentDepth: 10, leaderScore: 220, contenderScore: 10, leaderMoveRaw: 42));
+        Assert.True(tm.CheckStableDominance(currentDepth: depth, leaderScore: 250, contenderScore: 10, leaderMoveRaw: 42));
     }
 
     [Fact]
@@ -90,11 +89,15 @@ public sealed class TimeManagerTests
     {
         var tm = new TimeManager();
         tm.Start();
+        int depth = tm.Parameters.StableDominanceMinDepth;
         for (int i = 0; i < 10; i++)
         {
-            Assert.False(tm.CheckStableDominance(8, 200, 10, 42));
+            Assert.False(tm.CheckStableDominance(depth, 200, 10, 42));
         }
-        Assert.False(tm.CheckStableDominance(9, 200, 10, 42));
-        Assert.True(tm.CheckStableDominance(10, 200, 10, 42));
+        for (int i = 2; i < tm.Parameters.StableDominanceIters; i++)
+        {
+            Assert.False(tm.CheckStableDominance(++depth, 200, 10, 42));
+        }
+        Assert.True(tm.CheckStableDominance(++depth, 200, 10, 42));
     }
 }

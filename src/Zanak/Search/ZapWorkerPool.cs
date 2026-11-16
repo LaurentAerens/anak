@@ -350,7 +350,11 @@ public sealed class ZapWorkerPool : IDisposable
                 CreditEarlierDecisions(r, in updated, zobrist, Math.Abs(updated.Score - scoresBefore[r]), cp.Generation);
             }
         }
-        if (completed) Interlocked.Increment(ref _completedCrosspoints);
+        if (completed)
+        {
+            Interlocked.Increment(ref _completedCrosspoints);
+            _sharedState.IncrementRootCompletedCrosspoints(cp.RootCandidateIndex);
+        }
         Interlocked.CompareExchange(ref _firstBatchMs, _timeManager?.ElapsedMilliseconds ?? 0, -1);
         BatchCompleted?.Invoke(new ZapBatchTrace(cp.Generation, cp.ZobristKey, cp.Ply, cp.Role,
             remainingHorizon, work.Baseline, work.BestScore, work.Next, work.Moves.Length - work.Next,

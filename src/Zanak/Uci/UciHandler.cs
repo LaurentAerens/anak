@@ -160,6 +160,20 @@ public sealed class UciHandler : IDisposable
         SendLine($"option name SuddenDeathDivisor type spin default {(int)_timeParams.SuddenDeathDivisor} min 10 max 60");
         SendLine($"option name SuddenDeathIncFactor type spin default {(int)(_timeParams.SuddenDeathIncFactor * 100)} min 10 max 100");
         SendLine($"option name HardLimitMultiplier type spin default {(int)(_timeParams.HardLimitMultiplier * 10)} min 10 max 60");
+        SendLine($"option name StableDominanceMinDepth type spin default {_timeParams.StableDominanceMinDepth} min 3 max 14");
+        SendLine($"option name StableDominanceLeadCp type spin default {_timeParams.StableDominanceLeadCp} min 40 max 400");
+        SendLine($"option name StableDominanceIters type spin default {_timeParams.StableDominanceIters} min 1 max 8");
+        SendLine($"option name StableDominanceMinSoftPct type spin default {(int)Math.Round(_timeParams.StableDominanceMinSoftFraction * 100)} min 5 max 70");
+        SendLine($"option name PanicExtensionGapCp type spin default {_timeParams.PanicExtensionGapCp} min 0 max 60");
+        SendLine($"option name PanicExtensionFactorPct type spin default {(int)Math.Round(_timeParams.PanicExtensionFactor * 100)} min 100 max 250");
+        SendLine($"option name SurvivorSoftScale2Pct type spin default {(int)Math.Round(_timeParams.SurvivorSoftScale2 * 100)} min 10 max 95");
+        SendLine($"option name SurvivorSoftScale3Pct type spin default {(int)Math.Round(_timeParams.SurvivorSoftScale3 * 100)} min 15 max 95");
+        SendLine($"option name SurvivorSoftScale4Pct type spin default {(int)Math.Round(_timeParams.SurvivorSoftScale4 * 100)} min 25 max 100");
+        SendLine($"option name SmallSurvivorMinSoftPct type spin default {(int)Math.Round(_timeParams.SmallSurvivorMinSoftFraction * 100)} min 2 max 50");
+        SendLine($"option name DominantLeaderLeadCp type spin default {_timeParams.DominantLeaderLeadCp} min 40 max 400");
+        SendLine($"option name SmallSurvivorVerifyCrosspoints type spin default {_timeParams.SmallSurvivorVerifyCrosspoints} min 2 max 20");
+        SendLine($"option name LeaderVerifyCrosspoints type spin default {_timeParams.LeaderVerifyCrosspoints} min 4 max 35");
+        SendLine($"option name ContenderQuickCheckPerRoot type spin default {_timeParams.ContenderQuickCheckPerRoot} min 1 max 10");
 
         string syzygyPath = _search.Tablebase is Anak.Data.Syzygy.SyzygyTablebase stb ? stb.SyzygyPath : "<empty>";
         SendLine($"option name SyzygyPath type string default {syzygyPath}");
@@ -335,6 +349,62 @@ public sealed class UciHandler : IDisposable
             else if (optName.Equals("HardLimitMultiplier", StringComparison.OrdinalIgnoreCase) && double.TryParse(optVal, out double hlMult))
             {
                 _timeParams.HardLimitMultiplier = hlMult > 10.0 ? hlMult / 10.0 : hlMult;
+            }
+            else if (optName.Equals("StableDominanceMinDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdMinDepth))
+            {
+                _timeParams.StableDominanceMinDepth = Math.Clamp(sdMinDepth, 3, 14);
+            }
+            else if (optName.Equals("StableDominanceLeadCp", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdLead))
+            {
+                _timeParams.StableDominanceLeadCp = Math.Clamp(sdLead, 40, 400);
+            }
+            else if (optName.Equals("StableDominanceIters", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdIters))
+            {
+                _timeParams.StableDominanceIters = Math.Clamp(sdIters, 1, 8);
+            }
+            else if (optName.Equals("StableDominanceMinSoftPct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdMinSoftPct))
+            {
+                _timeParams.StableDominanceMinSoftFraction = Math.Clamp(sdMinSoftPct, 5, 70) / 100.0;
+            }
+            else if (optName.Equals("PanicExtensionGapCp", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int panicGap))
+            {
+                _timeParams.PanicExtensionGapCp = Math.Clamp(panicGap, 0, 60);
+            }
+            else if (optName.Equals("PanicExtensionFactorPct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int panicFactorPct))
+            {
+                _timeParams.PanicExtensionFactor = Math.Clamp(panicFactorPct, 100, 250) / 100.0;
+            }
+            else if (optName.Equals("SurvivorSoftScale2Pct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int surv2Pct))
+            {
+                _timeParams.SurvivorSoftScale2 = Math.Clamp(surv2Pct, 10, 95) / 100.0;
+            }
+            else if (optName.Equals("SurvivorSoftScale3Pct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int surv3Pct))
+            {
+                _timeParams.SurvivorSoftScale3 = Math.Clamp(surv3Pct, 15, 95) / 100.0;
+            }
+            else if (optName.Equals("SurvivorSoftScale4Pct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int surv4Pct))
+            {
+                _timeParams.SurvivorSoftScale4 = Math.Clamp(surv4Pct, 25, 100) / 100.0;
+            }
+            else if (optName.Equals("SmallSurvivorMinSoftPct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int smallMinSoftPct))
+            {
+                _timeParams.SmallSurvivorMinSoftFraction = Math.Clamp(smallMinSoftPct, 2, 50) / 100.0;
+            }
+            else if (optName.Equals("DominantLeaderLeadCp", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int domLead))
+            {
+                _timeParams.DominantLeaderLeadCp = Math.Clamp(domLead, 40, 400);
+            }
+            else if (optName.Equals("SmallSurvivorVerifyCrosspoints", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int smallVerify))
+            {
+                _timeParams.SmallSurvivorVerifyCrosspoints = Math.Clamp(smallVerify, 2, 20);
+            }
+            else if (optName.Equals("LeaderVerifyCrosspoints", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int leaderVerify))
+            {
+                _timeParams.LeaderVerifyCrosspoints = Math.Clamp(leaderVerify, 4, 35);
+            }
+            else if (optName.Equals("ContenderQuickCheckPerRoot", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int quickCheck))
+            {
+                _timeParams.ContenderQuickCheckPerRoot = Math.Clamp(quickCheck, 1, 10);
             }
             else if (optName.Equals("SyzygyPath", StringComparison.OrdinalIgnoreCase))
             {

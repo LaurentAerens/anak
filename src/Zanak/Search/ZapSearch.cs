@@ -429,10 +429,26 @@ public sealed class ZapSearch : IDisposable
         // Quick removal of clearly bad 1-ply moves (null-move baseline) before any spine is generated.
         Span<bool> keepRoot = stackalloc bool[movesArray.Length];
         long filterStart = Stopwatch.GetTimestamp();
-        ZapRootFilter.Filter(in rootBoard, movesArray, keepRoot, _params.RootFilterMarginCp);
+        int rejectedRoots = ZapRootFilter.Filter(in rootBoard, movesArray, keepRoot, _params.RootFilterMarginCp);
         RootFilterMs = Stopwatch.GetElapsedTime(filterStart).TotalMilliseconds;
+        int survivingRoots = movesArray.Length - rejectedRoots;
+
+        SearchBudget effectiveBudget = budget;
+        if (budget.ExtendHorizonWithTime && survivingRoots is >= 2 and <= 4)
+        {
+            double scale = survivingRoots switch
+            {
+                2 => _timeManager.Parameters.SurvivorSoftScale2,
+                3 => _timeManager.Parameters.SurvivorSoftScale3,
+                _ => _timeManager.Parameters.SurvivorSoftScale4
+            };
+            int scaledSoft = Math.Clamp((int)(budget.SoftLimitMs * scale), 1, budget.HardLimitMs);
+            effectiveBudget = budget with { SoftLimitMs = scaledSoft };
+            maxPhase1Ms = Math.Max(5, (long)(effectiveBudget.SoftLimitMs * 0.40));
+        }
+
         if (_params.InterleaveRootSeeding)
-            _workerPool.StartExploration(engineColor, budget, runOnCaller: true);
+            _workerPool.StartExploration(engineColor, effectiveBudget, runOnCaller: true);
 
         for (int i = 0; i < movesArray.Length; i++)
         {
@@ -609,6 +625,25 @@ public sealed class ZapSearch : IDisposable
             return _sharedState.GetBestMove();
         }
 
+        // Fast-path when ply-1 pruning leaves only 1 surviving move on a clock budget
+        if (effectiveBudget.ExtendHorizonWithTime && survivingRoots == 1)
+        {
+            _timeManager.Stop();
+            ZapRootCandidate sole = _sharedState.GetBestCandidate();
+            _tt.Store(rootBoard.ZobristKey, sole.Move, (byte)Math.Min(255, _sharedState.CompletedDepth), (short)sole.Score);
+            LastSearchDiagnostics =
+                $"zap exit single-survivor drain skipped depth {_sharedState.CompletedDepth} time {_timeManager.ElapsedMilliseconds}/{effectiveBudget.SoftLimitMs}ms " +
+                $"seeded {SeededRoots}/{movesArray.Length} seed-ms {SeedingMs} root-filter-ms {RootFilterMs:F2}";
+            return sole.Move;
+        }
+
+        int liveStems = 0;
+        for (int i = 0; i < _sharedState.CandidateCount; i++)
+        {
+            ZapRootCandidate c = _sharedState.GetCandidate(i);
+            if (!c.IsDeadStem && c.Status == RootMoveStatus.Active) liveStems++;
+        }
+
         // -------------------------------------------------------------
         // Phase 2 & 3: Gated Spine Qualification & Dual-Role Exploration
         // -------------------------------------------------------------
@@ -630,16 +665,18 @@ public sealed class ZapSearch : IDisposable
 
         // Start worker pool to explore queued crosspoints
         // A traced single-thread search must not interleave agent probes with the caller's probes.
-        _workerPool.StartExploration(engineColor, budget, runOnCaller: _searchTrace != null && _params.DefaultThreads == 1);
+        _workerPool.StartExploration(engineColor, effectiveBudget, runOnCaller: _searchTrace != null && _params.DefaultThreads == 1);
 
         // Iterative deepening & monitoring loop. With a clock budget the horizon keeps growing while time
         // remains; deeper spines re-open their crosspoints with longer agent horizons.
         int currentIterDepth = baseDepth + 1;
-        int depthCap = budget.ExtendHorizonWithTime
-            ? Math.Max(budget.MaxDepthHorizon, _timeManager.Parameters.ExtendedHorizonMaxPlies)
-            : budget.MaxDepthHorizon;
+        int depthCap = effectiveBudget.ExtendHorizonWithTime
+            ? Math.Max(effectiveBudget.MaxDepthHorizon, _timeManager.Parameters.ExtendedHorizonMaxPlies)
+            : effectiveBudget.MaxDepthHorizon;
         int prevLeaderIdx = _sharedState.BestCandidateIndex;
+        int leaderBaseCrosspoints = _sharedState.GetRootCompletedCrosspoints(prevLeaderIdx);
         bool forceDeepen = false;
+        bool earlyExit = false;
         long lastInfoMs = 0;
         long lastDeepenMs = _timeManager.ElapsedMilliseconds;
         string exitReason = "depth-cap";
@@ -648,7 +685,7 @@ public sealed class ZapSearch : IDisposable
         while (currentIterDepth <= depthCap && !_sharedState.IsStopped && !cancellationToken.IsCancellationRequested)
         {
             // Periodic polling
-            if (_timeManager.ShouldStop(_sharedState.TotalNodes, in budget, cancellationToken))
+            if (_timeManager.ShouldStop(_sharedState.TotalNodes, in effectiveBudget, cancellationToken))
             {
                 exitReason = "hard-limit";
                 _sharedState.RequestStop();
@@ -733,22 +770,83 @@ public sealed class ZapSearch : IDisposable
                     }
                 }
                 prevLeaderIdx = _sharedState.BestCandidateIndex;
+                leaderBaseCrosspoints = _sharedState.GetRootCompletedCrosspoints(prevLeaderIdx);
             }
             ZapRootCandidate contender = _sharedState.GetSecondBestCandidate();
 
+            bool isSmallSurvivorSet = survivingRoots <= 4 || liveStems <= 4;
+            double minSoftFraction = isSmallSurvivorSet
+                ? _timeManager.Parameters.SmallSurvivorMinSoftFraction
+                : _timeManager.Parameters.StableDominanceMinSoftFraction;
+
             // Check Stable Dominance early break (only after a minimum share of the soft budget is spent)
-            if (_timeManager.ElapsedMilliseconds >= (long)(budget.SoftLimitMs * _timeManager.Parameters.StableDominanceMinSoftFraction) &&
+            if (_timeManager.ElapsedMilliseconds >= (long)(effectiveBudget.SoftLimitMs * minSoftFraction) &&
                 _timeManager.CheckStableDominance(currentLeader.CompletedDepth, currentLeader.Score, contender.Score, currentLeader.Move.RawValue))
             {
                 exitReason = "stable-dominance";
+                earlyExit = true;
                 break;
+            }
+
+            // Dominant-Leader Verification + Contender Quick-Check:
+            // When one spine leads by >= DominantLeaderLeadCp and survives N refutation crosspoints without being dethroned,
+            // briefly check non-leader surviving heaps; if none closes the gap, bank the remaining time.
+            if (effectiveBudget.ExtendHorizonWithTime &&
+                _timeManager.ElapsedMilliseconds >= (long)(effectiveBudget.SoftLimitMs * minSoftFraction))
+            {
+                int leaderVerifiedCount = _sharedState.GetRootCompletedCrosspoints(leaderIdx) - leaderBaseCrosspoints;
+                int verifyThreshold = isSmallSurvivorSet
+                    ? _timeManager.Parameters.SmallSurvivorVerifyCrosspoints
+                    : _timeManager.Parameters.LeaderVerifyCrosspoints;
+
+                if (leaderVerifiedCount >= verifyThreshold &&
+                    currentLeader.Score - contender.Score >= _timeManager.Parameters.DominantLeaderLeadCp)
+                {
+                    int quickCheckBudget = Math.Clamp(
+                        Math.Max(1, survivingRoots - 1) * _timeManager.Parameters.ContenderQuickCheckPerRoot,
+                        3,
+                        12);
+                    bool dethronedOrThreatened = false;
+
+                    for (int q = 0; q < quickCheckBudget; q++)
+                    {
+                        if (_timeManager.ShouldStop(_sharedState.TotalNodes, in effectiveBudget, cancellationToken) ||
+                            _sharedState.IsStopped)
+                        {
+                            break;
+                        }
+                        if (!_workQueue.TryDequeue(out ZapCrosspoint qcp, _sharedState, generation, excludedRoot: leaderIdx))
+                        {
+                            break;
+                        }
+                        _workerPool.ProcessCrosspoint(in qcp, rootPolicy, _evaluator);
+
+                        ZapRootCandidate afterLeader = _sharedState.GetBestCandidate(out int afterLeaderIdx);
+                        ZapRootCandidate afterContender = _sharedState.GetSecondBestCandidate();
+                        if (afterLeaderIdx != leaderIdx ||
+                            afterLeader.Score - afterContender.Score < _timeManager.Parameters.DominantLeaderLeadCp)
+                        {
+                            dethronedOrThreatened = true;
+                            prevLeaderIdx = afterLeaderIdx;
+                            leaderBaseCrosspoints = _sharedState.GetRootCompletedCrosspoints(afterLeaderIdx);
+                            break;
+                        }
+                    }
+
+                    if (!dethronedOrThreatened && !_sharedState.IsStopped && !cancellationToken.IsCancellationRequested)
+                    {
+                        exitReason = "dominant-leader-verified";
+                        earlyExit = true;
+                        break;
+                    }
+                }
             }
 
             // Check Soft time limit exit (with panic extension check). A clock budget stops at the soft limit;
             // otherwise remaining queued work may run on to the hard limit.
-            if (_timeManager.HasReachedSoftLimit(in budget, currentLeader.Score, contender.Score, currentLeader.Move.RawValue))
+            if (_timeManager.HasReachedSoftLimit(in effectiveBudget, currentLeader.Score, contender.Score, currentLeader.Move.RawValue))
             {
-                if (budget.ExtendHorizonWithTime || _workQueue.IsEmpty || _timeManager.ElapsedMilliseconds >= budget.HardLimitMs)
+                if (effectiveBudget.ExtendHorizonWithTime || _workQueue.IsEmpty || _timeManager.ElapsedMilliseconds >= effectiveBudget.HardLimitMs)
                 {
                     exitReason = "soft-limit";
                     break;
@@ -758,8 +856,8 @@ public sealed class ZapSearch : IDisposable
             // If work queue is emptying and time remains, deepen the top candidates and extract deeper crosspoints!
             // Subspines keep the queue full, so with a clock budget the horizon also grows on a time schedule.
             bool deepened = false;
-            bool deepenDue = budget.ExtendHorizonWithTime &&
-                _timeManager.ElapsedMilliseconds - lastDeepenMs >= Math.Max(10, budget.SoftLimitMs / Math.Max(1, depthCap - baseDepth));
+            bool deepenDue = effectiveBudget.ExtendHorizonWithTime &&
+                _timeManager.ElapsedMilliseconds - lastDeepenMs >= Math.Max(10, effectiveBudget.SoftLimitMs / Math.Max(1, depthCap - baseDepth));
             if (_workQueue.Count < 4 || forceDeepen || deepenDue)
             {
                 deepened = true;
@@ -916,9 +1014,10 @@ public sealed class ZapSearch : IDisposable
         }
 
         // Spine exploration draining: if time remains below soft limit, drain pending crosspoints
+        // unless we exited early to bank clock time.
         if (exitReason == "depth-cap" && (_sharedState.IsStopped || cancellationToken.IsCancellationRequested)) exitReason = "stopped";
-        string drainExit = "soft-limit";
-        while (!_sharedState.IsStopped && !_timeManager.HasReachedSoftLimit(in budget, _sharedState.GetBestCandidate().Score, _sharedState.GetSecondBestCandidate().Score, _sharedState.GetBestMove().RawValue))
+        string drainExit = earlyExit ? "skipped" : "soft-limit";
+        while (!earlyExit && !_sharedState.IsStopped && !_timeManager.HasReachedSoftLimit(in effectiveBudget, _sharedState.GetBestCandidate().Score, _sharedState.GetSecondBestCandidate().Score, _sharedState.GetBestMove().RawValue))
         {
             if (_workQueue.TryDequeue(out ZapCrosspoint cp, _sharedState, generation))
             {
@@ -938,7 +1037,7 @@ public sealed class ZapSearch : IDisposable
         _workerPool.StopExploration();
         _timeManager.Stop();
         LastSearchDiagnostics =
-            $"zap exit {exitReason} drain {drainExit} depth {currentIterDepth - 1} time {_timeManager.ElapsedMilliseconds}/{budget.SoftLimitMs}ms " +
+            $"zap exit {exitReason} drain {drainExit} depth {currentIterDepth - 1} time {_timeManager.ElapsedMilliseconds}/{effectiveBudget.SoftLimitMs}ms " +
             $"agents {_workQueue.DequeuedCount} improved {_workerPool.AgentsImproved} spliced {_workerPool.AgentsSpliced} " +
             $"entries new {_workQueue.NewEntryCount} merged {_workQueue.MergedEntryCount} reopened {_workQueue.ReopenedEntryCount} " +
             $"subspine-positions {_workerPool.SubspinePositions} tree-nodes {_workerPool.SpineTree.NodeCount} " +
