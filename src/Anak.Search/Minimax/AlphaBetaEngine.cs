@@ -1226,8 +1226,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 depth--;
             }
 
-            // 6. Reverse Futility Pruning (Static Null Move Pruning) for depth <= 4
-            if (!isPv && !inCheck && depth <= 4 && _stack[ply].ExcludedMove.IsNull &&
+            // 6. Reverse Futility Pruning (Static Null Move Pruning) for depth <= 6
+            if (!isPv && !inCheck && depth <= 6 && _stack[ply].ExcludedMove.IsNull &&
                 Math.Abs(beta) < TTEntry.MateBound &&
                 SearchHeuristics.HasNonPawnMaterial(in board, board.SideToMove))
             {

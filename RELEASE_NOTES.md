@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.30` (Estimated Rating: **2739 Elo**)  
+> **Current Active Version:** `v1.0.31` (Estimated Rating: **2748 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.31` (2026-11-16) — Extend Reverse Futility Pruning (RFP) to Depth <= 6
+- **Category:** Search Pruning Efficiency (Patch Release)
+- **Estimated Elo:** **2748 &plusmn; 6** (+9.08 Elo / +10.65 nElo over v1.0.30 in 8,000 games, 99.70% LOS)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,242 wins, 3,033 losses, 1,725 draws (51.31% score, 0 crashes).
+- **Highlights:**
+  - **Deeper Reverse Futility Pruning (`AlphaBetaEngine.cs`):** Extended Reverse Futility Pruning (Static Null Move Pruning) from `depth <= 4` to `depth <= 6`, pruning clearly winning non-PV nodes 2 plies higher in the search tree.
 
 ### `v1.0.30` (2026-11-16) — Refine Quiescence Stand-Pat with TT LowerBound
 - **Category:** Search Bounds & Quiescence Efficiency (Patch Release)
