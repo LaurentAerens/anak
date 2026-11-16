@@ -1437,6 +1437,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                                 r++;
                             }
 
+                            if (picker.CurrentStage == MovePickerStage.CounterMove)
+                            {
+                                r--;
+                            }
+
                             int hist = _history.GetScore(movedPiece.Color(), move);
                             if (hist < -_engine.HistoryThreshold) r++;
                             else if (hist > _engine.HistoryThreshold) r--;
