@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.28` (Estimated Rating: **2714 Elo**)  
+> **Current Active Version:** `v1.0.29` (Estimated Rating: **2730 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.29` (2026-11-16) — Improving-Aware Late Move Pruning (LMP)
+- **Category:** Search Pruning Efficiency (Patch Release)
+- **Estimated Elo:** **2730 &plusmn; 7** (+15.56 Elo / +17.69 nElo over v1.0.28 in 7,352 games, 100.00% LOS, SPRT `[0, 3]` H1 accepted)
+- **Validation:** SPRT `[0.0, 3.0]` at STC (`1+0.01`): 3,103 wins, 2,774 losses, 1,475 draws (52.24% score, `LLR: 2.95`, 0 crashes).
+- **Highlights:**
+  - **Improving-Aware LMP (`AlphaBetaEngine.cs`):** Tightened Late Move Pruning quiet-move thresholds when the static evaluation is not improving (`improving ? 3 + (2 * depth * depth) : 3 + (depth * depth)`), cutting wasted quiet searches at deteriorating nodes.
 
 ### `v1.0.28` (2026-11-16) — Cache Bad Captures Directly in MovePicker (Eliminate Double SEE)
 - **Category:** Move Ordering Speed & NPS (Patch Release)

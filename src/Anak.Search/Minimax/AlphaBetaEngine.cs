@@ -1366,7 +1366,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     // Late Move Pruning (LMP) for quiet moves
                     if (depth <= 3 && isQuiet)
                     {
-                        int lmpThreshold = 3 + (2 * depth * depth);
+                        int lmpThreshold = improving ? 3 + (2 * depth * depth) : 3 + (depth * depth);
                         if (movesSearched >= lmpThreshold && !board.GivesCheck(move))
                         {
                             continue;
