@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.27` (Estimated Rating: **2708 Elo**)  
+> **Current Active Version:** `v1.0.28` (Estimated Rating: **2714 Elo**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.28` (2026-11-16) — Cache Bad Captures Directly in MovePicker (Eliminate Double SEE)
+- **Category:** Move Ordering Speed & NPS (Patch Release)
+- **Estimated Elo:** **2714 &plusmn; 6** (+6.38 Elo / +7.55 nElo over v1.0.27 in 8,000 games, 97.40% LOS, 100% node-count equivalence)
+- **Validation:** 8,000-game match at STC (`1+0.01`): 3,201 wins, 3,054 losses, 1,745 draws (50.92% score, 0 crashes).
+- **Highlights:**
+  - **Single-Pass Capture SEE Scoring (`MovePicker.cs`):** Stored losing captures (`Move` + `SEE`) directly in stack buffers during `GoodCaptures` scoring and skipped already-picked `ttMove`, preventing `EnsureAllMovesGenerated()` from invalidating capture indices and eliminating redundant second-pass `StaticExchangeEvaluator.Evaluate` calls at `BadCaptures`.
 
 ### `v1.0.27` (2026-11-15) — Defer Full Move Generation Past Killer & CounterMove Stages
 - **Category:** Move Ordering Speed & NPS (Patch Release)

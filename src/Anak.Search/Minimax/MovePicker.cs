@@ -21,6 +21,18 @@ public struct MoveBuffer32
     private Move _element0;
 }
 
+[InlineArray(64)]
+public struct MoveBuffer64
+{
+    private Move _element0;
+}
+
+[InlineArray(64)]
+public struct ShortBuffer64
+{
+    private short _element0;
+}
+
 [InlineArray(128)]
 public struct IndexBuffer128
 {
@@ -79,7 +91,8 @@ public ref struct MovePicker
     private ShortBuffer256 _seeScores;
     private IndexBuffer128 _goodCaptureIndices;
     private int _goodCaptureCount;
-    private IndexBuffer128 _badCaptureIndices;
+    private MoveBuffer64 _badCaptureMoves;
+    private ShortBuffer64 _badCaptureSee;
     private int _badCaptureCount;
     private IndexBuffer128 _quietIndices;
     private int _quietCount;
@@ -149,7 +162,8 @@ public ref struct MovePicker
         Unsafe.SkipInit(out _seeScores);
         Unsafe.SkipInit(out _goodCaptureIndices);
         _goodCaptureCount = 0;
-        Unsafe.SkipInit(out _badCaptureIndices);
+        Unsafe.SkipInit(out _badCaptureMoves);
+        Unsafe.SkipInit(out _badCaptureSee);
         _badCaptureCount = 0;
         Unsafe.SkipInit(out _quietIndices);
         _quietCount = 0;
@@ -252,7 +266,6 @@ public ref struct MovePicker
             int capIdx = FindMove(_playedGoodCaptures[p]);
             if (capIdx >= 0) MarkPicked(capIdx);
         }
-        _capturesScored = false;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -415,20 +428,20 @@ public ref struct MovePicker
                     break;
 
                 case MovePickerStage.BadCaptures:
-                    EnsureAllMovesGenerated();
                     if (!_capturesScored)
                     {
+                        EnsureCapturesGenerated();
                         ScoreCaptures();
                         _capturesScored = true;
                     }
 
-                    int bestBadCapIdx = PickBestBadCapture();
-                    if (bestBadCapIdx >= 0)
+                    int bestBadSlot = PickBestBadCaptureSlot();
+                    if (bestBadSlot >= 0)
                     {
-                        MarkPicked(bestBadCapIdx);
                         CurrentStage = MovePickerStage.BadCaptures;
-                        CurrentSee = _seeScores[bestBadCapIdx];
-                        move = _legalMoves[bestBadCapIdx];
+                        CurrentSee = _badCaptureSee[bestBadSlot];
+                        _badCaptureSee[bestBadSlot] = short.MinValue;
+                        move = _badCaptureMoves[bestBadSlot];
                         return true;
                     }
 
@@ -469,6 +482,7 @@ public ref struct MovePicker
         _badCaptureCount = 0;
         for (int i = 0; i < _legalMoves.Count; i++)
         {
+            if (IsPicked(i)) continue;
             Move m = _legalMoves[i];
             if (!m.IsCapture && !m.IsPromotion) continue;
 
@@ -489,11 +503,11 @@ public ref struct MovePicker
                 _scores[i] = Math.Max(0, score);
                 _goodCaptureIndices[_goodCaptureCount++] = (byte)i;
             }
-            else
+            else if (_badCaptureCount < 64)
             {
-                // Bad capture: negative score offset
-                _scores[i] = -1_000_000 + see;
-                _badCaptureIndices[_badCaptureCount++] = (byte)i;
+                _badCaptureMoves[_badCaptureCount] = m;
+                _badCaptureSee[_badCaptureCount] = (short)see;
+                _badCaptureCount++;
             }
         }
     }
@@ -608,25 +622,22 @@ public ref struct MovePicker
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private readonly int PickBestBadCapture()
+    private readonly int PickBestBadCaptureSlot()
     {
-        int bestIdx = -1;
-        int bestScore = int.MinValue;
+        int bestSlot = -1;
+        int bestSee = short.MinValue;
 
         for (int j = 0; j < _badCaptureCount; j++)
         {
-            int i = _badCaptureIndices[j];
-            if (IsPicked(i)) continue;
-
-            int score = _scores[i];
-            if (score > bestScore)
+            int see = _badCaptureSee[j];
+            if (see > bestSee)
             {
-                bestScore = score;
-                bestIdx = i;
+                bestSee = see;
+                bestSlot = j;
             }
         }
 
-        return bestIdx;
+        return bestSlot;
     }
 
     /// <summary>
