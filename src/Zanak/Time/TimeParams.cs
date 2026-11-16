@@ -12,8 +12,8 @@ public sealed class TimeParams
     public double SoftMoveTimeFactor { get; set; } = 0.95;
     public double MovesToGoDivisorOffset { get; set; } = 2.0;
     public double MovesToGoIncFactor { get; set; } = 0.80;
-    public double SuddenDeathDivisor { get; set; } = 22.0;
-    public double SuddenDeathIncFactor { get; set; } = 0.72;
+    public double SuddenDeathDivisor { get; set; } = 24.0;
+    public double SuddenDeathIncFactor { get; set; } = 0.73;
 
     // Safety boundary clamps
     public double SoftClampMaxRatio { get; set; } = 0.40;
@@ -43,12 +43,22 @@ public sealed class TimeParams
     public int ExtendedHorizonMaxPlies { get; set; } = 32;
 
     // Early termination & panic extensions
-    public int StableDominanceMinDepth { get; set; } = 6;
-    public int StableDominanceLeadCp { get; set; } = 150;
-    public int StableDominanceIters { get; set; } = 3;
-    public double StableDominanceMinSoftFraction { get; set; } = 0.30;
+    public int StableDominanceMinDepth { get; set; } = 5;
+    public int StableDominanceLeadCp { get; set; } = 149;
+    public int StableDominanceIters { get; set; } = 4;
+    public double StableDominanceMinSoftFraction { get; set; } = 0.34;
     public int PanicExtensionGapCp { get; set; } = 10;
-    public double PanicExtensionFactor { get; set; } = 1.5;
+    public double PanicExtensionFactor { get; set; } = 1.51;
+
+    // Ply-1 survivor time scaling & dominant-leader verification
+    public double SurvivorSoftScale2 { get; set; } = 0.35;
+    public double SurvivorSoftScale3 { get; set; } = 0.50;
+    public double SurvivorSoftScale4 { get; set; } = 0.73;
+    public double SmallSurvivorMinSoftFraction { get; set; } = 0.15;
+    public int DominantLeaderLeadCp { get; set; } = 153;
+    public int SmallSurvivorVerifyCrosspoints { get; set; } = 6;
+    public int LeaderVerifyCrosspoints { get; set; } = 13;
+    public int ContenderQuickCheckPerRoot { get; set; } = 4;
 
     // Node check frequency
     public int CheckNodeInterval { get; set; } = 1024;

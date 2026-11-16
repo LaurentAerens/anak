@@ -413,7 +413,7 @@ public sealed class ZapWorkQueue
     /// root spine, that spine's live score minus a diversity penalty for crosspoints already picked
     /// from it. Demoted spines are never evicted; their lower score only delays pickup.
     /// </summary>
-    public bool TryDequeue(out ZapCrosspoint crosspoint, ZapSharedState? sharedState, uint currentGeneration)
+    public bool TryDequeue(out ZapCrosspoint crosspoint, ZapSharedState? sharedState, uint currentGeneration, int excludedRoot = -1)
     {
         ZapPickupTrace? trace = null;
         lock (_lock)
@@ -421,8 +421,8 @@ public sealed class ZapWorkQueue
             int root = 0;
             int rootScore = 0;
             int bestIdx = sharedState == null
-                ? FindBestLinear(currentGeneration)
-                : FindBestFromHeaps(sharedState, currentGeneration, out root, out rootScore);
+                ? FindBestLinear(currentGeneration, excludedRoot)
+                : FindBestFromHeaps(sharedState, currentGeneration, out root, out rootScore, excludedRoot);
 
             if (bestIdx >= 0)
             {
@@ -467,7 +467,7 @@ public sealed class ZapWorkQueue
         return true;
     }
 
-    private int FindBestFromHeaps(ZapSharedState sharedState, uint currentGeneration, out int bestRoot, out int bestSpineScore)
+    private int FindBestFromHeaps(ZapSharedState sharedState, uint currentGeneration, out int bestRoot, out int bestSpineScore, int excludedRoot = -1)
     {
         bestRoot = 0;
         bestSpineScore = 0;
@@ -478,6 +478,7 @@ public sealed class ZapWorkQueue
         long bestPriority = long.MinValue;
         for (int r = 0; r < _heaps.Length; r++)
         {
+            if (r == excludedRoot) continue;
             PriorityQueue<(int Index, int Version), long> heap = _heaps[r];
             int top = -1;
             long negKey = 0;
@@ -517,7 +518,7 @@ public sealed class ZapWorkQueue
         return bestIdx;
     }
 
-    private int FindBestLinear(uint currentGeneration)
+    private int FindBestLinear(uint currentGeneration, int excludedRoot = -1)
     {
         Span<ZapCrosspoint> span = CollectionsMarshal.AsSpan(_entries);
         int bestIdx = -1;
@@ -526,6 +527,7 @@ public sealed class ZapWorkQueue
         {
             ref ZapCrosspoint item = ref span[i];
             if (item.Picked) continue;
+            if (item.RootCandidateIndex == excludedRoot) continue;
             if (currentGeneration != 0 && item.Generation != currentGeneration)
             {
                 item.Picked = true;
