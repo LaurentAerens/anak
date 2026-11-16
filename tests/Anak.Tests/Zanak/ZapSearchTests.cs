@@ -887,6 +887,68 @@ public sealed class ZapSearchTests
         }
     }
 
+    [Fact]
+    public void GetSecondBestCandidate_WhenAllOthersDead_ReturnsSentinelScore()
+    {
+        var sharedState = new ZapSharedState();
+        Board board = Fen.Parse(Fen.StartPosition);
+        MoveList moves = default;
+        MoveGenerator.GenerateLegalMoves(in board, ref moves);
+        sharedState.Reset(moves.AsSpan().ToArray());
+
+        sharedState.UpdateCandidateBaseline(0, -50);
+        sharedState.UpdateCandidateScreen(0, -50);
+        for (int i = 1; i < moves.Count; i++)
+        {
+            sharedState.UpdateCandidateScreen(i, -30000);
+        }
+        sharedState.SortCandidatesAndPrune(hardAspirationMarginCp: 100);
+
+        ZapRootCandidate second = sharedState.GetSecondBestCandidate();
+        Assert.Equal(Move.Null, second.Move);
+        Assert.Equal(-30000, second.Score);
+    }
+
+    [Fact]
+    public void Search_SingleRootFilterSurvivor_ExitsFastAndPlaysRecapture()
+    {
+        // >= 7 pieces so Syzygy tablebase does not resolve at root before ZapRootFilter runs.
+        Board board = Fen.Parse("3q4/5pkp/6p1/8/8/6P1/5P1P/3R2K1 w - - 0 1");
+        using var search = new ZapSearch();
+        search.EnsureWarmedUp();
+        var budget = new SearchBudget(SoftLimitMs: 1000, HardLimitMs: 2000, TargetBaseDepth: 8, MaxDepthHorizon: 14, ExtendHorizonWithTime: true);
+
+        Move best = search.Search(in board, in budget);
+
+        Assert.Equal("d1d8", best.ToUci());
+        Assert.Contains("zap exit single-survivor", search.LastSearchDiagnostics);
+        Assert.True(search.TimeManager.ElapsedMilliseconds < 250);
+    }
+
+    [Fact]
+    public void WorkQueue_TryDequeue_ExcludedRoot_SkipsExcludedHeap()
+    {
+        var sharedState = new ZapSharedState();
+        Board board = Fen.Parse(Fen.StartPosition);
+        MoveList moves = default;
+        MoveGenerator.GenerateLegalMoves(in board, ref moves);
+        sharedState.Reset(moves.AsSpan().ToArray());
+        sharedState.UpdateCandidateBaseline(0, 500);
+        sharedState.UpdateCandidateBaseline(1, 0);
+
+        Board board0 = board;
+        Assert.True(board0.MakeMove(moves[0], out _));
+        Board board1 = board;
+        Assert.True(board1.MakeMove(moves[1], out _));
+
+        var queue = new ZapWorkQueue(ZapParams.Default);
+        queue.Enqueue(new ZapCrosspoint(board0, 0, 1, 500, 100, CrosspointKind.AdversarialRefutation, 4, moves[0], 23, 1, ZapAgentRole.Refutation));
+        queue.Enqueue(new ZapCrosspoint(board1, 1, 1, 0, 100, CrosspointKind.AdversarialRefutation, 4, moves[1], 23, 1, ZapAgentRole.Refutation));
+
+        Assert.True(queue.TryDequeue(out ZapCrosspoint picked, sharedState, 1, excludedRoot: 0));
+        Assert.Equal(1, picked.RootCandidateIndex);
+    }
+
     private sealed class ZeroEvaluator : IEvaluator
     {
         public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves) => (Value)0;

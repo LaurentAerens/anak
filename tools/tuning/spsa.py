@@ -440,23 +440,25 @@ HISTORY_PRUNING_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
-# Zanak Time Management Parameters (Aggressive tuning steps and wider margins)
+# Zanak Time Management Parameters (Live TimeParams: clock division, dominance, panic, and ply-1 survivor scaling)
 ZANAK_TIME_PARAMETERS: List[SpsaParam] = [
-    SpsaParam("HyperBulletBaseDepth", default=2.0, min_val=1.0, max_val=6.0, c=1.0, a=20.0),
-    SpsaParam("HyperBulletMaxHorizon", default=5.0, min_val=2.0, max_val=10.0, c=1.0, a=20.0),
-    SpsaParam("FastBulletBaseDepth", default=2.0, min_val=1.0, max_val=8.0, c=1.0, a=25.0),
-    SpsaParam("FastBulletMaxHorizon", default=6.0, min_val=3.0, max_val=14.0, c=1.0, a=25.0),
-    SpsaParam("BulletBaseDepth", default=3.0, min_val=2.0, max_val=10.0, c=1.0, a=25.0),
-    SpsaParam("BulletMaxHorizon", default=7.0, min_val=4.0, max_val=16.0, c=1.0, a=25.0),
-    SpsaParam("BlitzBaseDepth", default=5.0, min_val=2.0, max_val=12.0, c=1.0, a=25.0),
-    SpsaParam("BlitzMaxHorizon", default=12.0, min_val=5.0, max_val=20.0, c=2.0, a=40.0),
-    SpsaParam("RapidBaseDepth", default=7.0, min_val=3.0, max_val=14.0, c=1.0, a=25.0),
-    SpsaParam("RapidMaxHorizon", default=14.0, min_val=6.0, max_val=24.0, c=2.0, a=40.0),
-    SpsaParam("AbsoluteMinBaseDepth", default=2.0, min_val=1.0, max_val=5.0, c=1.0, a=15.0),
-    SpsaParam("AbsoluteMinMaxHorizon", default=3.0, min_val=2.0, max_val=8.0, c=1.0, a=15.0),
-    SpsaParam("SuddenDeathDivisor", default=25.0, min_val=10.0, max_val=60.0, c=4.0, a=60.0),
-    SpsaParam("SuddenDeathIncFactor", default=72.0, min_val=25.0, max_val=95.0, c=6.0, a=80.0),
-    SpsaParam("HardLimitMultiplier", default=27.0, min_val=12.0, max_val=55.0, c=4.0, a=50.0),
+    SpsaParam("SuddenDeathDivisor", default=22.0, min_val=10.0, max_val=55.0, c=3.0, a=40.0),
+    SpsaParam("SuddenDeathIncFactor", default=72.0, min_val=25.0, max_val=95.0, c=5.0, a=60.0),
+    SpsaParam("HardLimitMultiplier", default=25.0, min_val=12.0, max_val=50.0, c=3.0, a=40.0),
+    SpsaParam("StableDominanceMinDepth", default=6.0, min_val=3.0, max_val=12.0, c=1.0, a=15.0),
+    SpsaParam("StableDominanceLeadCp", default=150.0, min_val=50.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("StableDominanceIters", default=3.0, min_val=1.0, max_val=6.0, c=1.0, a=10.0),
+    SpsaParam("StableDominanceMinSoftPct", default=30.0, min_val=8.0, max_val=60.0, c=4.0, a=50.0),
+    SpsaParam("PanicExtensionGapCp", default=10.0, min_val=0.0, max_val=45.0, c=3.0, a=30.0),
+    SpsaParam("PanicExtensionFactorPct", default=150.0, min_val=105.0, max_val=220.0, c=10.0, a=100.0),
+    SpsaParam("SurvivorSoftScale2Pct", default=35.0, min_val=12.0, max_val=85.0, c=5.0, a=60.0),
+    SpsaParam("SurvivorSoftScale3Pct", default=50.0, min_val=20.0, max_val=90.0, c=5.0, a=60.0),
+    SpsaParam("SurvivorSoftScale4Pct", default=70.0, min_val=30.0, max_val=95.0, c=5.0, a=60.0),
+    SpsaParam("SmallSurvivorMinSoftPct", default=12.0, min_val=3.0, max_val=40.0, c=3.0, a=35.0),
+    SpsaParam("DominantLeaderLeadCp", default=150.0, min_val=50.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("SmallSurvivorVerifyCrosspoints", default=6.0, min_val=2.0, max_val=16.0, c=1.5, a=20.0),
+    SpsaParam("LeaderVerifyCrosspoints", default=14.0, min_val=5.0, max_val=30.0, c=2.0, a=30.0),
+    SpsaParam("ContenderQuickCheckPerRoot", default=3.0, min_val=1.0, max_val=8.0, c=1.0, a=12.0),
 ]
 
 # Zanak Search Exploration & Crosspoint Parameters (Aggressive tuning steps and wider margins)
