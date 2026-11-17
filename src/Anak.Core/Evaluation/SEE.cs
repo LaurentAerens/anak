@@ -61,13 +61,65 @@ public static class StaticExchangeEvaluator
         }
 
         // Fast early exit 2: if even losing our moving piece for nothing still meets threshold, return true
-        swap -= GetPieceValue(attackerType);
-        if (swap >= 0)
+        swap = GetPieceValue(attackerType) - swap;
+        if (swap <= 0)
         {
             return true;
         }
 
-        return Evaluate(in board, move) >= threshold;
+        if (capturedPiece == Piece.None && !move.IsPromotion && !board.IsSquareAttacked(to, them))
+        {
+            return 0 >= threshold;
+        }
+
+        int res = 1;
+        ulong occupied = board.Occupied ^ (1UL << (byte)from);
+        if (move.Type == MoveType.EnPassant)
+        {
+            occupied ^= 1UL << ((byte)to ^ 8);
+        }
+
+        ulong diagSliders = board.Bishops | board.Queens;
+        ulong orthSliders = board.Rooks | board.Queens;
+        ulong attackers = GetAllAttackers(in board, to, occupied) & occupied;
+        Color side = them;
+
+        while (true)
+        {
+            ulong sideAttackers = attackers & board.GetPieces(side);
+            if (sideAttackers == 0)
+            {
+                break;
+            }
+
+            res ^= 1;
+            Square attackerSq = GetLeastValuableAttacker(in board, sideAttackers, out PieceType currentAttacker);
+            if (currentAttacker == PieceType.None)
+            {
+                break;
+            }
+
+            if ((swap = GetPieceValue(currentAttacker) - swap) < res)
+            {
+                break;
+            }
+
+            occupied ^= 1UL << (byte)attackerSq;
+
+            if ((currentAttacker is PieceType.Pawn or PieceType.Bishop or PieceType.Queen) && (diagSliders & occupied) != 0)
+            {
+                attackers |= MagicBitboards.GetBishopAttacks(to, occupied) & diagSliders;
+            }
+            if ((currentAttacker is PieceType.Rook or PieceType.Queen) && (orthSliders & occupied) != 0)
+            {
+                attackers |= MagicBitboards.GetRookAttacks(to, occupied) & orthSliders;
+            }
+
+            attackers &= occupied;
+            side = side.Opponent();
+        }
+
+        return res != 0;
     }
 
     /// <summary>
@@ -133,7 +185,7 @@ public static class StaticExchangeEvaluator
                 break;
             }
 
-            Square attackerSq = GetLeastValuableAttacker(in board, sideAttackers, side, out currentAttacker);
+            Square attackerSq = GetLeastValuableAttacker(in board, sideAttackers, out currentAttacker);
             if (currentAttacker == PieceType.None)
             {
                 break;
@@ -190,7 +242,7 @@ public static class StaticExchangeEvaluator
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Square GetLeastValuableAttacker(in Board board, ulong sideAttackers, Color side, out PieceType type)
+    private static Square GetLeastValuableAttacker(in Board board, ulong sideAttackers, out PieceType type)
     {
         ulong subset;
 

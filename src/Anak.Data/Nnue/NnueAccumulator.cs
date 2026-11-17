@@ -79,48 +79,23 @@ public static unsafe class NnueAccumulator
         Buffer.MemoryCopy(ftBiases, whiteAcc, dim * sizeof(short), dim * sizeof(short));
         Buffer.MemoryCopy(ftBiases, blackAcc, dim * sizeof(short), dim * sizeof(short));
 
-        if (weights.Buckets == 1)
+        int wBucket = weights.Buckets == 1 ? 0 : GetWhiteKingBucket(in board);
+        int bBucket = weights.Buckets == 1 ? 0 : GetBlackKingBucket(in board);
+
+        sbyte* wWeights = weights.FeatureWeights + (wBucket * NnueConstants.RawFeatureCount * dim);
+        sbyte* bWeights = weights.FeatureWeights + (bBucket * NnueConstants.RawFeatureCount * dim);
+
+        ulong occupied = board.Occupied;
+        while (occupied != 0)
         {
-            sbyte* ftWeights = weights.FeatureWeights;
-            ulong occupied = board.Occupied;
-            while (occupied != 0)
-            {
-                Square sq = (Square)BitOperations.TrailingZeroCount(occupied);
-                Piece piece = board.GetPieceAt(sq);
-                if (piece != Piece.None)
-                {
-                    int whiteIdx = GetWhiteFeatureIndex(piece.Type(), piece.Color(), sq);
-                    int blackIdx = GetBlackFeatureIndex(piece.Type(), piece.Color(), sq);
+            Square sq = (Square)BitOperations.TrailingZeroCount(occupied);
+            Piece piece = board.GetPieceAt(sq);
+            int whiteIdx = GetWhiteFeatureIndex(piece.Type(), piece.Color(), sq);
+            int blackIdx = GetBlackFeatureIndex(piece.Type(), piece.Color(), sq);
 
-                    AddFeature(whiteIdx, ftWeights, whiteAcc, dim);
-                    AddFeature(blackIdx, ftWeights, blackAcc, dim);
-                }
-                occupied &= occupied - 1;
-            }
-        }
-        else
-        {
-            int wBucket = GetWhiteKingBucket(in board);
-            int bBucket = GetBlackKingBucket(in board);
-
-            sbyte* wWeights = weights.FeatureWeights + (wBucket * NnueConstants.RawFeatureCount * dim);
-            sbyte* bWeights = weights.FeatureWeights + (bBucket * NnueConstants.RawFeatureCount * dim);
-
-            ulong occupied = board.Occupied;
-            while (occupied != 0)
-            {
-                Square sq = (Square)BitOperations.TrailingZeroCount(occupied);
-                Piece piece = board.GetPieceAt(sq);
-                if (piece != Piece.None)
-                {
-                    int whiteIdx = GetWhiteFeatureIndex(piece.Type(), piece.Color(), sq);
-                    int blackIdx = GetBlackFeatureIndex(piece.Type(), piece.Color(), sq);
-
-                    AddFeature(whiteIdx, wWeights, whiteAcc, dim);
-                    AddFeature(blackIdx, bWeights, blackAcc, dim);
-                }
-                occupied &= occupied - 1;
-            }
+            AddFeature(whiteIdx, wWeights, whiteAcc, dim);
+            AddFeature(blackIdx, bWeights, blackAcc, dim);
+            occupied &= occupied - 1;
         }
     }
 
