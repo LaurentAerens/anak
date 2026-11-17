@@ -54,9 +54,9 @@ public sealed class TimeParams
     public double SurvivorSoftScale2 { get; set; } = 0.35;
     public double SurvivorSoftScale3 { get; set; } = 0.50;
     public double SurvivorSoftScale4 { get; set; } = 0.73;
-    public double SmallSurvivorMinSoftFraction { get; set; } = 0.15;
+    public double SmallSurvivorMinSoftFraction { get; set; } = 0.22;
     public int DominantLeaderLeadCp { get; set; } = 153;
-    public int SmallSurvivorVerifyCrosspoints { get; set; } = 6;
+    public int SmallSurvivorVerifyCrosspoints { get; set; } = 10;
     public int LeaderVerifyCrosspoints { get; set; } = 13;
     public int ContenderQuickCheckPerRoot { get; set; } = 4;
 

@@ -31,11 +31,46 @@ public sealed class ZapWorkQueueTests
         Assert.Equal(261, blame[2]);
     }
 
+    [Fact]
+    public void Responsibility_DetectsSlowThreePlyDrift_WithoutSinglePlyShock()
+    {
+        // Engine is White; each quiet ply drifts -25cp/-20cp/-25cp = -70cp over 3 plies
+        // without any single ply crossing ShockThresholdCp (73) or QuietEvalDropMinCp (45).
+        ZapTrajectoryStep[] steps =
+        [
+            Step(Color.White, 0, -25),
+            Step(Color.Black, -25, -45),
+            Step(Color.White, -45, -70),
+        ];
+
+        int[] blame = ZapWorkQueue.ComputeResponsibility(steps, Color.White, 1, new ZapParams());
+
+        Assert.Equal(70, blame[0]);
+    }
+
     private static ZapTrajectoryStep Step(Color side, short parent, short eval) =>
         new(default, 0, Move.Null, side, parent, eval, (short)(eval - parent));
 
     [Fact]
-    public void WorkQueue_ImmediateRefutation_PrecedesEvenLargestDeeperShock()
+    public void WorkQueue_ImmediateRefutation_PrecedesModerateDeeperCrosspoint()
+    {
+        var queue = new ZapWorkQueue();
+        Board board = Fen.Parse(Fen.StartPosition);
+
+        queue.Enqueue(new ZapCrosspoint(board, 0, 3, 0, 100,
+            CrosspointKind.AdversarialRefutation, 5, Move.Null));
+        queue.Enqueue(new ZapCrosspoint(board, 1, 2, 0, 100,
+            CrosspointKind.Opportunity, 5, Move.Null, role: ZapAgentRole.Promotion));
+        queue.Enqueue(new ZapCrosspoint(board, 2, 1, 0, 0,
+            CrosspointKind.AdversarialRefutation, 5, Move.Null));
+
+        Assert.True(queue.TryDequeue(out var first));
+        Assert.Equal(1, first.Ply);
+        Assert.Equal(2, first.RootCandidateIndex);
+    }
+
+    [Fact]
+    public void WorkQueue_HighValueOrLargeShockDeeperCrosspoint_PreemptsLowValueImmediateRefutation()
     {
         var queue = new ZapWorkQueue();
         Board board = Fen.Parse(Fen.StartPosition);
@@ -48,8 +83,37 @@ public sealed class ZapWorkQueueTests
             CrosspointKind.AdversarialRefutation, 5, Move.Null));
 
         Assert.True(queue.TryDequeue(out var first));
-        Assert.Equal(1, first.Ply);
-        Assert.Equal(2, first.RootCandidateIndex);
+        Assert.True(first.Ply > 1, "large deeper shock on high-value spine should preempt low-value ply-1");
+        Assert.NotEqual(2, first.RootCandidateIndex);
+    }
+
+    [Fact]
+    public void WorkQueue_HighShockAbove_PenalizesDeeperCrosspoints()
+    {
+        Board board = Fen.Parse(Fen.StartPosition);
+        Board b1 = board;
+        var m1 = new Move(Square.E2, Square.E4);
+        Assert.True(b1.MakeMove(m1, out _));
+        Board b2 = b1;
+        var m2 = new Move(Square.E7, Square.E5);
+        Assert.True(b2.MakeMove(m2, out _));
+        Board b3 = b2;
+        var m3 = new Move(Square.G1, Square.F3);
+        Assert.True(b3.MakeMove(m3, out _));
+
+        // Spine with a 300cp blunder at ply 1 and a 60cp shock at ply 3.
+        ZapTrajectoryStep[] noisySteps =
+        [
+            new(default, board.ZobristKey, m1, Color.Black, 0, 300, 300),
+            new(default, b1.ZobristKey, m2, Color.White, 300, 300, 0),
+            new(default, b2.ZobristKey, m3, Color.Black, 300, 360, 60),
+        ];
+
+        var queue = new ZapWorkQueue();
+        queue.EnqueueTrajectory(in board, rootIndex: 0, noisySteps, Color.White, generation: 1, startingPly: 1);
+
+        var ply3 = Assert.Single(queue.Snapshot(), cp => cp.Ply == 3);
+        Assert.True(ply3.ShockMagnitude < 0, $"expected malus from ply-1 shock above, got {ply3.ShockMagnitude}");
     }
 
     [Fact]
@@ -59,7 +123,7 @@ public sealed class ZapWorkQueueTests
         Board board = Fen.Parse(Fen.StartPosition);
         queue.Enqueue(new ZapCrosspoint(board, 0, 1, 0, 0,
             CrosspointKind.AdversarialRefutation, 5, Move.Null));
-        queue.Enqueue(new ZapCrosspoint(board, 1, 3, 0, 2000,
+        queue.Enqueue(new ZapCrosspoint(board, 1, 3, 0, 200,
             CrosspointKind.AdversarialRefutation, 3, Move.Null));
 
         Assert.True(queue.TryDequeue(out var first));
@@ -459,5 +523,40 @@ public sealed class ZapWorkQueueTests
 
         Assert.True(queue.TryDequeue(out var first));
         Assert.Equal(quietPawnPush, first.OriginalMove);
+    }
+
+    [Fact]
+    public void WorkQueue_OffLineSubspine_RespectsHalfCapacitySoftCap()
+    {
+        var parameters = new ZapParams { MaxQueueEntries = 4 };
+        var queue = new ZapWorkQueue(parameters);
+        Board b0 = Fen.Parse(Fen.StartPosition);
+        Board b1 = b0;
+        Move m1 = new(Square.E2, Square.E4, MoveType.DoublePawnPush);
+        Assert.True(b1.MakeMove(m1, out BoardState s1));
+
+        // Fill queue to 50% capacity (2 entries out of MaxQueueEntries=4).
+        queue.Enqueue(new ZapCrosspoint(b0, 0, ply: 1, baselineScore: 0, shockMagnitude: 10,
+            CrosspointKind.Opportunity, remainingHorizon: 2, m1, parameters: parameters));
+        queue.Enqueue(new ZapCrosspoint(b1, 0, ply: 2, baselineScore: 0, shockMagnitude: 10,
+            CrosspointKind.Opportunity, remainingHorizon: 2, Move.Null, parameters: parameters));
+        Assert.Equal(2, queue.TotalEntries);
+
+        Move m2 = new(Square.E7, Square.E5, MoveType.DoublePawnPush);
+        var edge = new ZapSpineTree.Edge
+        {
+            Steps =
+            [
+                new ZapTrajectoryStep(s1, b0.ZobristKey, m1, Color.White, 0, 0, 0),
+                new ZapTrajectoryStep(default, b1.ZobristKey, m2, Color.Black, 0, 0, 0)
+            ]
+        };
+
+        // Off-line subspine (spineGap > 0) is rejected past 50% capacity, while main-line (spineGap == 0) is accepted.
+        int offLineOffered = queue.EnqueueSubspine(in b0, edge, 1UL, nodePly: 1, spineGap: 50, Color.White, generation: 1);
+        Assert.Equal(0, offLineOffered);
+
+        int mainLineOffered = queue.EnqueueSubspine(in b0, edge, 1UL, nodePly: 1, spineGap: 0, Color.White, generation: 1);
+        Assert.Equal(1, mainLineOffered);
     }
 }

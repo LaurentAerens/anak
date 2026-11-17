@@ -19,7 +19,21 @@ public static class ZapRootFilter
     /// <returns>Number of moves rejected.</returns>
     public static int Filter(in Board root, ReadOnlySpan<Move> moves, Span<bool> keep, int marginCp)
     {
+        Span<int> loss = stackalloc int[moves.Length];
+        return Filter(in root, moves, keep, marginCp, loss, out _);
+    }
+
+    /// <summary>
+    /// Fills <paramref name="keep"/> and <paramref name="lossOut"/> (same indexing as <paramref name="moves"/>),
+    /// and outputs <paramref name="nullLossOut"/> (the opponent's best single-capture gain on a null move).
+    /// Never rejects every move; never rejects checks or promotions.
+    /// </summary>
+    /// <returns>Number of moves rejected.</returns>
+    public static int Filter(in Board root, ReadOnlySpan<Move> moves, Span<bool> keep, int marginCp, Span<int> lossOut, out int nullLossOut)
+    {
         for (int i = 0; i < moves.Length; i++) keep[i] = true;
+        lossOut.Clear();
+        nullLossOut = 0;
         if (marginCp <= 0 || moves.Length <= 1 || root.IsInCheck()) return 0;
 
         // Null-move baseline: what can the opponent win if we simply pass?
@@ -31,6 +45,7 @@ public static class ZapRootFilter
             nullLoss = MaxCaptureLoss(in nullBoard, Move.Null, in root);
             nullAllowsMate = ZapPolicy.TryGetImmediateMateIn1(in nullBoard, out _);
         }
+        nullLossOut = nullLoss;
 
         // Best winning capture available at root (if a free minor/major piece is hanging,
         // quiet moves that ignore it when nothing larger is hanging on our side are filtered).
@@ -45,7 +60,6 @@ public static class ZapRootFilter
         }
         bool mustAddressFreeCapture = !nullAllowsMate && bestRootCaptureSee >= 200 && nullLoss < bestRootCaptureSee;
 
-        Span<int> loss = stackalloc int[moves.Length];
         Span<bool> mated = stackalloc bool[moves.Length];
         int rejected = 0;
 
@@ -54,7 +68,12 @@ public static class ZapRootFilter
             Move m = moves[i];
             if (m.IsPromotion)
             {
-                continue; // promotions: never filtered here, agents judge them
+                if (nullAllowsMate && ZapPolicy.AllowsMateIn1(in root, m))
+                {
+                    keep[i] = false;
+                    rejected++;
+                }
+                continue; // promotions: otherwise never filtered here, agents judge them
             }
 
             if (mustAddressFreeCapture && !m.IsCapture && !root.GivesCheck(m))
@@ -108,11 +127,11 @@ public static class ZapRootFilter
                 }
             }
 
-            loss[i] = Math.Max(directSeeLoss, MaxCaptureLoss(in after, m, in root));
-            if (!nullAllowsMate && ZapPolicy.AllowsMateIn1(in root, m)) mated[i] = true;
+            lossOut[i] = Math.Max(directSeeLoss, MaxCaptureLoss(in after, m, in root));
+            if (ZapPolicy.AllowsMateIn1(in root, m)) mated[i] = true;
 
-            bool unansweredThreat = nullLoss >= 200 && !m.IsCapture && loss[i] >= nullLoss;
-            if (mated[i] || unansweredThreat || loss[i] >= nullLoss + marginCp || directSeeLoss >= marginCp / 2)
+            bool unansweredThreat = nullLoss >= 200 && !m.IsCapture && lossOut[i] >= nullLoss;
+            if (mated[i] || unansweredThreat || lossOut[i] >= nullLoss + marginCp || directSeeLoss >= marginCp / 2)
             {
                 keep[i] = false;
                 rejected++;

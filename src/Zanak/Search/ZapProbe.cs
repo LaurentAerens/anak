@@ -32,7 +32,8 @@ public static class ZapProbe
         int searchPly = 1,
         ZapTranspositionTable? tt = null,
         int maxPlies = ZapTrajectory.MaxCapacity,
-        SearchTraceWriter? searchTrace = null)
+        SearchTraceWriter? searchTrace = null,
+        bool initAccumulator = true)
     {
         trajectory.Clear();
         ZapParams zapParams = parameters ?? ZapParams.Default;
@@ -48,8 +49,11 @@ public static class ZapProbe
         // (No-op if the evaluator is not the multi-tier NNUE or no root expert has been fixed.)
         ZanakNnueEvaluator? nnue = evaluator as ZanakNnueEvaluator;
         IIncrementalEvaluator? incremental = evaluator as IIncrementalEvaluator;
-        if (nnue != null) nnue.ResetAccumulatorStack(in board);
-        else incremental?.InitSearch(in board);
+        if (initAccumulator)
+        {
+            if (nnue != null) nnue.ResetAccumulatorStack(in board);
+            else incremental?.InitSearch(in board);
+        }
 
         // Initial evaluation at the start of the probe
         int initialRaw = (int)evaluator.Evaluate(in board);

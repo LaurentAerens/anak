@@ -1210,15 +1210,24 @@ public sealed class ZapPolicy
             int see = StaticExchangeEvaluator.Evaluate(in board, m);
             if (see <= 0 || !HasNonLosingDestination(in board, m))
             {
-                return false;
+                return IsCheckmateMove(in board, m);
             }
         }
         else if (!IsDestinationSafe(in board, m, maxAllowedEnemySee: -1))
         {
-            return false;
+            return IsCheckmateMove(in board, m);
         }
 
         return !AllowsMateIn1(in board, m);
+    }
+
+    private static bool IsCheckmateMove(in Board board, Move m)
+    {
+        Board after = board;
+        if (!after.MakeMove(m, out _)) return false;
+        MoveList evasions = default;
+        MoveGenerator.GenerateLegalMoves(in after, ref evasions);
+        return evasions.Count == 0;
     }
 
     /// <summary>
@@ -1267,6 +1276,25 @@ public sealed class ZapPolicy
         return false;
     }
 
+    private static readonly int[] _centerScoreTable =
+    [
+        0, 1, 2, 3, 3, 2, 1, 0,
+        1, 2, 4, 5, 5, 4, 2, 1,
+        2, 4, 6, 8, 8, 6, 4, 2,
+        3, 5, 8, 10, 10, 8, 5, 3,
+        3, 5, 8, 10, 10, 8, 5, 3,
+        2, 4, 6, 8, 8, 6, 4, 2,
+        1, 2, 4, 5, 5, 4, 2, 1,
+        0, 1, 2, 3, 3, 2, 1, 0
+    ];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal static int ScoreQuietCentrality(Move move)
+    {
+        return (_centerScoreTable[(byte)move.To] - _centerScoreTable[(byte)move.From]) * 2
+            + (move.IsCastling ? 40 : 0);
+    }
+
     /// <summary>
     /// Step 25: Legal fallback in MoveGenerator order, preferring HasNonLosingDestination without mate/decisive loss.
     /// </summary>
@@ -1291,11 +1319,11 @@ public sealed class ZapPolicy
             Move candidate = legal[i];
             bool isNonCastlingKing = !candidate.IsCastling && board.GetPieceAt(candidate.From).Type() == PieceType.King;
             bool nonLosing = HasNonLosingDestination(in board, candidate);
-            bool allowsMate = AllowsMateIn1(in board, candidate);
+            CheckOpponentThreats(in board, candidate, out bool allowsMate, out bool allowsDecisiveLoss);
 
             if (nonLosing && !allowsMate)
             {
-                if (!AllowsDecisiveLoss(in board, candidate))
+                if (!allowsDecisiveLoss)
                 {
                     if (!isNonCastlingKing)
                     {
@@ -1487,8 +1515,17 @@ public sealed class ZapPolicy
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public static bool AllowsDecisiveLoss(in Board board, Move move)
     {
+        CheckOpponentThreats(in board, move, out _, out bool allowsDecisiveLoss);
+        return allowsDecisiveLoss;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    private static void CheckOpponentThreats(in Board board, Move move, out bool allowsMateIn1, out bool allowsDecisiveLoss)
+    {
+        allowsMateIn1 = false;
+        allowsDecisiveLoss = false;
         Board after = board;
-        if (!after.MakeMove(move, out _)) return false;
+        if (!after.MakeMove(move, out _)) return;
 
         MoveList replies = default;
         MoveGenerator.GenerateLegalMoves(in after, ref replies);
@@ -1508,7 +1545,7 @@ public sealed class ZapPolicy
                     Color victimColor = mover.Opponent();
                     ulong victimPieces = victimColor == Color.White ? replyBoard.White : replyBoard.Black;
 
-                    if (replyPt == PieceType.Pawn)
+                    if (!allowsDecisiveLoss && replyPt == PieceType.Pawn)
                     {
                         byte toByte = (byte)reply.To;
                         ulong pAttacks = mover == Color.White
@@ -1519,7 +1556,7 @@ public sealed class ZapPolicy
                         ulong forkedTargets = pAttacks & victimNonPawns;
                         if (BitOperations.PopCount(forkedTargets) >= 2)
                         {
-                            return true;
+                            allowsDecisiveLoss = true;
                         }
                     }
 
@@ -1529,64 +1566,74 @@ public sealed class ZapPolicy
                         MoveGenerator.GenerateLegalMoves(in replyBoard, ref evasions);
                         if (evasions.Count == 0)
                         {
-                            return true;
+                            allowsMateIn1 = true;
+                            allowsDecisiveLoss = true;
+                            return;
                         }
 
-                        bool canCaptureChecker = false;
-                        for (int e = 0; e < evasions.Count; e++)
+                        if (!allowsDecisiveLoss)
                         {
-                            if (evasions[e].To == reply.To)
+                            bool canCaptureChecker = false;
+                            for (int e = 0; e < evasions.Count; e++)
                             {
-                                canCaptureChecker = true;
-                                break;
-                            }
-                        }
-
-                        if (!canCaptureChecker)
-                        {
-                            ulong attacksFromReply = replyPt switch
-                            {
-                                PieceType.Queen => MagicBitboards.GetQueenAttacks(reply.To, replyBoard.Occupied),
-                                PieceType.Rook => MagicBitboards.GetRookAttacks(reply.To, replyBoard.Occupied),
-                                PieceType.Bishop => MagicBitboards.GetBishopAttacks(reply.To, replyBoard.Occupied),
-                                PieceType.Knight => Bitboard.KnightAttacks[(byte)reply.To],
-                                PieceType.Pawn => mover == Color.White ? Bitboard.WhitePawnAttacks[(byte)reply.To] : Bitboard.BlackPawnAttacks[(byte)reply.To],
-                                _ => 0
-                            };
-
-                            ulong attackedTargets = attacksFromReply & victimPieces;
-                            while (attackedTargets != 0)
-                            {
-                                Square tSq = Bitboard.PopLsb(ref attackedTargets);
-                                PieceType tPt = replyBoard.GetPieceAt(tSq).Type();
-                                if (tPt != PieceType.King && tPt != PieceType.Pawn)
+                                if (evasions[e].To == reply.To)
                                 {
-                                    if (!replyBoard.IsSquareAttacked(tSq, victimColor))
-                                    {
-                                        return true;
-                                    }
+                                    canCaptureChecker = true;
+                                    break;
                                 }
                             }
 
-                            int rank = (int)reply.To / 8;
-                            bool isDeepInCamp = mover == Color.White ? rank >= 5 : rank <= 2;
-                            if (replyPt == PieceType.Queen && isDeepInCamp)
+                            if (!canCaptureChecker)
                             {
-                                MoveList repliesAfterCheck = default;
-                                MoveGenerator.GenerateLegalCaptures(in replyBoard, ref repliesAfterCheck);
-                                for (int r = 0; r < repliesAfterCheck.Count; r++)
+                                ulong attacksFromReply = replyPt switch
                                 {
-                                    if (repliesAfterCheck[r].From == reply.To &&
-                                        StaticExchangeEvaluator.Evaluate(in replyBoard, repliesAfterCheck[r]) >= 0)
+                                    PieceType.Queen => MagicBitboards.GetQueenAttacks(reply.To, replyBoard.Occupied),
+                                    PieceType.Rook => MagicBitboards.GetRookAttacks(reply.To, replyBoard.Occupied),
+                                    PieceType.Bishop => MagicBitboards.GetBishopAttacks(reply.To, replyBoard.Occupied),
+                                    PieceType.Knight => Bitboard.KnightAttacks[(byte)reply.To],
+                                    PieceType.Pawn => mover == Color.White ? Bitboard.WhitePawnAttacks[(byte)reply.To] : Bitboard.BlackPawnAttacks[(byte)reply.To],
+                                    _ => 0
+                                };
+
+                                ulong attackedTargets = attacksFromReply & victimPieces;
+                                while (attackedTargets != 0)
+                                {
+                                    Square tSq = Bitboard.PopLsb(ref attackedTargets);
+                                    PieceType tPt = replyBoard.GetPieceAt(tSq).Type();
+                                    if (tPt != PieceType.King && tPt != PieceType.Pawn)
                                     {
-                                        return true;
+                                        if (!replyBoard.IsSquareAttacked(tSq, victimColor))
+                                        {
+                                            allowsDecisiveLoss = true;
+                                            break;
+                                        }
+                                    }
+                                }
+
+                                if (!allowsDecisiveLoss)
+                                {
+                                    int rank = (int)reply.To / 8;
+                                    bool isDeepInCamp = mover == Color.White ? rank >= 5 : rank <= 2;
+                                    if (replyPt == PieceType.Queen && isDeepInCamp)
+                                    {
+                                        MoveList repliesAfterCheck = default;
+                                        MoveGenerator.GenerateLegalCaptures(in replyBoard, ref repliesAfterCheck);
+                                        for (int r = 0; r < repliesAfterCheck.Count; r++)
+                                        {
+                                            if (repliesAfterCheck[r].From == reply.To &&
+                                                StaticExchangeEvaluator.Evaluate(in replyBoard, repliesAfterCheck[r]) >= 0)
+                                            {
+                                                allowsDecisiveLoss = true;
+                                                break;
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
 
-                    if (reply.IsCapture)
+                    if (!allowsDecisiveLoss && reply.IsCapture)
                     {
                         int see = StaticExchangeEvaluator.Evaluate(in after, reply);
 
@@ -1613,11 +1660,11 @@ public sealed class ZapPolicy
                             }
                             else
                             {
-                                return true;
+                                allowsDecisiveLoss = true;
                             }
                         }
 
-                        if (see >= 0)
+                        if (!allowsDecisiveLoss && see >= 0)
                         {
                             ulong heavyPieces = (replyBoard.Queens | replyBoard.Rooks) & victimPieces;
                             ulong attacksFromReply = replyPt switch
@@ -1644,14 +1691,13 @@ public sealed class ZapPolicy
 
                             if ((totalForkCount >= 2 && undefendedForkCount >= 1) || (givesCheck && undefendedForkCount >= 1))
                             {
-                                return true;
+                                allowsDecisiveLoss = true;
                             }
                         }
                     }
                 }
             }
         }
-        return false;
     }
 
     /// <summary>

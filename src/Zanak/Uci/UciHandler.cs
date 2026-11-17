@@ -174,6 +174,9 @@ public sealed class UciHandler : IDisposable
         SendLine($"option name SmallSurvivorVerifyCrosspoints type spin default {_timeParams.SmallSurvivorVerifyCrosspoints} min 2 max 20");
         SendLine($"option name LeaderVerifyCrosspoints type spin default {_timeParams.LeaderVerifyCrosspoints} min 4 max 35");
         SendLine($"option name ContenderQuickCheckPerRoot type spin default {_timeParams.ContenderQuickCheckPerRoot} min 1 max 10");
+        SendLine($"option name ClassicalMaxBaseDepth type spin default {_timeParams.ClassicalMaxBaseDepth} min 6 max 24");
+        SendLine($"option name ClassicalHorizonOffset type spin default {_timeParams.ClassicalHorizonOffset} min 2 max 16");
+        SendLine($"option name ExtendedHorizonMaxPlies type spin default {_timeParams.ExtendedHorizonMaxPlies} min 10 max 40");
 
         string syzygyPath = _search.Tablebase is Anak.Data.Syzygy.SyzygyTablebase stb ? stb.SyzygyPath : "<empty>";
         SendLine($"option name SyzygyPath type string default {syzygyPath}");
@@ -406,6 +409,18 @@ public sealed class UciHandler : IDisposable
             {
                 _timeParams.ContenderQuickCheckPerRoot = Math.Clamp(quickCheck, 1, 10);
             }
+            else if (optName.Equals("ClassicalMaxBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int classicalBase))
+            {
+                _timeParams.ClassicalMaxBaseDepth = Math.Clamp(classicalBase, 6, 24);
+            }
+            else if (optName.Equals("ClassicalHorizonOffset", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int classicalOffset))
+            {
+                _timeParams.ClassicalHorizonOffset = Math.Clamp(classicalOffset, 2, 16);
+            }
+            else if (optName.Equals("ExtendedHorizonMaxPlies", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int extHorizon))
+            {
+                _timeParams.ExtendedHorizonMaxPlies = Math.Clamp(extHorizon, 10, 40);
+            }
             else if (optName.Equals("SyzygyPath", StringComparison.OrdinalIgnoreCase))
             {
                 if (_search.Tablebase is Anak.Data.Syzygy.SyzygyTablebase stb)
@@ -538,7 +553,8 @@ public sealed class UciHandler : IDisposable
                 movesToGo: movestogo,
                 moveTimeMs: movetime,
                 depthLimit: depth,
-                infinite: infinite);
+                infinite: infinite,
+                threads: _params.DefaultThreads);
 
             Board searchBoard = _board;
             Move lastMove = _lastMove;

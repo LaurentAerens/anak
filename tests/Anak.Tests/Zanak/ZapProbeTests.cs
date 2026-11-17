@@ -602,4 +602,15 @@ public sealed class ZapProbeTests
         Assert.True(policy.TryGetQuickMove(in qxqBoard, 7, out Move mPly7));
         Assert.Equal(mQ, mPly7);
     }
+
+    [Fact]
+    public void ZapPolicy_PlaysMateIn1CaptureEvenWhenSeeIsNegative()
+    {
+        var policy = new ZapPolicy();
+        // Qe5 + Bc7 vs Kg1 with pawns on g2/h2: Qxh2# has negative SEE (-800 if king could be captured),
+        // but is immediate checkmate and must be played.
+        Board mateBoard = Fen.Parse("6k1/2b5/8/4q3/8/8/6PP/6K1 b - - 0 1");
+        Assert.True(policy.TryGetQuickMove(in mateBoard, 0, out Move mateMove));
+        Assert.Equal("e5h2", mateMove.ToUci());
+    }
 }

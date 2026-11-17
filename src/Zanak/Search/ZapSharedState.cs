@@ -416,6 +416,12 @@ public sealed class ZapSharedState
                     continue;
                 }
 
+                if (_candidates[i].Status == RootMoveStatus.Dead && _candidates[i].Score <= -29000)
+                {
+                    _candidates[i].IsDeadStem = true;
+                    continue;
+                }
+
                 bool spineLow = _candidates[i].Score < cutoff;
                 bool screenLow = _candidates[i].HasScreen && _candidates[i].ScreenScore < screenBest - hardAspirationMarginCp;
                 if (spineLow && screenLow)

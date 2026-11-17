@@ -100,4 +100,16 @@ public sealed class TimeManagerTests
         }
         Assert.True(tm.CheckStableDominance(++depth, 200, 10, 42));
     }
+
+    [Fact]
+    public void AllocateBudget_ScalesDepthWithThreads()
+    {
+        var tm = new TimeManager();
+        SearchBudget oneThread = tm.AllocateBudget(remainingTimeMs: 10000, incrementMs: 100, threads: 1);
+        SearchBudget eightThreads = tm.AllocateBudget(remainingTimeMs: 10000, incrementMs: 100, threads: 8);
+
+        Assert.Equal(oneThread.SoftLimitMs, eightThreads.SoftLimitMs);
+        Assert.True(eightThreads.TargetBaseDepth > oneThread.TargetBaseDepth);
+        Assert.True(eightThreads.MaxDepthHorizon > oneThread.MaxDepthHorizon);
+    }
 }

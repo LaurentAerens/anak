@@ -100,6 +100,28 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
         short parentEval = 0,
         bool prevWasCapture = false,
         ZapParams? parameters = null)
+        : this(in board, default, hasAfterBoard: false, rootCandidateIndex, ply, baselineScore, shockMagnitude, kind,
+            remainingHorizon, originalMove, rootBiasWeight, generation, role, parentEval, prevWasCapture, parameters)
+    {
+    }
+
+    internal ZapCrosspoint(
+        in Board board,
+        in Board afterBoard,
+        bool hasAfterBoard,
+        int rootCandidateIndex,
+        int ply,
+        short baselineScore,
+        short shockMagnitude,
+        CrosspointKind kind,
+        int remainingHorizon,
+        Move originalMove,
+        int rootBiasWeight = 25,
+        uint generation = 1,
+        ZapAgentRole role = ZapAgentRole.Refutation,
+        short parentEval = 0,
+        bool prevWasCapture = false,
+        ZapParams? parameters = null)
     {
         Board = board;
         ZobristKey = board.ZobristKey;
@@ -110,7 +132,7 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
         BaselineScore = baselineScore;
         ParentEval = parentEval;
         ShockMagnitude = shockMagnitude;
-        TacticalPriority = GetTacticalPriority(in board, originalMove, ply, prevWasCapture, parameters);
+        TacticalPriority = GetTacticalPriority(in board, in afterBoard, hasAfterBoard, originalMove, ply, prevWasCapture, parameters);
         Kind = kind;
         RemainingHorizon = remainingHorizon;
         OriginalMove = originalMove;
@@ -157,6 +179,8 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
     /// </summary>
     internal ZapCrosspoint(
         in Board board,
+        in Board afterBoard,
+        bool hasAfterBoard,
         ZapSpineTree.Edge edge,
         int step,
         ulong linkedSpinesMask,
@@ -184,7 +208,7 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
         BaselineScore = baselineScore;
         ParentEval = parentEval;
         ShockMagnitude = shockMagnitude;
-        TacticalPriority = GetTacticalPriority(in board, originalMove, ply, prevWasCapture, parameters);
+        TacticalPriority = GetTacticalPriority(in board, in afterBoard, hasAfterBoard, originalMove, ply, prevWasCapture, parameters);
         Kind = role == ZapAgentRole.Refutation ? CrosspointKind.AdversarialRefutation : CrosspointKind.Opportunity;
         RemainingHorizon = remainingHorizon;
         OriginalMove = originalMove;
@@ -199,8 +223,30 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
 
     private static int GetTacticalPriority(in Board board, Move move, int ply, bool prevWasCapture, ZapParams? parameters)
     {
+        return GetTacticalPriority(in board, default, hasAfterBoard: false, move, ply, prevWasCapture, parameters);
+    }
+
+    private static int GetTacticalPriority(in Board board, in Board providedAfter, bool hasAfterBoard, Move move, int ply, bool prevWasCapture, ZapParams? parameters)
+    {
         ZapParams resolvedParams = parameters ?? ZapParams.Default;
-        int priority = GetMoveRiskPriority(in board, move, ply, prevWasCapture, resolvedParams);
+
+        Board after = default;
+        bool hasAfter = false;
+        if (!move.IsNull)
+        {
+            if (hasAfterBoard)
+            {
+                after = providedAfter;
+                hasAfter = true;
+            }
+            else
+            {
+                after = board;
+                hasAfter = after.MakeMove(move, out _);
+            }
+        }
+
+        int priority = GetMoveRiskPriority(in board, in after, hasAfter, move, ply, prevWasCapture, resolvedParams);
 
         int exposure = 0;
         ulong pieces = board.Occupied & ~(board.Pawns | board.Kings);
@@ -228,7 +274,7 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
             }
         }
 
-        int materialSignal = GetMaterialSignal(in board, move);
+        int materialSignal = GetMaterialSignal(in board, in after, hasAfter, move);
         if (ply == 1 && (exposure > 0 || materialSignal > 0))
         {
             priority += resolvedParams.CrosspointPly1CaptureThreatWeight;
@@ -244,7 +290,7 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
     /// while quiet moves (especially pawn pushes, capture->quiet transitions, deep plies, and moves
     /// landing on attacked squares) carry the majority of rank drops and centipawn losses.
     /// </summary>
-    private static int GetMoveRiskPriority(in Board board, Move move, int ply, bool prevWasCapture, ZapParams parameters)
+    private static int GetMoveRiskPriority(in Board board, in Board after, bool hasAfter, Move move, int ply, bool prevWasCapture, ZapParams parameters)
     {
         if (move.IsNull || move.IsPromotion || board.IsInCheck()) return 0;
 
@@ -263,8 +309,7 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
         if (prevWasCapture) priority += parameters.CrosspointCaptureToQuietBonus;
         if (ply >= 6) priority += parameters.CrosspointDeepQuietBonus;
 
-        Board after = board;
-        if (after.MakeMove(move, out _) && after.IsSquareAttacked(move.To, after.SideToMove))
+        if (hasAfter && after.IsSquareAttacked(move.To, after.SideToMove))
         {
             priority += parameters.CrosspointAttackedDestBonus;
         }
@@ -279,14 +324,21 @@ public struct ZapCrosspoint : IComparable<ZapCrosspoint>
     internal static int GetMaterialSignal(in Board board, Move move)
     {
         if (move.IsNull) return 0;
+        Board after = board;
+        bool hasAfter = after.MakeMove(move, out _);
+        return GetMaterialSignal(in board, in after, hasAfter, move);
+    }
+
+    private static int GetMaterialSignal(in Board board, in Board after, bool hasAfter, Move move)
+    {
+        if (move.IsNull) return 0;
         int moveGain = move.IsCapture ? StaticExchangeEvaluator.Evaluate(in board, move) : 0;
         int missed = Math.Max(0, BestCaptureGain(in board) - Math.Max(0, moveGain));
 
         int taken = !move.IsCapture ? 0 : move.Type == MoveType.EnPassant
             ? StaticExchangeEvaluator.GetPieceValue(PieceType.Pawn)
             : StaticExchangeEvaluator.GetPieceValue(board.GetPieceAt(move.To).Type());
-        Board after = board;
-        if (!after.MakeMove(move, out _)) return missed;
+        if (!hasAfter) return missed;
         int leftHanging = Math.Max(0, BestCaptureGain(in after) - taken);
         return Math.Max(missed, leftHanging);
     }
