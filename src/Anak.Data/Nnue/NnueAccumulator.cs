@@ -423,33 +423,25 @@ public static unsafe class NnueAccumulator
                 SubSubAddFeature(wFrom, wCap, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
                 SubSubAddFeature(bFrom, bCap, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
             }
-            else
+            else if (move.IsCastling)
             {
-                SubAddFeature(wFrom, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
-                SubAddFeature(bFrom, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
-            }
-
-            if (move.IsCastling)
-            {
-                Square rFrom, rTo;
-                if (to > from)
-                {
-                    rFrom = us == Color.White ? Square.H1 : Square.H8;
-                    rTo = us == Color.White ? Square.F1 : Square.F8;
-                }
-                else
-                {
-                    rFrom = us == Color.White ? Square.A1 : Square.A8;
-                    rTo = us == Color.White ? Square.D1 : Square.D8;
-                }
+                int rankBase = (int)us * 56;
+                bool kingCastle = to > from;
+                Square rFrom = (Square)(rankBase + (kingCastle ? 7 : 0));
+                Square rTo = (Square)(rankBase + (kingCastle ? 5 : 3));
 
                 int wRFrom = GetWhiteFeatureIndex(PieceType.Rook, us, rFrom);
                 int bRFrom = GetBlackFeatureIndex(PieceType.Rook, us, rFrom);
                 int wRTo = GetWhiteFeatureIndex(PieceType.Rook, us, rTo);
                 int bRTo = GetBlackFeatureIndex(PieceType.Rook, us, rTo);
 
-                SubAddFeature(wRFrom, wRTo, ftWeights, dstWhiteAcc, dstWhiteAcc, dim);
-                SubAddFeature(bRFrom, bRTo, ftWeights, dstBlackAcc, dstBlackAcc, dim);
+                SubSubAddAddFeature(wFrom, wRFrom, wTo, wRTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubSubAddAddFeature(bFrom, bRFrom, bTo, bRTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
+            }
+            else
+            {
+                SubAddFeature(wFrom, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubAddFeature(bFrom, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
             }
             return;
         }

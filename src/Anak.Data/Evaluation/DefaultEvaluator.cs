@@ -223,7 +223,7 @@ public sealed class DefaultEvaluator : IEvaluator
                     (whiteRooksCount + blackRooksCount) * RookPhase +
                     (whiteQueensCount + blackQueensCount) * QueenPhase;
 
-        phase = Math.Clamp(phase, 0, TotalPhase);
+        phase = Math.Min(phase, TotalPhase);
         int mgWeight = phase;
         int egWeight = TotalPhase - phase;
 

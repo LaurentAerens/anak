@@ -55,7 +55,7 @@ public readonly struct Move : IEquatable<Move>, IComparable<Move>
     public bool IsCapture
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => (_data & 0x4000) != 0 || Type == MoveType.EnPassant;
+        get => (_data & 0x4000) != 0;
     }
 
     public bool IsPromotion
@@ -79,14 +79,7 @@ public readonly struct Move : IEquatable<Move>, IComparable<Move>
     public PieceType PromotionPieceType
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => Type switch
-        {
-            MoveType.KnightPromotion or MoveType.KnightPromotionCapture => PieceType.Knight,
-            MoveType.BishopPromotion or MoveType.BishopPromotionCapture => PieceType.Bishop,
-            MoveType.RookPromotion or MoveType.RookPromotionCapture => PieceType.Rook,
-            MoveType.QueenPromotion or MoveType.QueenPromotionCapture => PieceType.Queen,
-            _ => PieceType.None
-        };
+        get => IsPromotion ? (PieceType)(((_data >> 12) & 3) + 2) : PieceType.None;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

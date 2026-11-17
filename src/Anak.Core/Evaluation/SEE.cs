@@ -111,8 +111,7 @@ public static class StaticExchangeEvaluator
         ulong occupied = board.Occupied ^ (1UL << (byte)from);
         if (move.Type == MoveType.EnPassant)
         {
-            Square epCapSq = SquareExtensions.Create(to.File(), from.Rank());
-            occupied ^= 1UL << (byte)epCapSq;
+            occupied ^= 1UL << ((byte)to ^ 8);
         }
 
         ulong diagSliders = board.Bishops | board.Queens;

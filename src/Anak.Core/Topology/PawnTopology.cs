@@ -272,15 +272,13 @@ public static class PawnTopology
                         }
 
                         if (opennessPct < 0) opennessPct = CalculateOpennessPercent(in board);
-                        int attackMinPct = (int)MathF.Round(routing.AttackMinOpenness * 100.0f);
-                        if (opennessPct >= attackMinPct) return NnueExpertType.Attack;
+                        if (opennessPct >= routing.AttackMinOpennessPct) return NnueExpertType.Attack;
                     }
                     break;
             }
         }
 
         if (opennessPct < 0) opennessPct = CalculateOpennessPercent(in board);
-        int openThresholdPct = (int)MathF.Round(routing.OpenThreshold * 100.0f);
-        return opennessPct >= openThresholdPct ? NnueExpertType.Open : NnueExpertType.Closed;
+        return opennessPct >= routing.OpenThresholdPct ? NnueExpertType.Open : NnueExpertType.Closed;
     }
 }

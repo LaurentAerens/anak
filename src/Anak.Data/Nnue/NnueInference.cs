@@ -37,7 +37,7 @@ public static unsafe class NnueInference
         int halfDim = weights.HiddenDim;
         int inputDim = halfDim * 2;
         int l1Dim = weights.L1Dim;
-        byte* pAct = stackalloc byte[1024];
+        byte* pAct = stackalloc byte[inputDim];
 
         ActivateFeatures(ourAcc, theirAcc, pAct, halfDim);
 
@@ -73,7 +73,7 @@ public static unsafe class NnueInference
         int halfDim = weights.HiddenDim;
         int inputDim = halfDim * 2;
         int l1Dim = weights.L1Dim;
-        byte* pAct = stackalloc byte[1024];
+        byte* pAct = stackalloc byte[inputDim];
 
         ActivateFeatures(ourAcc, theirAcc, pAct, halfDim);
 
@@ -108,7 +108,7 @@ public static unsafe class NnueInference
         int halfDim = weights.HiddenDim;
         int inputDim = halfDim * 2;
         int l1Dim = weights.L1Dim;
-        byte* pAct = stackalloc byte[1024];
+        byte* pAct = stackalloc byte[inputDim];
 
         // 1. SCReLU activation for feature transformer output: clamp to [0..64], square >> 6
         ActivateFeatures(ourAcc, theirAcc, pAct, halfDim);
@@ -135,25 +135,8 @@ public static unsafe class NnueInference
 
             for (int i = 0; i < halfDim; i += 32)
             {
-                // Process ourAcc 32 shorts -> 32 bytes with SCReLU: (clamp(x, 0, 64)^2) >> 6
-                Vector256<short> o0 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i), vZero), vMax);
-                Vector256<short> o1 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i + 16), vZero), vMax);
-                Vector256<short> o0Sq = Avx2.MultiplyLow(o0, o0);
-                Vector256<short> o1Sq = Avx2.MultiplyLow(o1, o1);
-                Vector256<short> o0Act = Avx2.ShiftRightLogical(o0Sq, 6);
-                Vector256<short> o1Act = Avx2.ShiftRightLogical(o1Sq, 6);
-                Vector256<byte> oBytes = Vector256.AsByte(Vector256.Narrow(o0Act, o1Act));
-                oBytes.Store(pAct + i);
-
-                // Process theirAcc 32 shorts -> 32 bytes with SCReLU: (clamp(x, 0, 64)^2) >> 6
-                Vector256<short> t0 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i), vZero), vMax);
-                Vector256<short> t1 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i + 16), vZero), vMax);
-                Vector256<short> t0Sq = Avx2.MultiplyLow(t0, t0);
-                Vector256<short> t1Sq = Avx2.MultiplyLow(t1, t1);
-                Vector256<short> t0Act = Avx2.ShiftRightLogical(t0Sq, 6);
-                Vector256<short> t1Act = Avx2.ShiftRightLogical(t1Sq, 6);
-                Vector256<byte> tBytes = Vector256.AsByte(Vector256.Narrow(t0Act, t1Act));
-                tBytes.Store(pAct + halfDim + i);
+                ActivatePerspective32(ourAcc + i, pAct + i, vZero, vMax);
+                ActivatePerspective32(theirAcc + i, pAct + halfDim + i, vZero, vMax);
             }
         }
         else
@@ -167,6 +150,16 @@ public static unsafe class NnueInference
                 pAct[halfDim + i] = (byte)((tClamped * tClamped) >> 6);
             }
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ActivatePerspective32(short* src, byte* dst, Vector256<short> vZero, Vector256<short> vMax)
+    {
+        Vector256<short> v0 = Vector256.Min(Vector256.Max(Vector256.Load(src), vZero), vMax);
+        Vector256<short> v1 = Vector256.Min(Vector256.Max(Vector256.Load(src + 16), vZero), vMax);
+        Vector256<short> v0Act = Avx2.ShiftRightLogical(Avx2.MultiplyLow(v0, v0), 6);
+        Vector256<short> v1Act = Avx2.ShiftRightLogical(Avx2.MultiplyLow(v1, v1), 6);
+        Vector256.AsByte(Vector256.Narrow(v0Act, v1Act)).Store(dst);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -205,16 +198,7 @@ public static unsafe class NnueInference
                     acc3 = AvxVnni.MultiplyWideningAndAdd(acc3, vAct, Vector256.Load(wCol3 + j));
                 }
 
-                Vector256<int> h01 = Avx2.HorizontalAdd(acc0, acc1);
-                Vector256<int> h23 = Avx2.HorizontalAdd(acc2, acc3);
-                Vector256<int> h0123 = Avx2.HorizontalAdd(h01, h23);
-                Vector128<int> sums = h0123.GetLower() + h0123.GetUpper();
-
-                Vector128<int> vBias = Sse41.ConvertToVector128Int32(hiddenBiases + k);
-                Vector128<int> vClamped = Vector128.Min(Vector128.Max(vBias + Vector128.ShiftRightArithmetic(sums, 6), vZero128), vMax128);
-                Vector128<int> vHidden = Vector128.ShiftRightLogical(vClamped * vClamped, 6);
-                Vector128<int> vOutW = Sse41.ConvertToVector128Int32(outWeights + k);
-                outAcc += vHidden * vOutW;
+                outAcc += ReduceAndAccumulateOutput(acc0, acc1, acc2, acc3, hiddenBiases + k, outWeights + k, vZero128, vMax128);
             }
 
             return Vector128.Sum(outAcc);
@@ -247,21 +231,15 @@ public static unsafe class NnueInference
                     acc3 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyAddAdjacent(vAct, Vector512.Load(wCol3 + j)), vOnes);
                 }
 
-                Vector256<int> a0 = acc0.GetLower() + acc0.GetUpper();
-                Vector256<int> a1 = acc1.GetLower() + acc1.GetUpper();
-                Vector256<int> a2 = acc2.GetLower() + acc2.GetUpper();
-                Vector256<int> a3 = acc3.GetLower() + acc3.GetUpper();
-
-                Vector256<int> h01 = Avx2.HorizontalAdd(a0, a1);
-                Vector256<int> h23 = Avx2.HorizontalAdd(a2, a3);
-                Vector256<int> h0123 = Avx2.HorizontalAdd(h01, h23);
-                Vector128<int> sums = h0123.GetLower() + h0123.GetUpper();
-
-                Vector128<int> vBias = Sse41.ConvertToVector128Int32(hiddenBiases + k);
-                Vector128<int> vClamped = Vector128.Min(Vector128.Max(vBias + Vector128.ShiftRightArithmetic(sums, 6), vZero128), vMax128);
-                Vector128<int> vHidden = Vector128.ShiftRightLogical(vClamped * vClamped, 6);
-                Vector128<int> vOutW = Sse41.ConvertToVector128Int32(outWeights + k);
-                outAcc += vHidden * vOutW;
+                outAcc += ReduceAndAccumulateOutput(
+                    acc0.GetLower() + acc0.GetUpper(),
+                    acc1.GetLower() + acc1.GetUpper(),
+                    acc2.GetLower() + acc2.GetUpper(),
+                    acc3.GetLower() + acc3.GetUpper(),
+                    hiddenBiases + k,
+                    outWeights + k,
+                    vZero128,
+                    vMax128);
             }
 
             return Vector128.Sum(outAcc);
@@ -294,16 +272,7 @@ public static unsafe class NnueInference
                     acc3 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyAddAdjacent(vAct, Vector256.Load(wCol3 + j)), vOnes);
                 }
 
-                Vector256<int> h01 = Avx2.HorizontalAdd(acc0, acc1);
-                Vector256<int> h23 = Avx2.HorizontalAdd(acc2, acc3);
-                Vector256<int> h0123 = Avx2.HorizontalAdd(h01, h23);
-                Vector128<int> sums = h0123.GetLower() + h0123.GetUpper();
-
-                Vector128<int> vBias = Sse41.ConvertToVector128Int32(hiddenBiases + k);
-                Vector128<int> vClamped = Vector128.Min(Vector128.Max(vBias + Vector128.ShiftRightArithmetic(sums, 6), vZero128), vMax128);
-                Vector128<int> vHidden = Vector128.ShiftRightLogical(vClamped * vClamped, 6);
-                Vector128<int> vOutW = Sse41.ConvertToVector128Int32(outWeights + k);
-                outAcc += vHidden * vOutW;
+                outAcc += ReduceAndAccumulateOutput(acc0, acc1, acc2, acc3, hiddenBiases + k, outWeights + k, vZero128, vMax128);
             }
 
             return Vector128.Sum(outAcc);
@@ -327,5 +296,28 @@ public static unsafe class NnueInference
             }
             return outSum;
         }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Vector128<int> ReduceAndAccumulateOutput(
+        Vector256<int> acc0,
+        Vector256<int> acc1,
+        Vector256<int> acc2,
+        Vector256<int> acc3,
+        short* hiddenBiases,
+        short* outWeights,
+        Vector128<int> vZero128,
+        Vector128<int> vMax128)
+    {
+        Vector256<int> h01 = Avx2.HorizontalAdd(acc0, acc1);
+        Vector256<int> h23 = Avx2.HorizontalAdd(acc2, acc3);
+        Vector256<int> h0123 = Avx2.HorizontalAdd(h01, h23);
+        Vector128<int> sums = h0123.GetLower() + h0123.GetUpper();
+
+        Vector128<int> vBias = Sse41.ConvertToVector128Int32(hiddenBiases);
+        Vector128<int> vClamped = Vector128.Min(Vector128.Max(vBias + Vector128.ShiftRightArithmetic(sums, 6), vZero128), vMax128);
+        Vector128<int> vHidden = Vector128.ShiftRightLogical(vClamped * vClamped, 6);
+        Vector128<int> vOutW = Sse41.ConvertToVector128Int32(outWeights);
+        return vHidden * vOutW;
     }
 }
