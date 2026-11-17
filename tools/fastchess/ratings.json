@@ -792,6 +792,21 @@
       "tc": "5+0.05",
       "pgn": "tools/fastchess/results/ordo_gauntlet_20261117_090026_clean.pgn",
       "notes": "Elo re-anchored via Ordo (no +211 Elo gain over v1.0.32; SPSA tuning measured +4.00 Elo over v1.0.32 in 8,000 games, plus book.bin calibration & pruning)"
+    },
+    "v1.1.0": {
+      "version": "v1.1.0",
+      "date": "2026-11-17",
+      "estimated_elo": 2965,
+      "elo_margin": 21,
+      "baseline_opponent": "5-Engine Ordo CCRL Gauntlet (+497 Elo chained vs v1.0.0)",
+      "score": "305.5 / 1105",
+      "wins": 193,
+      "losses": 687,
+      "draws": 225,
+      "perf_percent": 27.65,
+      "tc": "5+0.05",
+      "pgn": "tools/fastchess/results/ordo_gauntlet_20261117_090026_clean.pgn",
+      "notes": "Milestone release consolidating v1.0.0 through v1.0.33 (Unified Shared-FT MoE NNUE, Correction History overhaul, 2.21x + 14.1% NPS gains, search/pruning/time/book tuning, and Ordo CCRL re-anchoring)"
     }
   }
 }

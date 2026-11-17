@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.33` (Estimated Rating: **2965 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.0` (Estimated Rating: **2965 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,11 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.0` (2026-11-17) — Milestone Release (`v1.0.0` → `v1.0.33` Consolidation)
+- **Category:** Major Milestone Release (Full Notes: [`RELEASE_v1.1.0.md`](RELEASE_v1.1.0.md))
+- **Estimated Elo:** **2965 &plusmn; 21** (Ordo CCRL-anchored; **+497 Elo** cumulative chained self-play gain vs. `v1.0.0`)
+- **Highlights:** Consolidates 33 patch releases since `v1.0.0`: Unified Shared-FT MoE NNUE & embedded NativeAOT binaries, Correction History overhaul (`+204.5 Elo`), 2.21× + 14.1% NPS throughput gains, QSearch checks/repetition/TT refinement, improving-aware LMP, deeper RFP, fail-low time extension, 59,400-game SPSA tuning, and `book.bin` calibration.
 
 ### `v1.0.33` (2026-11-17) — SPSA Tuning, Opening Book Calibration & Ordo Elo Re-Anchoring
 - **Category:** Search Parameter Tuning, Opening Book Calibration & Rating Re-Anchoring (Patch Release)
