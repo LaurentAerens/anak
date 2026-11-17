@@ -51,6 +51,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private int _rfpImprovingMultiplier = SearchHeuristics.TunedRfpImprovingMultiplier;
     private int _singularMargin = SearchHeuristics.TunedSingularMargin;
     private int _qsDeltaMargin = SearchHeuristics.TunedQsDeltaMargin;
+    private int _futilityMarginD1D2 = SearchHeuristics.TunedFutilityMarginD1D2;
+    private int _futilityMarginD3 = SearchHeuristics.TunedFutilityMarginD3;
+    private int _lmpBase = SearchHeuristics.TunedLmpBase;
+    private int _lmpMultiplier = SearchHeuristics.TunedLmpMultiplier;
+    private int _seeCaptureMargin = SearchHeuristics.TunedSeeCaptureMargin;
+    private int _seeQuietMargin = SearchHeuristics.TunedSeeQuietMargin;
     private readonly int[] _lmrTable = new int[MaxSearchDepth * 128];
     private NnueExpertType? _lastRootExpert;
 
@@ -168,6 +174,42 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
         }
+    }
+
+    public int FutilityMarginD1D2
+    {
+        get => _futilityMarginD1D2;
+        set => _futilityMarginD1D2 = value;
+    }
+
+    public int FutilityMarginD3
+    {
+        get => _futilityMarginD3;
+        set => _futilityMarginD3 = value;
+    }
+
+    public int LmpBase
+    {
+        get => _lmpBase;
+        set => _lmpBase = value;
+    }
+
+    public int LmpMultiplier
+    {
+        get => _lmpMultiplier;
+        set => _lmpMultiplier = value;
+    }
+
+    public int SeeCaptureMargin
+    {
+        get => _seeCaptureMargin;
+        set => _seeCaptureMargin = value;
+    }
+
+    public int SeeQuietMargin
+    {
+        get => _seeQuietMargin;
+        set => _seeQuietMargin = value;
     }
 
     public int TimeMovesToGo
@@ -1353,11 +1395,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     // Shallow Futility Pruning for non-tactical quiet moves at shallow depth
                     if (isQuiet && movesSearched > 0)
                     {
-                        if (depth <= 2 && eval + (150 * depth) <= alpha && !board.GivesCheck(move))
+                        if (depth <= 2 && eval + (_engine.FutilityMarginD1D2 * depth) <= alpha && !board.GivesCheck(move))
                         {
                             continue;
                         }
-                        if (depth == 3 && staticEval + (120 * depth) <= alpha && !board.GivesCheck(move))
+                        if (depth == 3 && staticEval + (_engine.FutilityMarginD3 * depth) <= alpha && !board.GivesCheck(move))
                         {
                             continue;
                         }
@@ -1366,7 +1408,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     // Late Move Pruning (LMP) for quiet moves
                     if (depth <= 3 && isQuiet)
                     {
-                        int lmpThreshold = improving ? 3 + (2 * depth * depth) : 3 + (depth * depth);
+                        int lmpThreshold = improving
+                            ? _engine.LmpBase + (_engine.LmpMultiplier * depth * depth)
+                            : _engine.LmpBase + (depth * depth);
                         if (movesSearched >= lmpThreshold && !board.GivesCheck(move))
                         {
                             continue;
@@ -1379,7 +1423,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         // Bad Captures Pruning: Prune clearly losing exchanges at shallow depths
                         if (depth <= 5 && move.IsCapture && !move.IsPromotion)
                         {
-                            if (picker.CurrentSee < -60 * depth && !board.GivesCheck(move))
+                            if (picker.CurrentSee < -_engine.SeeCaptureMargin * depth && !board.GivesCheck(move))
                             {
                                 continue;
                             }
@@ -1388,7 +1432,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         // Quiet SEE Pruning: Prune quiet moves that blunder pieces onto attacked squares
                         if (depth <= 4 && isQuiet)
                         {
-                            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -35 * depth * depth) && !board.GivesCheck(move))
+                            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -_engine.SeeQuietMargin * depth * depth) && !board.GivesCheck(move))
                             {
                                 continue;
                             }

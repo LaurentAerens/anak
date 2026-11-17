@@ -270,7 +270,7 @@ BATCH_B_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="CorrHistDivisor",
-        default=2048.0,
+        default=2028.0,
         min_val=512.0,
         max_val=8192.0,
         c=128.0,
@@ -278,7 +278,7 @@ BATCH_B_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="CorrHistMax",
-        default=128.0,
+        default=110.0,
         min_val=16.0,
         max_val=256.0,
         c=8.0,
@@ -290,7 +290,7 @@ BATCH_B_PARAMETERS: List[SpsaParam] = [
 BATCH_CORR_PARAMETERS: List[SpsaParam] = [
     SpsaParam(
         name="CorrHistDivisor",
-        default=2048.0,
+        default=2028.0,
         min_val=512.0,
         max_val=8192.0,
         c=128.0,
@@ -298,7 +298,7 @@ BATCH_CORR_PARAMETERS: List[SpsaParam] = [
     ),
     SpsaParam(
         name="CorrHistMax",
-        default=128.0,
+        default=110.0,
         min_val=16.0,
         max_val=256.0,
         c=8.0,
@@ -382,6 +382,58 @@ TIME_PARAMETERS: List[SpsaParam] = [
     ),
 ]
 
+# Tier A Pruning Suite (Shallow Futility, LMP, Capture & Quiet SEE)
+PRUNING_PARAMETERS: List[SpsaParam] = [
+    SpsaParam(
+        name="FutilityMarginD1D2",
+        default=150.0,
+        min_val=60.0,
+        max_val=300.0,
+        c=10.0,
+        a=250.0,
+    ),
+    SpsaParam(
+        name="FutilityMarginD3",
+        default=120.0,
+        min_val=40.0,
+        max_val=250.0,
+        c=8.0,
+        a=200.0,
+    ),
+    SpsaParam(
+        name="LmpBase",
+        default=3.0,
+        min_val=1.0,
+        max_val=10.0,
+        c=0.5,
+        a=5.0,
+    ),
+    SpsaParam(
+        name="LmpMultiplier",
+        default=2.0,
+        min_val=1.0,
+        max_val=6.0,
+        c=0.5,
+        a=5.0,
+    ),
+    SpsaParam(
+        name="SeeCaptureMargin",
+        default=60.0,
+        min_val=15.0,
+        max_val=150.0,
+        c=5.0,
+        a=120.0,
+    ),
+    SpsaParam(
+        name="SeeQuietMargin",
+        default=35.0,
+        min_val=10.0,
+        max_val=100.0,
+        c=4.0,
+        a=80.0,
+    ),
+]
+
 # Batch B, C, D Hidden Parameters Suite
 BATCH_BCD_PARAMETERS: List[SpsaParam] = BATCH_B_PARAMETERS + [p for p in TIME_PARAMETERS if p.name != "ScoreDropThreshold"] + [
 
@@ -396,9 +448,9 @@ BATCH_BCD_PARAMETERS: List[SpsaParam] = BATCH_B_PARAMETERS + [p for p in TIME_PA
     ),
     SpsaParam(
         name="FutilityMarginD3",
-        default=80.0,
+        default=120.0,
         min_val=30.0,
-        max_val=200.0,
+        max_val=250.0,
         c=8.0,
         a=200.0,
     ),
@@ -1081,8 +1133,8 @@ def parse_args():
     parser.add_argument("--engine", type=str, choices=["anak", "zanak"], default="anak",
                         help="Engine to tune: 'anak' (default) or 'zanak'")
     parser.add_argument("--zanak", type=str, default=None, help="Path to Zanak binary")
-    parser.add_argument("--batch", type=str, choices=["core", "b", "corr", "time", "search", "bcd", "all", "weakness", "history_pruning", "zanak_time", "zanak_search", "zanak_all"], default="core",
-                        help="Parameter batch to tune ('core', 'b', 'corr', 'time', 'search', 'bcd', 'all', 'weakness', 'history_pruning', 'zanak_time', 'zanak_search', 'zanak_all')")
+    parser.add_argument("--batch", type=str, choices=["core", "pruning", "b", "corr", "time", "search", "bcd", "all", "weakness", "history_pruning", "zanak_time", "zanak_search", "zanak_all"], default="core",
+                        help="Parameter batch to tune ('core', 'pruning', 'b', 'corr', 'time', 'search', 'bcd', 'all', 'weakness', 'history_pruning', 'zanak_time', 'zanak_search', 'zanak_all')")
     parser.add_argument("--param", type=str, default=None, help="Tune a single parameter by name (e.g. --param HistoryPruningThreshold)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
@@ -1108,7 +1160,7 @@ def main():
     progress_file = Path(args.output) if args.output else (repo_root / "tools" / "tuning" / default_progress_name)
 
     if args.param:
-        all_known = DEFAULT_PARAMETERS + BATCH_BCD_PARAMETERS + WEAKNESS_PARAMETERS + HISTORY_PRUNING_PARAMETERS + ZANAK_ALL_PARAMETERS
+        all_known = DEFAULT_PARAMETERS + PRUNING_PARAMETERS + BATCH_BCD_PARAMETERS + WEAKNESS_PARAMETERS + HISTORY_PRUNING_PARAMETERS + ZANAK_ALL_PARAMETERS
         matched = [p for p in all_known if p.name.lower() == args.param.lower()]
         if not matched:
             print(f"[!] Error: Parameter '{args.param}' not recognized.")
@@ -1122,6 +1174,8 @@ def main():
         param_set = ZANAK_ALL_PARAMETERS
     elif args.batch == "core":
         param_set = CORE_PARAMETERS
+    elif args.batch == "pruning":
+        param_set = PRUNING_PARAMETERS
     elif args.batch == "b":
         param_set = BATCH_B_PARAMETERS
     elif args.batch == "corr":

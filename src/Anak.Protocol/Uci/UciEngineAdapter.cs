@@ -130,6 +130,12 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.RfpImprovingMultiplier = _options.RfpImprovingMultiplier.Value;
         _alphaBetaEngine.SingularMargin = _options.SingularMargin.Value;
         _alphaBetaEngine.QsDeltaMargin = _options.QsDeltaMargin.Value;
+        _alphaBetaEngine.FutilityMarginD1D2 = _options.FutilityMarginD1D2.Value;
+        _alphaBetaEngine.FutilityMarginD3 = _options.FutilityMarginD3.Value;
+        _alphaBetaEngine.LmpBase = _options.LmpBase.Value;
+        _alphaBetaEngine.LmpMultiplier = _options.LmpMultiplier.Value;
+        _alphaBetaEngine.SeeCaptureMargin = _options.SeeCaptureMargin.Value;
+        _alphaBetaEngine.SeeQuietMargin = _options.SeeQuietMargin.Value;
         _alphaBetaEngine.TimeMovesToGo = _options.TimeMovesToGo.Value;
         _alphaBetaEngine.TimeIncFactor = _options.TimeIncFactor.Value;
         _alphaBetaEngine.TimeHardMultiplier = _options.TimeHardMultiplier.Value;
@@ -151,6 +157,12 @@ public sealed class UciEngineAdapter
         _options.RfpImprovingMultiplier.ValueChanged += val => _alphaBetaEngine.RfpImprovingMultiplier = val;
         _options.SingularMargin.ValueChanged += val => _alphaBetaEngine.SingularMargin = val;
         _options.QsDeltaMargin.ValueChanged += val => _alphaBetaEngine.QsDeltaMargin = val;
+        _options.FutilityMarginD1D2.ValueChanged += val => _alphaBetaEngine.FutilityMarginD1D2 = val;
+        _options.FutilityMarginD3.ValueChanged += val => _alphaBetaEngine.FutilityMarginD3 = val;
+        _options.LmpBase.ValueChanged += val => _alphaBetaEngine.LmpBase = val;
+        _options.LmpMultiplier.ValueChanged += val => _alphaBetaEngine.LmpMultiplier = val;
+        _options.SeeCaptureMargin.ValueChanged += val => _alphaBetaEngine.SeeCaptureMargin = val;
+        _options.SeeQuietMargin.ValueChanged += val => _alphaBetaEngine.SeeQuietMargin = val;
         _options.HistoryBonusScale.ValueChanged += val => HistoryTable.BonusScale = val;
         _options.HistoryMaxBonus.ValueChanged += val => HistoryTable.MaxBonus = val;
         _options.HistoryMaxMalus.ValueChanged += val => HistoryTable.MaxMalus = val;

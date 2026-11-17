@@ -292,6 +292,12 @@ public sealed class UciOptionRegistry
     public SpinOption HistoryMaxMalus { get; }
     public SpinOption CorrHistDivisor { get; }
     public SpinOption CorrHistMax { get; }
+    public SpinOption FutilityMarginD1D2 { get; }
+    public SpinOption FutilityMarginD3 { get; }
+    public SpinOption LmpBase { get; }
+    public SpinOption LmpMultiplier { get; }
+    public SpinOption SeeCaptureMargin { get; }
+    public SpinOption SeeQuietMargin { get; }
     public SpinOption TimeMovesToGo { get; }
     public SpinOption TimeIncFactor { get; }
     public SpinOption TimeHardMultiplier { get; }
@@ -319,13 +325,13 @@ public sealed class UciOptionRegistry
         UseNnue = new CheckOption("UseNnue", defaultValue: true);
         NnuePath = new StringOption("NnuePath", defaultValue: "./networks");
         LmrBase = new SpinOption("LmrBase", defaultValue: 83, min: 0, max: 250);
-        LmrDivision = new SpinOption("LmrDivision", defaultValue: 224, min: 50, max: 500);
-        RfpMargin = new SpinOption("RfpMargin", defaultValue: 77, min: 10, max: 300);
+        LmrDivision = new SpinOption("LmrDivision", defaultValue: 228, min: 50, max: 500);
+        RfpMargin = new SpinOption("RfpMargin", defaultValue: 74, min: 10, max: 300);
         NmpBase = new SpinOption("NmpBase", defaultValue: 3, min: 1, max: 10);
-        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 20, min: 5, max: 100);
+        AspirationDelta = new SpinOption("AspirationDelta", defaultValue: 19, min: 5, max: 100);
         ConthistReward = new SpinOption("ConthistReward", defaultValue: 2611, min: 500, max: 6000);
         ConthistPenalty = new SpinOption("ConthistPenalty", defaultValue: 3805, min: 1000, max: 8000);
-        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2130, min: 500, max: 5000);
+        HistoryThreshold = new SpinOption("HistoryThreshold", defaultValue: 2139, min: 500, max: 5000);
         ScoreDropThreshold = new SpinOption("ScoreDropThreshold", defaultValue: 45, min: 10, max: 150);
         RfpImprovingMultiplier = new SpinOption("RfpImprovingMultiplier", defaultValue: 111, min: 100, max: 250);
         SingularMargin = new SpinOption("SingularMargin", defaultValue: 6, min: 1, max: 8);
@@ -335,6 +341,12 @@ public sealed class UciOptionRegistry
         HistoryMaxMalus = new SpinOption("HistoryMaxMalus", defaultValue: 2000, min: 200, max: 5000);
         CorrHistDivisor = new SpinOption("CorrHistDivisor", defaultValue: SearchHeuristics.TunedCorrHistDivisor, min: 256, max: 8192);
         CorrHistMax = new SpinOption("CorrHistMax", defaultValue: SearchHeuristics.TunedCorrHistMax, min: 16, max: 256);
+        FutilityMarginD1D2 = new SpinOption("FutilityMarginD1D2", defaultValue: SearchHeuristics.TunedFutilityMarginD1D2, min: 50, max: 350);
+        FutilityMarginD3 = new SpinOption("FutilityMarginD3", defaultValue: SearchHeuristics.TunedFutilityMarginD3, min: 30, max: 300);
+        LmpBase = new SpinOption("LmpBase", defaultValue: SearchHeuristics.TunedLmpBase, min: 1, max: 12);
+        LmpMultiplier = new SpinOption("LmpMultiplier", defaultValue: SearchHeuristics.TunedLmpMultiplier, min: 1, max: 6);
+        SeeCaptureMargin = new SpinOption("SeeCaptureMargin", defaultValue: SearchHeuristics.TunedSeeCaptureMargin, min: 10, max: 200);
+        SeeQuietMargin = new SpinOption("SeeQuietMargin", defaultValue: SearchHeuristics.TunedSeeQuietMargin, min: 10, max: 150);
         TimeMovesToGo = new SpinOption("TimeMovesToGo", defaultValue: 38, min: 15, max: 65);
         TimeIncFactor = new SpinOption("TimeIncFactor", defaultValue: 73, min: 20, max: 100);
         TimeHardMultiplier = new SpinOption("TimeHardMultiplier", defaultValue: 181, min: 110, max: 260);
@@ -378,6 +390,12 @@ public sealed class UciOptionRegistry
         Register(HistoryMaxMalus);
         Register(CorrHistDivisor);
         Register(CorrHistMax);
+        Register(FutilityMarginD1D2);
+        Register(FutilityMarginD3);
+        Register(LmpBase);
+        Register(LmpMultiplier);
+        Register(SeeCaptureMargin);
+        Register(SeeQuietMargin);
         Register(TimeMovesToGo);
         Register(TimeIncFactor);
         Register(TimeHardMultiplier);

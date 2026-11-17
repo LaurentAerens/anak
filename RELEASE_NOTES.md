@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.0.32` (Estimated Rating: **2754 Elo**)  
+> **Current Active Version:** `v1.0.33` (Estimated Rating: **2965 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,17 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.0.33` (2026-11-17) — SPSA Tuning, Opening Book Calibration & Ordo Elo Re-Anchoring
+- **Category:** Search Parameter Tuning, Opening Book Calibration & Rating Re-Anchoring (Patch Release)
+- **Estimated Elo:** **2965 &plusmn; 21** (Ordo logistic rating anchored against 5 real CCRL engines over 1,105 non-timeout games at `5+0.05`)
+  > **Note on Elo Re-Anchoring:** There is **no +211 Elo jump** in playing strength in this release. `v1.0.33` re-anchors Anak's rating baseline from chained self-play (`2754` in `v1.0.32`) to an external multi-opponent Ordo CCRL gauntlet (`Berserk-4.7.0`, `Laser-1.7`, `Weiss-2.0`, `Ethereal-13.00`, `Koivisto-8.0`). Relative to `v1.0.32`, the SPSA-tuned parameters measured **+4.00 Elo** (`50.58%`, `3,040W / 2,948L / 2,012D`, `89.21% LOS`) over 8,000 games at `1+0.01`.
+- **Highlights:**
+  - **Wired & Tuned 6 New Pruning UCI Options (`AlphaBetaEngine.cs`, `SearchHeuristics.cs`, `UciOption.cs`, `spsa.py`):** Exposed `FutilityMarginD1D2`, `FutilityMarginD3`, `LmpBase`, `LmpMultiplier`, `SeeCaptureMargin`, and `SeeQuietMargin` as UCI `SpinOption`s and added `--batch pruning` to `tools/tuning/spsa.py`.
+  - **59,400-Game SPSA Tuning (`0.5+0.005`):**
+    - `--batch core` (29,700 games): `LmrDivision` `224 -> 228`, `RfpMargin` `77 -> 74`, `AspirationDelta` `20 -> 19`, `HistoryThreshold` `2130 -> 2139`.
+    - `--batch pruning` (29,700 games): `FutilityMarginD3` `120 -> 124`, `LmpBase` `3 -> 4`, `SeeCaptureMargin` `60 -> 61`, `SeeQuietMargin` `35 -> 34`.
+  - **PolyGlot Opening Book Calibration (`book.bin`):** Reinforced from 600 live `startpos` games (`5+0.05`, `OwnBook=true`, 4,800 move updates) and pruned 55,295 low-win-rate entries (`< 25%` over `20+` games), leaving 37,998 entries across 33,988 positions (`e4` 90%, `d4` 10% at root).
 
 ### `v1.0.32` (2026-11-16) — Reduce LMR by 1 for CounterMoves
 - **Category:** Search Extensions & Reductions (Patch Release)

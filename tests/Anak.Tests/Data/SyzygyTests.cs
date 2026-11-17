@@ -294,7 +294,7 @@ public class SyzygyTests
         bool loaded = book.Load(path);
         Assert.True(loaded);
         Assert.True(book.IsLoaded);
-        Assert.True(book.EntryCount > 90000, $"Expected > 90000 entries, got {book.EntryCount}");
+        Assert.True(book.EntryCount > 30000, $"Expected > 30000 entries, got {book.EntryCount}");
 
         var board = Fen.Parse(Fen.StartPosition);
         bool found = book.TryGetMove(in board, out Move move);

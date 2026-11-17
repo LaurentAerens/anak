@@ -19,13 +19,13 @@ public static class SearchHeuristics
 
     // SPSA Tuned Search Parameters (from live engine self-play)
     public const int TunedLmrBase = 83;             // default: 80
-    public const int TunedLmrDivision = 224;        // default: 229
-    public const int TunedRfpMargin = 77;           // default: 72
+    public const int TunedLmrDivision = 228;        // default: 229, SPSA-tuned: 228
+    public const int TunedRfpMargin = 74;           // default: 72, SPSA-tuned: 74
     public const int TunedNmpBase = 3;              // default: 3
-    public const int TunedAspirationDelta = 20;     // default: 27
+    public const int TunedAspirationDelta = 19;     // default: 27, SPSA-tuned: 19
     public const int TunedConthistReward = 2611;    // default: 2598
     public const int TunedConthistPenalty = 3805;   // default: 3839
-    public const int TunedHistoryThreshold = 2130;  // default: 2101
+    public const int TunedHistoryThreshold = 2139;  // default: 2101, SPSA-tuned: 2139
     public const int TunedRfpImprovingMultiplier = 111; // default: 115
     public const int TunedSingularMargin = 6;           // default: 6
     public const int TunedQsDeltaMargin = 188;          // default: 188
@@ -34,6 +34,12 @@ public static class SearchHeuristics
     public const int TunedHistoryMaxMalus = 2000;       // default: 2000
     public const int TunedCorrHistDivisor = 2028;       // default: 2048, SPSA-tuned: 2028
     public const int TunedCorrHistMax = 110;           // default: 128, SPSA-tuned: 110
+    public const int TunedFutilityMarginD1D2 = 150;    // default: 150, SPSA-tuned: 150
+    public const int TunedFutilityMarginD3 = 124;      // default: 120, SPSA-tuned: 124
+    public const int TunedLmpBase = 4;                 // default: 3, SPSA-tuned: 4
+    public const int TunedLmpMultiplier = 2;           // default: 2, SPSA-tuned: 2
+    public const int TunedSeeCaptureMargin = 61;       // default: 60, SPSA-tuned: 61
+    public const int TunedSeeQuietMargin = 34;         // default: 35, SPSA-tuned: 34
 
     /// <summary>
     /// Pre-computed LMR reduction table: [depth, moveIndex].
