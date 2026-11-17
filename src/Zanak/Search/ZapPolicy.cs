@@ -1276,7 +1276,7 @@ public sealed class ZapPolicy
         return false;
     }
 
-    private static readonly int[] CenterScoreTable =
+    private static readonly int[] _centerScoreTable =
     [
         0, 1, 2, 3, 3, 2, 1, 0,
         1, 2, 4, 5, 5, 4, 2, 1,
@@ -1291,7 +1291,7 @@ public sealed class ZapPolicy
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal static int ScoreQuietCentrality(Move move)
     {
-        return (CenterScoreTable[(byte)move.To] - CenterScoreTable[(byte)move.From]) * 2
+        return (_centerScoreTable[(byte)move.To] - _centerScoreTable[(byte)move.From]) * 2
             + (move.IsCastling ? 40 : 0);
     }
 
