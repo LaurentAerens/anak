@@ -72,6 +72,19 @@ public sealed class ZapParams
     public int CrosspointRootBiasWeight { get; set; } = 23;
 
     /// <summary>
+    /// Finite priority bonus for the first batch of a ply-1 adversarial refutation.
+    /// Strong enough to bias toward ply-1 checks, while allowing high-value spines' ply-2
+    /// or large deeper shock crosspoints to preempt low-value ply-1 work.
+    /// </summary>
+    public int ImmediateRefutationBonus { get; set; } = 350;
+
+    /// <summary>
+    /// Uncapped malus weight (in percent) applied to a crosspoint's shock based on the highest
+    /// raw responsibility already present above it on the same spine or subspine.
+    /// </summary>
+    public int CrosspointAboveShockMalusWeight { get; set; } = 100;
+
+    /// <summary>
     /// Maximum number of tactical quiescence resolution plies at the end of a probe.
     /// </summary>
     public int QuiescenceMaxPlies { get; set; } = 2;
@@ -79,7 +92,7 @@ public sealed class ZapParams
     /// <summary>
     /// Maximum number of new sibling spines per pickup. Unfinished siblings remain queued.
     /// </summary>
-    public int MaxSiblingExploration { get; set; } = 6;
+    public int MaxSiblingExploration { get; set; } = 8;
 
     public bool InterleaveRootSeeding { get; set; }
 

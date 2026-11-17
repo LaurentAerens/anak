@@ -21,8 +21,6 @@ public readonly record struct ZapPickupTrace(
 /// </summary>
 public sealed class ZapWorkQueue
 {
-    private const long ImmediateRefutationClass = 1L << 40;
-
     private readonly List<ZapCrosspoint> _entries = new(256);
     private readonly List<int> _versions = new(256);
     private readonly Dictionary<ulong, int> _indexByKey = new(256);
@@ -57,25 +55,31 @@ public sealed class ZapWorkQueue
     {
         Board board = startBoard;
         int[] responsibility = ComputeResponsibility(steps, engineColor, startingPly, _params);
+        int maxResponsibilityAbove = 0;
         for (int i = 0; i < steps.Length; i++)
         {
             if (immediateOnly && i > 0) break;
             ZapTrajectoryStep step = steps[i];
             if (step.ZobristKey != board.ZobristKey) break;
+            Board nextBoard = board;
+            bool hasNext = nextBoard.MakeMove(step.Move, out _);
             ZapAgentRole positionRole = step.SideToMove == engineColor ? ZapAgentRole.Promotion : ZapAgentRole.Refutation;
             if (role == null || role == positionRole)
             {
                 int ply = startingPly + i;
                 bool immediate = ply == 1 && positionRole == ZapAgentRole.Refutation;
                 int boost = (immediate ? 400 : 0) + (Math.Abs((int)step.StaticEval) >= 28000 ? 500 : 0);
-                short shock = (short)Math.Min(short.MaxValue, responsibility[i] + boost);
+                int malus = i == 0 ? 0 : (int)((long)maxResponsibilityAbove * _params.CrosspointAboveShockMalusWeight / 100);
+                short shock = (short)Math.Clamp((long)responsibility[i] + boost - malus, short.MinValue, short.MaxValue);
                 bool stepPrevCapture = i == 0 ? prevWasCapture : steps[i - 1].Move.IsCapture;
-                Enqueue(new ZapCrosspoint(board, rootIndex, ply, steps[^1].StaticEval, shock,
+                Enqueue(new ZapCrosspoint(board, in nextBoard, hasNext, rootIndex, ply, steps[^1].StaticEval, shock,
                     positionRole == ZapAgentRole.Refutation ? CrosspointKind.AdversarialRefutation : CrosspointKind.Opportunity,
                     Math.Max(1, steps.Length - i), step.Move, _params.CrosspointRootBiasWeight,
                     generation, positionRole, step.ParentEval, stepPrevCapture, _params));
             }
-            if (!board.MakeMove(step.Move, out _)) break;
+            maxResponsibilityAbove = Math.Max(maxResponsibilityAbove, responsibility[i]);
+            if (!hasNext) break;
+            board = nextBoard;
         }
     }
 
@@ -89,27 +93,42 @@ public sealed class ZapWorkQueue
     {
         ZapTrajectoryStep[] steps = edge.Steps;
         if (steps.Length < 2) return 0;
+        if (spineGap > 0 && AtOffLineSoftCap) return 0;
         int[] responsibility = ComputeResponsibility(steps, engineColor, nodePly, _params);
         short gap = (short)Math.Clamp(spineGap, 0, short.MaxValue);
         short baseline = steps[^1].StaticEval;
         Board board = nodeBoard;
         int offered = 0;
+        int maxResponsibilityAbove = 0;
         for (int i = 0; i < steps.Length; i++)
         {
             ZapTrajectoryStep step = steps[i];
             if (step.ZobristKey != board.ZobristKey) break;
+            Board nextBoard = default;
+            bool hasNext = false;
+            if (i > 0 || i + 1 < steps.Length)
+            {
+                nextBoard = board;
+                hasNext = nextBoard.MakeMove(step.Move, out _);
+            }
             if (i > 0)
             {
-                if (AtCapacity) break;
+                if (AtCapacity || (gap > 0 && AtOffLineSoftCap)) break;
                 ZapAgentRole role = step.SideToMove == engineColor ? ZapAgentRole.Promotion : ZapAgentRole.Refutation;
                 int boost = Math.Abs((int)step.StaticEval) >= 28000 ? 500 : 0;
-                short shock = (short)Math.Min(short.MaxValue, responsibility[i] + boost);
-                Enqueue(new ZapCrosspoint(board, edge, i, linkedSpinesMask, nodePly + i, baseline, step.ParentEval,
+                int malus = (int)((long)maxResponsibilityAbove * _params.CrosspointAboveShockMalusWeight / 100);
+                short shock = (short)Math.Clamp((long)responsibility[i] + boost - malus, short.MinValue, short.MaxValue);
+                Enqueue(new ZapCrosspoint(board, in nextBoard, hasNext, edge, i, linkedSpinesMask, nodePly + i, baseline, step.ParentEval,
                     shock, gap, Math.Max(1, steps.Length - i), step.Move, generation, role,
                     steps[i - 1].Move.IsCapture, _params));
                 offered++;
             }
-            if (i + 1 < steps.Length && !board.MakeMove(step.Move, out _)) break;
+            maxResponsibilityAbove = Math.Max(maxResponsibilityAbove, responsibility[i]);
+            if (i + 1 < steps.Length)
+            {
+                if (!hasNext) break;
+                board = nextBoard;
+            }
         }
         return offered;
     }
@@ -117,6 +136,11 @@ public sealed class ZapWorkQueue
     private bool AtCapacity
     {
         get { lock (_lock) return _entries.Count >= _params.MaxQueueEntries; }
+    }
+
+    private bool AtOffLineSoftCap
+    {
+        get { lock (_lock) return _entries.Count >= _params.MaxQueueEntries / 2; }
     }
 
     /// <summary>
@@ -350,7 +374,7 @@ public sealed class ZapWorkQueue
             item.Kind == CrosspointKind.AdversarialRefutation &&
             item.Role == ZapAgentRole.Refutation &&
             (item.Work?.Batches ?? 0) == 0;
-        return isImmediateRefutation ? priority + ImmediateRefutationClass : priority;
+        return isImmediateRefutation ? priority + _params.ImmediateRefutationBonus : priority;
     }
 
     private long EstimatedCost(in ZapCrosspoint item)
@@ -467,6 +491,15 @@ public sealed class ZapWorkQueue
         return true;
     }
 
+    internal void DecaySpinePickCount(int rootIndex)
+    {
+        if ((uint)rootIndex >= (uint)_spinePickCount.Length) return;
+        lock (_lock)
+        {
+            _spinePickCount[rootIndex] /= 2;
+        }
+    }
+
     private int FindBestFromHeaps(ZapSharedState sharedState, uint currentGeneration, out int bestRoot, out int bestSpineScore, int excludedRoot = -1)
     {
         bestRoot = 0;
@@ -474,6 +507,8 @@ public sealed class ZapWorkQueue
         Span<ZapCrosspoint> span = CollectionsMarshal.AsSpan(_entries);
         Span<int> versions = CollectionsMarshal.AsSpan(_versions);
         int candidateCount = sharedState.CandidateCount;
+        int leaderIdx = sharedState.BestCandidateIndex;
+        int leaderScore = (uint)leaderIdx < (uint)candidateCount ? sharedState.GetScore(leaderIdx) : 0;
         int bestIdx = -1;
         long bestPriority = long.MinValue;
         for (int r = 0; r < _heaps.Length; r++)
@@ -504,8 +539,18 @@ public sealed class ZapWorkQueue
             if (top < 0) continue;
 
             int spineScore = r < candidateCount ? sharedState.GetScore(r) : span[top].BaselineScore;
+            long roleBoost = 0;
+            if (span[top].Role == ZapAgentRole.Refutation && r == leaderIdx)
+            {
+                roleBoost = 25;
+            }
+            else if (span[top].Role == ZapAgentRole.Promotion && r != leaderIdx && leaderScore - spineScore <= _params.HardAspirationMarginCp)
+            {
+                roleBoost = 20;
+            }
             long priority = -negKey
                 + (long)spineScore * _params.CrosspointSpineEvalWeight / 100
+                + roleBoost
                 - (long)_spinePickCount[r] * _params.CrosspointDiversityPenalty;
             if (bestIdx < 0 || priority > bestPriority)
             {

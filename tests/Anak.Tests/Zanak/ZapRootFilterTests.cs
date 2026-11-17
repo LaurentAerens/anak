@@ -63,4 +63,16 @@ public sealed class ZapRootFilterTests
         var (_, keep, _) = Run("rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2");
         Assert.Contains(true, keep);
     }
+
+    [Fact]
+    public void ExistingMateIn1Threat_RejectsMovesThatStillAllowMateIn1()
+    {
+        // Black Qh3 threatens Qxg2# on a null move; Ra1a2 allows Qxg2#, while g2h3 (taking the queen) stops it.
+        var (moves, keep, _) = Run("6k1/5ppp/8/8/8/7q/6P1/R5K1 w - - 0 1");
+        int ra2 = Array.FindIndex(moves, m => m.ToUci() == "a1a2");
+        int g2h3 = Array.FindIndex(moves, m => m.ToUci() == "g2h3");
+        Assert.True(ra2 >= 0 && g2h3 >= 0);
+        Assert.False(keep[ra2]);
+        Assert.True(keep[g2h3]);
+    }
 }

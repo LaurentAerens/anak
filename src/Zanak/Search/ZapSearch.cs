@@ -409,8 +409,48 @@ public sealed class ZapSearch : IDisposable
         }
         _workerPool.SetRootBoard(in rootBoard);
 
-        // Root moves are intentionally NOT sorted: every 1-ply move gets a spine anyway.
+        // Quick removal of clearly bad 1-ply moves (null-move baseline) before any spine is generated,
+        // then sort surviving root moves so time-gated Phase 1 seeding never truncates strong candidates.
         Move[] movesArray = legalMoves.AsSpan().ToArray();
+        Span<bool> keepRoot = stackalloc bool[movesArray.Length];
+        Span<int> rootLoss = stackalloc int[movesArray.Length];
+        long filterStart = Stopwatch.GetTimestamp();
+        int rejectedRoots = ZapRootFilter.Filter(in rootBoard, movesArray, keepRoot, _params.RootFilterMarginCp, rootLoss, out int rootNullLoss);
+        RootFilterMs = Stopwatch.GetElapsedTime(filterStart).TotalMilliseconds;
+        int survivingRoots = movesArray.Length - rejectedRoots;
+
+        Span<int> rootOrderScore = stackalloc int[movesArray.Length];
+        for (int i = 0; i < movesArray.Length; i++)
+        {
+            Move m = movesArray[i];
+            bool keep = keepRoot[i];
+            int s = keep ? 1_000_000 : 0;
+            if (m.IsPromotion) s += 20_000;
+            if (m.IsCapture)
+            {
+                int see = StaticExchangeEvaluator.Evaluate(in rootBoard, m);
+                s += see >= 0 ? 10_000 + see : see;
+            }
+            else
+            {
+                if (rootNullLoss >= 100) s += Math.Max(0, rootNullLoss - rootLoss[i]) * 10;
+                s += ZapPolicy.ScoreQuietCentrality(m);
+            }
+            if (rootBoard.GivesCheck(m)) s += 5_000;
+
+            int pos = i;
+            while (pos > 0 && rootOrderScore[pos - 1] < s)
+            {
+                rootOrderScore[pos] = rootOrderScore[pos - 1];
+                movesArray[pos] = movesArray[pos - 1];
+                keepRoot[pos] = keepRoot[pos - 1];
+                pos--;
+            }
+            rootOrderScore[pos] = s;
+            movesArray[pos] = m;
+            keepRoot[pos] = keep;
+        }
+
         _sharedState.Reset(movesArray);
         _workerPool.SpineTree.Reset(movesArray.Length);
         uint generation = _sharedState.NextGeneration();
@@ -425,13 +465,6 @@ public sealed class ZapSearch : IDisposable
 
         // Phase 1 Time Gating: Reserve at least 60% of the soft time budget for the Worker Pool!
         long maxPhase1Ms = Math.Max(5, (long)(budget.SoftLimitMs * 0.40));
-
-        // Quick removal of clearly bad 1-ply moves (null-move baseline) before any spine is generated.
-        Span<bool> keepRoot = stackalloc bool[movesArray.Length];
-        long filterStart = Stopwatch.GetTimestamp();
-        int rejectedRoots = ZapRootFilter.Filter(in rootBoard, movesArray, keepRoot, _params.RootFilterMarginCp);
-        RootFilterMs = Stopwatch.GetElapsedTime(filterStart).TotalMilliseconds;
-        int survivingRoots = movesArray.Length - rejectedRoots;
 
         SearchBudget effectiveBudget = budget;
         if (budget.ExtendHorizonWithTime && survivingRoots is >= 2 and <= 4)
@@ -462,6 +495,7 @@ public sealed class ZapSearch : IDisposable
             {
                 _sharedState.UpdateCandidateBaseline(i, -30000, Move.Null);
                 _sharedState.UpdateCandidateTrajectory(i, ReadOnlySpan<ZapTrajectoryStep>.Empty);
+                _sharedState.SetRootMoveStatus(i, RootMoveStatus.Dead);
                 continue;
             }
 
@@ -670,8 +704,11 @@ public sealed class ZapSearch : IDisposable
         // Iterative deepening & monitoring loop. With a clock budget the horizon keeps growing while time
         // remains; deeper spines re-open their crosspoints with longer agent horizons.
         int currentIterDepth = baseDepth + 1;
+        int threadScaledCap = Math.Min(
+            _timeManager.Parameters.ExtendedHorizonMaxPlies,
+            18 + Math.Min(14, Math.Max(1, _params.DefaultThreads) * 3));
         int depthCap = effectiveBudget.ExtendHorizonWithTime
-            ? Math.Max(effectiveBudget.MaxDepthHorizon, _timeManager.Parameters.ExtendedHorizonMaxPlies)
+            ? Math.Max(effectiveBudget.MaxDepthHorizon, threadScaledCap)
             : effectiveBudget.MaxDepthHorizon;
         int prevLeaderIdx = _sharedState.BestCandidateIndex;
         int leaderBaseCrosspoints = _sharedState.GetRootCompletedCrosspoints(prevLeaderIdx);
@@ -931,6 +968,7 @@ public sealed class ZapSearch : IDisposable
                 {
                     if (c == leaderIdx) continue;
                     ZapRootCandidate cand = _sharedState.GetCandidate(c);
+                    if (cand.IsDeadStem || cand.Status != RootMoveStatus.Active) continue;
                     int pos = contenderCount++;
                     while (pos > 0 && contenderScore[pos - 1] < cand.Score)
                     {

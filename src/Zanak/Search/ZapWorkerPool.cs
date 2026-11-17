@@ -149,6 +149,7 @@ public sealed class ZapWorkerPool : IDisposable
     private int _siblingsTraced;
     private long _firstBatchMs = -1;
     private readonly ZapSpineTree _tree = new();
+    private readonly int[] _killerMoves = new int[64];
     public int AgentsImproved => Volatile.Read(ref _agentsImproved);
     public int AgentsSpliced => Volatile.Read(ref _agentsSpliced);
     public long SubspinePositions => Interlocked.Read(ref _subspinePositions);
@@ -168,6 +169,7 @@ public sealed class ZapWorkerPool : IDisposable
         Interlocked.Exchange(ref _completedCrosspoints, 0);
         Interlocked.Exchange(ref _siblingsTraced, 0);
         Interlocked.Exchange(ref _firstBatchMs, -1);
+        Array.Clear(_killerMoves, 0, _killerMoves.Length);
     }
 
     private void WorkerLoop(int workerId)
@@ -262,6 +264,11 @@ public sealed class ZapWorkerPool : IDisposable
         if (cp.Generation != _sharedState.Generation || !CanContinue() ||
             cp.OriginalMove.IsNull || !board.IsLegal(cp.OriginalMove)) return;
 
+        // Seed the incremental NNUE accumulator once at the crosspoint board (depth 0);
+        // each sibling in this batch rolls back to depth 0 instead of recomputing from scratch.
+        if (evaluator is ZanakNnueEvaluator nnue) nnue.ResetAccumulatorStack(in board);
+        else if (evaluator is IIncrementalEvaluator rootIncremental) rootIncremental.InitSearch(in board);
+
         var children = new List<ZapSpineTree.Child>();
         if (work == null)
         {
@@ -269,16 +276,32 @@ public sealed class ZapWorkerPool : IDisposable
             MoveGenerator.GenerateLegalMoves(in board, ref legalMoves);
             if (legalMoves.Count == 0) return;
             Span<bool> keep = stackalloc bool[legalMoves.Count];
-            ZapRootFilter.Filter(in board, legalMoves.AsSpan(), keep, _params.RootFilterMarginCp);
+            Span<int> siblingLoss = stackalloc int[legalMoves.Count];
+            int filterMargin = cp.Ply >= 4
+                ? Math.Max(80, _params.RootFilterMarginCp * 3 / 4)
+                : _params.RootFilterMarginCp;
+            ZapRootFilter.Filter(in board, legalMoves.AsSpan(), keep, filterMargin, siblingLoss, out int nullLoss);
             var siblings = new List<(Move Move, int Score)>(legalMoves.Count);
             Move hint = _tt != null && _tt.TryGet(zobrist, out var entry) ? entry.BestMove : Move.Null;
+            int killerRaw = (uint)cp.Ply < (uint)_killerMoves.Length ? Volatile.Read(ref _killerMoves[cp.Ply]) : 0;
             for (int i = 0; i < legalMoves.Count; i++)
             {
                 Move move = legalMoves[i];
                 if (!keep[i] || move == cp.OriginalMove) continue;
-                int score = (move == hint ? 100_000 : 0) + (move.IsPromotion ? 20_000 : 0)
-                    + (move.IsCapture ? 10_000 + StaticExchangeEvaluator.Evaluate(in board, move) : 0)
-                    + (board.GivesCheck(move) ? 5_000 : 0);
+                int score = move == hint ? 100_000 : 0;
+                if (move.IsPromotion) score += 20_000;
+                if (move.IsCapture)
+                {
+                    int see = StaticExchangeEvaluator.Evaluate(in board, move);
+                    score += see >= 0 ? 10_000 + see : see;
+                }
+                else
+                {
+                    if (move.RawValue == killerRaw) score += 8_000;
+                    if (nullLoss >= 100) score += Math.Max(0, nullLoss - siblingLoss[i]) * 10;
+                    score += ZapPolicy.ScoreQuietCentrality(move);
+                }
+                if (board.GivesCheck(move)) score += 5_000;
                 siblings.Add((move, score));
             }
             // This orders agent siblings only; the greedy spine policy still selects exactly one move.
@@ -289,6 +312,10 @@ public sealed class ZapWorkerPool : IDisposable
             work.BestSteps = originalTrajectory.AsSpan().ToArray();
             children.Add(new ZapSpineTree.Child(work.BestSteps, work.Baseline));
         }
+
+        _sharedState.GetBestCandidate(out int currentLeaderIdx);
+        bool refutingLeader = isOpponentTurn && (uint)currentLeaderIdx < 64 && (linkedMask & (1UL << currentLeaderIdx)) != 0;
+        int secondBestScore = refutingLeader ? _sharedState.GetSecondBestCandidate().Score : int.MinValue;
 
         int batchLimit = Math.Max(1, _params.MaxSiblingExploration);
         bool improved = false;
@@ -309,6 +336,10 @@ public sealed class ZapWorkerPool : IDisposable
                 work.BestMove = sibling;
                 work.BestSteps = steps;
                 improved = true;
+                if (refutingLeader && secondBestScore > int.MinValue + 1000 && work.BestScore < secondBestScore - 30)
+                {
+                    break;
+                }
             }
         }
         work.Batches++;
@@ -322,7 +353,14 @@ public sealed class ZapWorkerPool : IDisposable
 
         if (!work.BestMove.IsNull)
         {
-            if (improved) Interlocked.Increment(ref _agentsImproved);
+            if (improved)
+            {
+                Interlocked.Increment(ref _agentsImproved);
+                if ((uint)cp.Ply < (uint)_killerMoves.Length)
+                {
+                    Volatile.Write(ref _killerMoves[cp.Ply], work.BestMove.RawValue);
+                }
+            }
             _tt?.Store(zobrist, work.BestMove, (byte)Math.Clamp(remainingHorizon, 1, 255), (short)Math.Clamp(work.BestScore, short.MinValue + 1, short.MaxValue - 1), flags: 2);
         }
 
@@ -347,6 +385,7 @@ public sealed class ZapWorkerPool : IDisposable
             ZapRootCandidate updated = _sharedState.GetCandidate(r);
             if (updated.Score != scoresBefore[r])
             {
+                _workQueue.DecaySpinePickCount(r);
                 CreditEarlierDecisions(r, in updated, zobrist, Math.Abs(updated.Score - scoresBefore[r]), cp.Generation);
             }
         }
@@ -382,8 +421,8 @@ public sealed class ZapWorkerPool : IDisposable
         ZapPolicy policy, IEvaluator evaluator, ref ZapTrajectory trajectory)
     {
         Board scratch = board;
-        if (evaluator is ZanakNnueEvaluator nnue) nnue.ResetAccumulatorStack(in scratch);
-        else if (evaluator is IIncrementalEvaluator rootIncremental) rootIncremental.InitSearch(in scratch);
+        IIncrementalEvaluator? incremental = evaluator as IIncrementalEvaluator;
+        incremental?.RollbackTo(0);
         int parentRaw = (int)evaluator.Evaluate(in scratch);
         int parentEval = scratch.SideToMove == _engineColor ? parentRaw : -parentRaw;
         Piece piece = scratch.GetPieceAt(move.From);
@@ -392,14 +431,14 @@ public sealed class ZapWorkerPool : IDisposable
             throw new InvalidOperationException($"Illegal crosspoint continuation: {move.ToUci()}");
         }
         SearchTrace?.WriteEdge(board.ZobristKey, scratch.ZobristKey, move);
-        if (evaluator is IIncrementalEvaluator incremental) incremental.PushMove(move, piece, state.CapturedPiece, in scratch);
+        incremental?.PushMove(move, piece, state.CapturedPiece, in scratch);
         int childRaw = (int)evaluator.Evaluate(in scratch);
         int childEval = scratch.SideToMove == _engineColor ? childRaw : -childRaw;
 
         ZapTrajectory tail = default;
         int score = ZapProbe.Trace(ref scratch, Math.Max(0, horizon - 1), policy, evaluator, _engineColor, ref tail,
             initialLastMove: move, parameters: _params, tablebase: _tablebase, searchPly: ply + 1, tt: _tt,
-            maxPlies: Math.Max(0, horizon - 1), searchTrace: SearchTrace);
+            maxPlies: Math.Max(0, horizon - 1), searchTrace: SearchTrace, initAccumulator: false);
 
         trajectory.Clear();
         trajectory.Add(new ZapTrajectoryStep(state, board.ZobristKey, move, board.SideToMove,

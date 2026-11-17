@@ -47,7 +47,8 @@ public sealed class TimeManager
         int movesToGo = 0,
         int moveTimeMs = 0,
         int depthLimit = 0,
-        bool infinite = false)
+        bool infinite = false,
+        int threads = 1)
     {
         // 1. Time Limits Calculation
         int softMs;
@@ -116,10 +117,11 @@ public sealed class TimeManager
         }
         else
         {
-            double logMs = Math.Log10(Math.Max(1.0, softMs));
-            int scaledBase = (int)Math.Round(1.0 + 3.2 * logMs);
+            double computeMs = Math.Max(1.0, (double)softMs * Math.Max(1, threads));
+            double logComputeMs = Math.Log10(computeMs);
+            int scaledBase = (int)Math.Round(1.0 + 3.2 * logComputeMs);
             targetBaseDepth = Math.Clamp(scaledBase, 1, _params.ClassicalMaxBaseDepth);
-            int horizonDelta = Math.Clamp((int)Math.Round(1.5 + 1.5 * logMs), 2, _params.ClassicalHorizonOffset);
+            int horizonDelta = Math.Clamp((int)Math.Round(1.5 + 1.5 * logComputeMs), 2, _params.ClassicalHorizonOffset);
             maxDepthHorizon = targetBaseDepth + horizonDelta;
         }
 

@@ -57,7 +57,8 @@ public sealed class ZapSearchEngine : ISearchEngine, IDisposable
             movesToGo: limits.MovesToGo,
             moveTimeMs: limits.MoveTime,
             depthLimit: limits.Depth,
-            infinite: limits.Infinite);
+            infinite: limits.Infinite,
+            threads: _params.DefaultThreads);
 
         Action<ZapSearchStats>? zapCallback = null;
         if (infoCallback != null)
