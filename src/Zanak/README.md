@@ -1,6 +1,6 @@
 # Zanak Chess Engine — ZAP (Zero-branching Accelerated Probe)
 
-![Zanak Search Demo](../../docs/zanak-v0.0.3-demo.gif)
+![Zanak Search Demo](../../docs/zanak-v0.0.4-demo.gif)
 
 ## 1. Executive Summary & Philosophy
 
@@ -189,23 +189,14 @@ As demonstrated in recent benchmark runs against Stockfish 1320:
 3. **Throughput vs. Horizon:**
    - ZAP requires high node throughput on single cores. Bitboard intrinsics (`BMI2`, `AVX2`) and vectorized SEE are critical to keeping spine tracing sub-microsecond.
 
-### Time-Control Elo Profile (`v0.0.3` vs `Stockfish-1320`)
+### Time-Control Elo Profile (`v0.0.4` vs `Stockfish-1320`)
 
 Measured with `Threads=1` on [`openings.epd`](../../tools/fastchess/openings.epd) against Stockfish (`UCI_LimitStrength=true`, `UCI_Elo=1320`):
 
 | Time Control | Games | Score | W-L-D | Elo vs SF-1320 | Est. Elo | LOS |
 |---|---:|---:|---:|---:|---:|---:|
-| `1+0.01` | 100 | 62.50% | 61-36-3 | `+88.74 ± 74.89` | **~1409** | 99.32% |
-| `5+0.05` | 50 | 38.00% | 17-29-4 | `-85.04 ± 96.78` | **~1235** | 3.24% |
-| `10+0.1` | 30 | 36.67% | 11-19-0 | `-94.94 ± 179.23` | **~1225** | 11.32% |
+| `1+0.01` | 100 | 56.00% | 52-40-8 | `+41.89 ± 69.02` | **~1362** | 88.83% |
+| `5+0.05` | 50 | 60.00% | 28-18-4 | `+70.44 ± 101.42` | **~1390** | 92.55% |
+| `10+0.1` | 30 | 43.33% | 13-17-0 | `-46.60 ± 114.91` | **~1273** | 20.18% |
 
-```text
-Est. Elo
-1410 | *  (1+0.01: ~1409)
-1360 |  \
-1310 |   \
-1260 |    \
-1210 |     *-------*  (5+0.05: ~1235 -> 10+0.1: ~1225)
-     +--------------------
-       1+0.01  5+0.05  10+0.1
-```
+![Zanak Elo vs Time Control](../../docs/zanak-v0.0.4-elo-tc.png)

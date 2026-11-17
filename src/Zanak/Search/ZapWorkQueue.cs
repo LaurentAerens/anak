@@ -187,6 +187,19 @@ public sealed class ZapWorkQueue
             }
             blame[j] = Math.Min(short.MaxValue, blame[j]);
         }
+        // Catch slow 3-ply positional drift where no ply in the window triggered a single-ply shock.
+        for (int j = 0; j + 2 < n; j++)
+        {
+            if (blame[j] != 0 || blame[j + 1] != 0 || blame[j + 2] != 0) continue;
+            if (Gain(steps[j], engineColor) > 0) continue;
+            int netDrop = steps[j].SideToMove == engineColor
+                ? steps[j].ParentEval - steps[j + 2].StaticEval
+                : steps[j + 2].StaticEval - steps[j].ParentEval;
+            if (netDrop >= parameters.DriftThresholdCp)
+            {
+                blame[j] = Math.Min(short.MaxValue, netDrop);
+            }
+        }
         return blame;
 
         static int Gain(in ZapTrajectoryStep step, Color engineColor) =>

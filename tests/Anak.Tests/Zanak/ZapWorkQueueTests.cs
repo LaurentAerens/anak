@@ -31,6 +31,23 @@ public sealed class ZapWorkQueueTests
         Assert.Equal(261, blame[2]);
     }
 
+    [Fact]
+    public void Responsibility_DetectsSlowThreePlyDrift_WithoutSinglePlyShock()
+    {
+        // Engine is White; each quiet ply drifts -25cp/-20cp/-25cp = -70cp over 3 plies
+        // without any single ply crossing ShockThresholdCp (73) or QuietEvalDropMinCp (45).
+        ZapTrajectoryStep[] steps =
+        [
+            Step(Color.White, 0, -25),
+            Step(Color.Black, -25, -45),
+            Step(Color.White, -45, -70),
+        ];
+
+        int[] blame = ZapWorkQueue.ComputeResponsibility(steps, Color.White, 1, new ZapParams());
+
+        Assert.Equal(70, blame[0]);
+    }
+
     private static ZapTrajectoryStep Step(Color side, short parent, short eval) =>
         new(default, 0, Move.Null, side, parent, eval, (short)(eval - parent));
 

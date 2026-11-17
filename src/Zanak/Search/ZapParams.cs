@@ -85,6 +85,12 @@ public sealed class ZapParams
     public int CrosspointAboveShockMalusWeight { get; set; } = 100;
 
     /// <summary>
+    /// Minimum 3-ply cumulative eval drop (in centipawns) against the side moving at ply j
+    /// to flag slow multi-move positional drift as a crosspoint even without a single-ply shock.
+    /// </summary>
+    public int DriftThresholdCp { get; set; } = 65;
+
+    /// <summary>
     /// Maximum number of tactical quiescence resolution plies at the end of a probe.
     /// </summary>
     public int QuiescenceMaxPlies { get; set; } = 2;
