@@ -1587,7 +1587,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             // Transposition Table LowerBound store
                             if (_stack[ply].ExcludedMove.IsNull)
                             {
-                                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                                short evalShort = TTEntry.ClampEval(rawEval);
                                 _tt.Store(key, move, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(score, ply), _tt.CurrentAge, TTFlags.LowerBound, _activeExpertId, evalShort);
                             }
 
@@ -1623,7 +1623,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             {
                 TTFlags flag = (bestScore > alphaOrig) ? TTFlags.Exact : TTFlags.UpperBound;
                 Move storeMove = !bestMove.IsNull ? bestMove : ttMove;
-                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                short evalShort = TTEntry.ClampEval(rawEval);
                 _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, ply), _tt.CurrentAge, flag, _activeExpertId, evalShort);
             }
 

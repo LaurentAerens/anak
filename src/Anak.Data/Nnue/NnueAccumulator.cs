@@ -193,48 +193,6 @@ public static unsafe class NnueAccumulator
     }
 
     /// <summary>
-    /// Subtracts a feature from an accumulator: acc[i] -= weights[featureIdx * dim + i].
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void SubFeature(int featureIdx, sbyte* weights, short* acc, int dim)
-    {
-        sbyte* wPtr = weights + (featureIdx * dim);
-
-        int i = 0;
-        if (Avx2.IsSupported && dim >= 32)
-        {
-            for (; i <= dim - 32; i += 32)
-            {
-                Vector256<short> w0 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i));
-                Vector256<short> w1 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i + 16));
-
-                (Vector256.Load(acc + i) - w0).Store(acc + i);
-                (Vector256.Load(acc + i + 16) - w1).Store(acc + i + 16);
-            }
-        }
-        else if (Vector128.IsHardwareAccelerated && dim >= 16)
-        {
-            for (; i <= dim - 16; i += 16)
-            {
-                Vector128<sbyte> w128 = Vector128.Load(wPtr + i);
-                Vector128<short> wLo = Vector128.WidenLower(w128);
-                Vector128<short> wHi = Vector128.WidenUpper(w128);
-
-                Vector128<short> aLo = Vector128.Load(acc + i);
-                Vector128<short> aHi = Vector128.Load(acc + i + 8);
-
-                (aLo - wLo).Store(acc + i);
-                (aHi - wHi).Store(acc + i + 8);
-            }
-        }
-
-        for (; i < dim; i++)
-        {
-            acc[i] -= wPtr[i];
-        }
-    }
-
-    /// <summary>
     /// Fused single-pass accumulator update for quiet moves: dst[i] = src[i] - weights[subIdx] + weights[addIdx].
     /// Avoids a separate memory copy and reduces memory round-trips from 3 passes to 1.
     /// </summary>

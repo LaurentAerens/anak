@@ -277,7 +277,7 @@ public sealed class QuiescenceSearch
 
             if (score >= beta)
             {
-                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                short evalShort = TTEntry.ClampEval(rawEval);
                 _tt?.Store(key, move, 0, TTEntry.ScoreToTt(beta, ply), _tt.CurrentAge, TTFlags.LowerBound, ActiveExpertId, evalShort);
                 return beta;
             }
@@ -290,7 +290,7 @@ public sealed class QuiescenceSearch
         }
 
         TTFlags flag = (alpha > originalAlpha) ? TTFlags.Exact : TTFlags.UpperBound;
-        short finalEvalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+        short finalEvalShort = TTEntry.ClampEval(rawEval);
         _tt?.Store(key, bestMove, 0, TTEntry.ScoreToTt(alpha, ply), _tt?.CurrentAge ?? 1, flag, ActiveExpertId, finalEvalShort);
         return alpha;
     }
