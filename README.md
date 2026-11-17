@@ -4,7 +4,7 @@
 [![Release](https://github.com/LaurentAerens/anak/actions/workflows/release.yml/badge.svg)](https://github.com/LaurentAerens/anak/actions/workflows/release.yml)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![.NET](https://img.shields.io/badge/.NET-11.0-512BD4.svg)](https://dotnet.microsoft.com/)
-[![Elo Rating](https://img.shields.io/badge/CCRL%20%2F%20SPRT%20Elo-2677%2B-brightgreen.svg)](BENCHMARKS.md)
+[![Elo Rating](https://img.shields.io/badge/CCRL%20%2F%20SPRT%20Elo-2754%2B-brightgreen.svg)](BENCHMARKS.md)
 
 **Anak** is a high-performance UCI chess engine authored by **Laurent Aerens** (Belgium), architected for `.NET 11` (`net11.0`) and compiled with NativeAOT. It combines hardware SIMD intrinsics, zero-GC allocation discipline, Magic Bitboards, an **Alpha-Beta (Negamax / PVS)** search engine with Lazy SMP, pure managed **Syzygy endgame tablebase probing**, a **PolyGlot opening book reader**, and a **Unified Shared-FT Mixture-of-Experts (MoE) NNUE** evaluation pipeline.
 
