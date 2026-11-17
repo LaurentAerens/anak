@@ -12,15 +12,12 @@ namespace Anak.Data.Evaluation;
 /// </summary>
 public sealed class DefaultEvaluator : IEvaluator
 {
-    // TODO: Custom neural/heuristic eval here (e.g. NNUE / ONNX tensor evaluations)
-
     // Base piece material values
     private const int PawnValue = 100;
     private const int KnightValue = 320;
     private const int BishopValue = 330;
     private const int RookValue = 500;
     private const int QueenValue = 900;
-    private const int KingValue = 20000;
 
     // Game phase weights for tapered evaluation (Total = 24)
     private const int KnightPhase = 1;
@@ -28,6 +25,35 @@ public sealed class DefaultEvaluator : IEvaluator
     private const int RookPhase = 2;
     private const int QueenPhase = 4;
     private const int TotalPhase = 24;
+
+    private static readonly ulong[] AdjacentFileMasks = new ulong[8];
+    private static readonly ulong[,] PassedPawnMasks = new ulong[2, 64];
+
+    static DefaultEvaluator()
+    {
+        for (int f = 0; f < 8; f++)
+        {
+            ulong adj = 0UL;
+            if (f > 0) adj |= Bitboard.FileMasks[f - 1];
+            if (f < 7) adj |= Bitboard.FileMasks[f + 1];
+            AdjacentFileMasks[f] = adj;
+        }
+
+        for (int sq = 0; sq < 64; sq++)
+        {
+            int f = sq & 7;
+            int r = sq >> 3;
+            ulong files = Bitboard.FileMasks[f] | AdjacentFileMasks[f];
+
+            ulong whiteAhead = 0UL;
+            for (int rr = r + 1; rr < 8; rr++) whiteAhead |= Bitboard.RankMasks[rr];
+            PassedPawnMasks[(int)Color.White, sq] = files & whiteAhead;
+
+            ulong blackAhead = 0UL;
+            for (int rr = r - 1; rr >= 0; rr--) blackAhead |= Bitboard.RankMasks[rr];
+            PassedPawnMasks[(int)Color.Black, sq] = files & blackAhead;
+        }
+    }
 
     #region Piece-Square Tables (Midgame & Endgame)
 
@@ -308,74 +334,32 @@ public sealed class DefaultEvaluator : IEvaluator
             }
 
             // Isolated pawn penalty
-            if (count > 0)
+            if (count > 0 && (myPawns & AdjacentFileMasks[file]) == 0)
             {
-                ulong adjMask = 0UL;
-                if (file > 0) adjMask |= Bitboard.FileMasks[file - 1];
-                if (file < 7) adjMask |= Bitboard.FileMasks[file + 1];
-
-                if ((myPawns & adjMask) == 0)
-                {
-                    score -= count * 20;
-                }
+                score -= count * 20;
             }
         }
 
         // Passed pawns bonus
+        int colorIdx = isWhite ? (int)Color.White : (int)Color.Black;
         ulong tempPawns = myPawns;
         while (tempPawns != 0)
         {
             Square sq = Bitboard.PopLsb(ref tempPawns);
-            int file = (int)sq.File();
-            int rank = (int)sq.Rank();
-
-            ulong aheadMask = 0UL;
-            if (isWhite)
+            if ((enemyPawns & PassedPawnMasks[colorIdx, (int)sq]) == 0)
             {
-                for (int r = rank + 1; r < 8; r++)
+                int rank = (int)sq.Rank();
+                int advanced = isWhite ? rank : 7 - rank;
+                score += advanced switch
                 {
-                    aheadMask |= Bitboard.RankMasks[r] & Bitboard.FileMasks[file];
-                    if (file > 0) aheadMask |= Bitboard.RankMasks[r] & Bitboard.FileMasks[file - 1];
-                    if (file < 7) aheadMask |= Bitboard.RankMasks[r] & Bitboard.FileMasks[file + 1];
-                }
-
-                if ((enemyPawns & aheadMask) == 0)
-                {
-                    score += rank switch
-                    {
-                        1 => 10,
-                        2 => 15,
-                        3 => 25,
-                        4 => 45,
-                        5 => 75,
-                        6 => 120,
-                        _ => 0
-                    };
-                }
-            }
-            else
-            {
-                for (int r = rank - 1; r >= 0; r--)
-                {
-                    aheadMask |= Bitboard.RankMasks[r] & Bitboard.FileMasks[file];
-                    if (file > 0) aheadMask |= Bitboard.RankMasks[r] & Bitboard.FileMasks[file - 1];
-                    if (file < 7) aheadMask |= Bitboard.RankMasks[r] & Bitboard.FileMasks[file + 1];
-                }
-
-                if ((enemyPawns & aheadMask) == 0)
-                {
-                    int advanced = 7 - rank;
-                    score += advanced switch
-                    {
-                        1 => 10,
-                        2 => 15,
-                        3 => 25,
-                        4 => 45,
-                        5 => 75,
-                        6 => 120,
-                        _ => 0
-                    };
-                }
+                    1 => 10,
+                    2 => 15,
+                    3 => 25,
+                    4 => 45,
+                    5 => 75,
+                    6 => 120,
+                    _ => 0
+                };
             }
         }
 

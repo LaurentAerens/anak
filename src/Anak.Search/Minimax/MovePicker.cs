@@ -209,27 +209,7 @@ public ref struct MovePicker
         _capturesGenerated = true;
         _legalMoves.Clear();
         MoveGenerator.GenerateLegalCaptures(in _board, ref _legalMoves);
-
-        if (_ttMovePicked && !_ttMove.IsNull)
-        {
-            int ttIdx = FindMove(_ttMove);
-            if (ttIdx >= 0) MarkPicked(ttIdx);
-        }
-        if (_killer0Picked && !_killer0.IsNull)
-        {
-            int k0Idx = FindMove(_killer0);
-            if (k0Idx >= 0) MarkPicked(k0Idx);
-        }
-        if (_killer1Picked && !_killer1.IsNull)
-        {
-            int k1Idx = FindMove(_killer1);
-            if (k1Idx >= 0) MarkPicked(k1Idx);
-        }
-        if (_counterMovePicked && !_counterMove.IsNull)
-        {
-            int cmIdx = FindMove(_counterMove);
-            if (cmIdx >= 0) MarkPicked(cmIdx);
-        }
+        MarkSpecialMovesPicked();
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -241,6 +221,17 @@ public ref struct MovePicker
         MoveGenerator.GenerateLegalMoves(in _board, ref _legalMoves);
         _picked = default;
 
+        MarkSpecialMovesPicked();
+        for (int p = 0; p < _playedGoodCapturesCount; p++)
+        {
+            int capIdx = FindMove(_playedGoodCaptures[p]);
+            if (capIdx >= 0) MarkPicked(capIdx);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void MarkSpecialMovesPicked()
+    {
         if (_ttMovePicked && !_ttMove.IsNull)
         {
             int ttIdx = FindMove(_ttMove);
@@ -260,11 +251,6 @@ public ref struct MovePicker
         {
             int cmIdx = FindMove(_counterMove);
             if (cmIdx >= 0) MarkPicked(cmIdx);
-        }
-        for (int p = 0; p < _playedGoodCapturesCount; p++)
-        {
-            int capIdx = FindMove(_playedGoodCaptures[p]);
-            if (capIdx >= 0) MarkPicked(capIdx);
         }
     }
 
