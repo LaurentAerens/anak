@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.0` (Estimated Rating: **2965 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.1` (Estimated Rating: **2965 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,14 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.1` (2026-11-18) — Bit-Identical Code & Math Simplification, NPS Gains & Book Retuning
+- **Category:** Zero-Regression Throughput & Maintainability (Patch Release)
+- **Estimated Elo:** **2965 &plusmn; 6** (`+4.04 ± 5.92` Elo over `v1.0.32` in 8,000 games at `1+0.01`: `2747W / 2654L / 2599D`, `50.58%`, `90.95% LOS`)
+- **Highlights:**
+  - **100% Bit-Identical NPS & Core Simplifications (`f1df032`, `7c39995`):** Branchless `Move.IsCapture` / `PromotionPieceType`, `BitOperations.Log2` in `Bitboard.Msb`, `Unsafe.Add` piece/color indexing and `(int)to ^ 8` EP victim in `Board`/`SEE`, `[SkipLocalsInit]` and `(opennessPct - low) << 4` in `MultiTierNnueEvaluator`, cached `OpenThresholdPct` / `AttackMinOpennessPct` in `ExpertRouting`, `SubSubAddAddFeature` for `Buckets == 1` castling, fast threshold swap loop in `SEE.HasPositiveOrEqualSee`, `knownInCheck: 0` passed to `QuiescenceSearch`, `GivesCheckCached` in `AlphaBeta` pre-move pruning, hoisted `ContinuationHistory.GetBaseOffset`, and `pvBoard.IsLegal` in `ExtractPv` (+2.17% `bench 12` NPS / +2.70% over 10k fixed-node positions with 0/10,000 mismatches).
+  - **Code Cleanup (`7d63546`, `094bc3c`):** Precomputed `PassedPawnMasks` & `AdjacentFileMasks` in `DefaultEvaluator`, deduplicated `MovePicker.MarkSpecialMovesPicked` and `TTEntry.ClampEval`, and removed unused `SubFeature` / heuristic margin helpers.
+  - **PolyGlot Book Fix (`2a7f9b2`):** Retuned `book.bin` from clean baseline without blunder-pruning draws.
 
 ### `v1.1.0` (2026-11-17) — Milestone Release (`v1.0.0` → `v1.0.33` Consolidation)
 - **Category:** Major Milestone Release (Full Notes: [`RELEASE_v1.1.0.md`](RELEASE_v1.1.0.md))

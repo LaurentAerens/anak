@@ -807,6 +807,21 @@
       "tc": "5+0.05",
       "pgn": "tools/fastchess/results/ordo_gauntlet_20261117_090026_clean.pgn",
       "notes": "Milestone release consolidating v1.0.0 through v1.0.33 (Unified Shared-FT MoE NNUE, Correction History overhaul, 2.21x + 14.1% NPS gains, search/pruning/time/book tuning, and Ordo CCRL re-anchoring)"
+    },
+    "v1.1.1": {
+      "version": "v1.1.1",
+      "date": "2026-11-18",
+      "estimated_elo": 2965,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.0.32 (+4.04 Elo in 8,000 games; zero-regression NPS & cleanup)",
+      "score": "4046.5 / 8000",
+      "wins": 2747,
+      "losses": 2654,
+      "draws": 2599,
+      "perf_percent": 50.58,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.32_20261118_195839.pgn",
+      "notes": "Bit-identical core/data/search simplifications (+2.17% bench 12 NPS, 0/10k fixed-node mismatches), dead-code cleanup, and book.bin retuning"
     }
   }
 }
