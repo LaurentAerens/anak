@@ -18,6 +18,7 @@ namespace Anak.Data.Nnue;
 /// 2. Legacy 6-network expert routing (<c>open.nnue</c>, <c>closed.nnue</c>, <c>endgame.nnue</c>,
 ///    <c>queenless.nnue</c>, <c>imbalance.nnue</c>, <c>attack.nnue</c>), with fallback to DefaultEvaluator.
 /// </summary>
+[SkipLocalsInit]
 public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrementalEvaluator, IDisposable
 {
     private NnueWeights? _moeWeights;
@@ -488,12 +489,12 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board, _routing, out int opennessPct);
         if (leafExpert is NnueExpertType.Open or NnueExpertType.Closed)
         {
-            int thresholdPct = (int)MathF.Round(_routing.OpenThreshold * 100.0f);
+            int thresholdPct = _routing.OpenThresholdPct;
             int low = thresholdPct - 8;
             int high = thresholdPct + 8;
             if (opennessPct > low && opennessPct < high)
             {
-                int alpha256 = ((opennessPct - low) * 256) / 16;
+                int alpha256 = (opennessPct - low) << 4;
                 return NnueInference.EvaluateMoEBlended(
                     whiteAcc,
                     blackAcc,
@@ -590,15 +591,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     /// Uses incremental pre-accumulated state if called within an active search descent.
     /// Falls back gracefully to DefaultEvaluator if NNUE is disabled or weights are absent.
     /// </summary>
-    public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves)
-    {
-        if (!UseNnue)
-        {
-            return _fallbackEvaluator.Evaluate(in board, legalMoves);
-        }
-
-        return Evaluate(in board);
-    }
+    public Value Evaluate(in Board board, ReadOnlySpan<Move> legalMoves) => Evaluate(in board);
 
     public void Dispose()
     {

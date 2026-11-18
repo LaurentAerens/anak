@@ -52,7 +52,7 @@ public sealed class QuiescenceSearch
     /// Searches captures and promotions until a quiet position is reached.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public int Search(ref Board board, int alpha, int beta, int ply = 0, int qsDepth = 0)
+    public int Search(ref Board board, int alpha, int beta, int ply = 0, int qsDepth = 0, int knownInCheck = -1)
     {
         if ((++_qsNodes & 511) == 0 && _isTimeUp != null && _isTimeUp())
         {
@@ -83,7 +83,7 @@ public sealed class QuiescenceSearch
             if (entry.Flags == TTFlags.UpperBound && ttScore <= alpha) return ttScore;
         }
 
-        bool inCheck = board.IsInCheck();
+        bool inCheck = knownInCheck >= 0 ? knownInCheck != 0 : board.IsInCheck();
 
         // 2. Stand-pat evaluation (only when not in check)
         int rawEval = -Value.InfiniteValue;
@@ -277,7 +277,7 @@ public sealed class QuiescenceSearch
 
             if (score >= beta)
             {
-                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                short evalShort = TTEntry.ClampEval(rawEval);
                 _tt?.Store(key, move, 0, TTEntry.ScoreToTt(beta, ply), _tt.CurrentAge, TTFlags.LowerBound, ActiveExpertId, evalShort);
                 return beta;
             }
@@ -290,7 +290,7 @@ public sealed class QuiescenceSearch
         }
 
         TTFlags flag = (alpha > originalAlpha) ? TTFlags.Exact : TTFlags.UpperBound;
-        short finalEvalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+        short finalEvalShort = TTEntry.ClampEval(rawEval);
         _tt?.Store(key, bestMove, 0, TTEntry.ScoreToTt(alpha, ply), _tt?.CurrentAge ?? 1, flag, ActiveExpertId, finalEvalShort);
         return alpha;
     }

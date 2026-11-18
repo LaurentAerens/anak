@@ -61,6 +61,8 @@ public sealed class ExpertRouting
         ImbalanceMargin = imbalanceMargin;
         OpenThreshold = openThreshold;
         AttackMinOpenness = attackMinOpenness;
+        OpenThresholdPct = (int)MathF.Round(openThreshold * 100.0f);
+        AttackMinOpennessPct = (int)MathF.Round(attackMinOpenness * 100.0f);
     }
 
     /// <summary>Normalized (upper-case) rule order string.</summary>
@@ -73,6 +75,10 @@ public sealed class ExpertRouting
     public float OpenThreshold { get; }
 
     public float AttackMinOpenness { get; }
+
+    public int OpenThresholdPct { get; }
+
+    public int AttackMinOpennessPct { get; }
 
     /// <summary>Rule codes in evaluation order.</summary>
     public ReadOnlySpan<char> Rules => _order;

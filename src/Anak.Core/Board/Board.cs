@@ -85,19 +85,12 @@ public struct Board : IEquatable<Board>
     public readonly ulong PieceMaskKing => Kings;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly ulong GetPieces(Color color) => color == Color.White ? White : Black;
+    public readonly ulong GetPieces(Color color) => Unsafe.Add(ref Unsafe.AsRef(in White), (int)color);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly ulong GetPieces(PieceType type) => type switch
-    {
-        PieceType.Pawn => Pawns,
-        PieceType.Knight => Knights,
-        PieceType.Bishop => Bishops,
-        PieceType.Rook => Rooks,
-        PieceType.Queen => Queens,
-        PieceType.King => Kings,
-        _ => 0UL
-    };
+    public readonly ulong GetPieces(PieceType type) => ((uint)type - 1) < 6
+        ? Unsafe.Add(ref Unsafe.AsRef(in Pawns), (int)type - 1)
+        : 0UL;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly ulong GetPieces(Piece piece) => GetPieces(piece.Color()) & GetPieces(piece.Type());
@@ -183,17 +176,14 @@ public struct Board : IEquatable<Board>
 
         if (move.Type == MoveType.EnPassant)
         {
-            Square capSq = SquareExtensions.Create(to.File(), from.Rank());
-            occ &= ~(1UL << (byte)capSq);
+            occ &= ~(1UL << ((byte)to ^ 8));
         }
         else if (move.IsCastling)
         {
-            Square rFrom = move.Type == MoveType.KingCastle
-                ? (us == Color.White ? Square.H1 : Square.H8)
-                : (us == Color.White ? Square.A1 : Square.A8);
-            Square rTo = move.Type == MoveType.KingCastle
-                ? (us == Color.White ? Square.F1 : Square.F8)
-                : (us == Color.White ? Square.D1 : Square.D8);
+            int rankBase = (int)us * 56;
+            bool kingCastle = move.Type == MoveType.KingCastle;
+            Square rFrom = (Square)(rankBase + (kingCastle ? 7 : 0));
+            Square rTo = (Square)(rankBase + (kingCastle ? 5 : 3));
             occ = (occ & ~(1UL << (byte)rFrom)) | (1UL << (byte)rTo);
             toBit = 1UL << (byte)rTo;
             movedType = PieceType.Rook;
@@ -243,16 +233,8 @@ public struct Board : IEquatable<Board>
     private void AddPiece(Square sq, Color color, PieceType type)
     {
         ulong bit = 1UL << (byte)sq;
-        if (color == Color.White) White |= bit; else Black |= bit;
-        switch (type)
-        {
-            case PieceType.Pawn: Pawns |= bit; break;
-            case PieceType.Knight: Knights |= bit; break;
-            case PieceType.Bishop: Bishops |= bit; break;
-            case PieceType.Rook: Rooks |= bit; break;
-            case PieceType.Queen: Queens |= bit; break;
-            case PieceType.King: Kings |= bit; break;
-        }
+        Unsafe.Add(ref White, (int)color) |= bit;
+        Unsafe.Add(ref Pawns, (int)type - 1) |= bit;
         _mailbox[(byte)sq] = (byte)PieceExtensions.Create(color, type);
     }
 
@@ -260,16 +242,8 @@ public struct Board : IEquatable<Board>
     private void RemovePiece(Square sq, Color color, PieceType type)
     {
         ulong bit = 1UL << (byte)sq;
-        if (color == Color.White) White &= ~bit; else Black &= ~bit;
-        switch (type)
-        {
-            case PieceType.Pawn: Pawns &= ~bit; break;
-            case PieceType.Knight: Knights &= ~bit; break;
-            case PieceType.Bishop: Bishops &= ~bit; break;
-            case PieceType.Rook: Rooks &= ~bit; break;
-            case PieceType.Queen: Queens &= ~bit; break;
-            case PieceType.King: Kings &= ~bit; break;
-        }
+        Unsafe.Add(ref White, (int)color) &= ~bit;
+        Unsafe.Add(ref Pawns, (int)type - 1) &= ~bit;
         _mailbox[(byte)sq] = 0;
     }
 
@@ -277,16 +251,8 @@ public struct Board : IEquatable<Board>
     private void MovePiece(Square from, Square to, Color color, PieceType type)
     {
         ulong mask = (1UL << (byte)from) | (1UL << (byte)to);
-        if (color == Color.White) White ^= mask; else Black ^= mask;
-        switch (type)
-        {
-            case PieceType.Pawn: Pawns ^= mask; break;
-            case PieceType.Knight: Knights ^= mask; break;
-            case PieceType.Bishop: Bishops ^= mask; break;
-            case PieceType.Rook: Rooks ^= mask; break;
-            case PieceType.Queen: Queens ^= mask; break;
-            case PieceType.King: Kings ^= mask; break;
-        }
+        Unsafe.Add(ref White, (int)color) ^= mask;
+        Unsafe.Add(ref Pawns, (int)type - 1) ^= mask;
         _mailbox[(byte)to] = _mailbox[(byte)from];
         _mailbox[(byte)from] = 0;
     }
@@ -309,14 +275,14 @@ public struct Board : IEquatable<Board>
         PieceType movedType = movedPiece.Type();
 
         // Determine captured piece
-        Piece capturedPiece = Piece.None;
+        Piece capturedPiece;
         Square capSq = to;
         if (type == MoveType.EnPassant)
         {
-            capSq = SquareExtensions.Create(to.File(), from.Rank());
+            capSq = (Square)((int)to ^ 8);
             capturedPiece = them == Color.White ? Piece.WhitePawn : Piece.BlackPawn;
         }
-        else if ((Occupied & (1UL << (byte)to)) != 0)
+        else
         {
             capturedPiece = GetPieceAt(to);
         }
@@ -363,18 +329,11 @@ public struct Board : IEquatable<Board>
         // 3. Castling rook move
         if (move.IsCastling)
         {
-            Square rFrom, rTo;
+            int rankBase = (int)us * 56;
+            bool kingCastle = type == MoveType.KingCastle;
+            Square rFrom = (Square)(rankBase + (kingCastle ? 7 : 0));
+            Square rTo = (Square)(rankBase + (kingCastle ? 5 : 3));
             Piece rookPiece = us == Color.White ? Piece.WhiteRook : Piece.BlackRook;
-            if (type == MoveType.KingCastle)
-            {
-                rFrom = us == Color.White ? Square.H1 : Square.H8;
-                rTo = us == Color.White ? Square.F1 : Square.F8;
-            }
-            else
-            {
-                rFrom = us == Color.White ? Square.A1 : Square.A8;
-                rTo = us == Color.White ? Square.D1 : Square.D8;
-            }
             MovePiece(rFrom, rTo, us, PieceType.Rook);
             ZobristKey ^= Zobrist.PieceSquare[(int)rookPiece, (int)rFrom];
             ZobristKey ^= Zobrist.PieceSquare[(int)rookPiece, (int)rTo];
@@ -480,7 +439,7 @@ public struct Board : IEquatable<Board>
         if (state.CapturedPiece != Piece.None)
         {
             Square capSq = type == MoveType.EnPassant
-                ? SquareExtensions.Create(to.File(), from.Rank())
+                ? (Square)((int)to ^ 8)
                 : to;
             AddPiece(capSq, them, state.CapturedPiece.Type());
         }
@@ -488,17 +447,10 @@ public struct Board : IEquatable<Board>
         // 3. Undo castling rook move
         if (move.IsCastling)
         {
-            Square rFrom, rTo;
-            if (type == MoveType.KingCastle)
-            {
-                rFrom = us == Color.White ? Square.H1 : Square.H8;
-                rTo = us == Color.White ? Square.F1 : Square.F8;
-            }
-            else
-            {
-                rFrom = us == Color.White ? Square.A1 : Square.A8;
-                rTo = us == Color.White ? Square.D1 : Square.D8;
-            }
+            int rankBase = (int)us * 56;
+            bool kingCastle = type == MoveType.KingCastle;
+            Square rFrom = (Square)(rankBase + (kingCastle ? 7 : 0));
+            Square rTo = (Square)(rankBase + (kingCastle ? 5 : 3));
             MovePiece(rTo, rFrom, us, PieceType.Rook);
         }
 
@@ -976,7 +928,7 @@ public struct Board : IEquatable<Board>
 
         if (move.Type == MoveType.EnPassant)
         {
-            int capSq = us == Color.White ? (int)to - 8 : (int)to + 8;
+            int capSq = (int)to ^ 8;
             ulong capBit = 1UL << capSq;
             occAfter = (occupied ^ fromBit ^ capBit) | toBit;
             enemyAfter = enemyPieces ^ capBit;

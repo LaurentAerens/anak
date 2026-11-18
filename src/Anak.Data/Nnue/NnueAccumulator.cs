@@ -79,48 +79,23 @@ public static unsafe class NnueAccumulator
         Buffer.MemoryCopy(ftBiases, whiteAcc, dim * sizeof(short), dim * sizeof(short));
         Buffer.MemoryCopy(ftBiases, blackAcc, dim * sizeof(short), dim * sizeof(short));
 
-        if (weights.Buckets == 1)
+        int wBucket = weights.Buckets == 1 ? 0 : GetWhiteKingBucket(in board);
+        int bBucket = weights.Buckets == 1 ? 0 : GetBlackKingBucket(in board);
+
+        sbyte* wWeights = weights.FeatureWeights + (wBucket * NnueConstants.RawFeatureCount * dim);
+        sbyte* bWeights = weights.FeatureWeights + (bBucket * NnueConstants.RawFeatureCount * dim);
+
+        ulong occupied = board.Occupied;
+        while (occupied != 0)
         {
-            sbyte* ftWeights = weights.FeatureWeights;
-            ulong occupied = board.Occupied;
-            while (occupied != 0)
-            {
-                Square sq = (Square)BitOperations.TrailingZeroCount(occupied);
-                Piece piece = board.GetPieceAt(sq);
-                if (piece != Piece.None)
-                {
-                    int whiteIdx = GetWhiteFeatureIndex(piece.Type(), piece.Color(), sq);
-                    int blackIdx = GetBlackFeatureIndex(piece.Type(), piece.Color(), sq);
+            Square sq = (Square)BitOperations.TrailingZeroCount(occupied);
+            Piece piece = board.GetPieceAt(sq);
+            int whiteIdx = GetWhiteFeatureIndex(piece.Type(), piece.Color(), sq);
+            int blackIdx = GetBlackFeatureIndex(piece.Type(), piece.Color(), sq);
 
-                    AddFeature(whiteIdx, ftWeights, whiteAcc, dim);
-                    AddFeature(blackIdx, ftWeights, blackAcc, dim);
-                }
-                occupied &= occupied - 1;
-            }
-        }
-        else
-        {
-            int wBucket = GetWhiteKingBucket(in board);
-            int bBucket = GetBlackKingBucket(in board);
-
-            sbyte* wWeights = weights.FeatureWeights + (wBucket * NnueConstants.RawFeatureCount * dim);
-            sbyte* bWeights = weights.FeatureWeights + (bBucket * NnueConstants.RawFeatureCount * dim);
-
-            ulong occupied = board.Occupied;
-            while (occupied != 0)
-            {
-                Square sq = (Square)BitOperations.TrailingZeroCount(occupied);
-                Piece piece = board.GetPieceAt(sq);
-                if (piece != Piece.None)
-                {
-                    int whiteIdx = GetWhiteFeatureIndex(piece.Type(), piece.Color(), sq);
-                    int blackIdx = GetBlackFeatureIndex(piece.Type(), piece.Color(), sq);
-
-                    AddFeature(whiteIdx, wWeights, whiteAcc, dim);
-                    AddFeature(blackIdx, bWeights, blackAcc, dim);
-                }
-                occupied &= occupied - 1;
-            }
+            AddFeature(whiteIdx, wWeights, whiteAcc, dim);
+            AddFeature(blackIdx, bWeights, blackAcc, dim);
+            occupied &= occupied - 1;
         }
     }
 
@@ -214,48 +189,6 @@ public static unsafe class NnueAccumulator
         for (; i < dim; i++)
         {
             acc[i] += wPtr[i];
-        }
-    }
-
-    /// <summary>
-    /// Subtracts a feature from an accumulator: acc[i] -= weights[featureIdx * dim + i].
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static void SubFeature(int featureIdx, sbyte* weights, short* acc, int dim)
-    {
-        sbyte* wPtr = weights + (featureIdx * dim);
-
-        int i = 0;
-        if (Avx2.IsSupported && dim >= 32)
-        {
-            for (; i <= dim - 32; i += 32)
-            {
-                Vector256<short> w0 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i));
-                Vector256<short> w1 = Avx2.ConvertToVector256Int16(Vector128.Load(wPtr + i + 16));
-
-                (Vector256.Load(acc + i) - w0).Store(acc + i);
-                (Vector256.Load(acc + i + 16) - w1).Store(acc + i + 16);
-            }
-        }
-        else if (Vector128.IsHardwareAccelerated && dim >= 16)
-        {
-            for (; i <= dim - 16; i += 16)
-            {
-                Vector128<sbyte> w128 = Vector128.Load(wPtr + i);
-                Vector128<short> wLo = Vector128.WidenLower(w128);
-                Vector128<short> wHi = Vector128.WidenUpper(w128);
-
-                Vector128<short> aLo = Vector128.Load(acc + i);
-                Vector128<short> aHi = Vector128.Load(acc + i + 8);
-
-                (aLo - wLo).Store(acc + i);
-                (aHi - wHi).Store(acc + i + 8);
-            }
-        }
-
-        for (; i < dim; i++)
-        {
-            acc[i] -= wPtr[i];
         }
     }
 
@@ -423,33 +356,25 @@ public static unsafe class NnueAccumulator
                 SubSubAddFeature(wFrom, wCap, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
                 SubSubAddFeature(bFrom, bCap, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
             }
-            else
+            else if (move.IsCastling)
             {
-                SubAddFeature(wFrom, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
-                SubAddFeature(bFrom, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
-            }
-
-            if (move.IsCastling)
-            {
-                Square rFrom, rTo;
-                if (to > from)
-                {
-                    rFrom = us == Color.White ? Square.H1 : Square.H8;
-                    rTo = us == Color.White ? Square.F1 : Square.F8;
-                }
-                else
-                {
-                    rFrom = us == Color.White ? Square.A1 : Square.A8;
-                    rTo = us == Color.White ? Square.D1 : Square.D8;
-                }
+                int rankBase = (int)us * 56;
+                bool kingCastle = to > from;
+                Square rFrom = (Square)(rankBase + (kingCastle ? 7 : 0));
+                Square rTo = (Square)(rankBase + (kingCastle ? 5 : 3));
 
                 int wRFrom = GetWhiteFeatureIndex(PieceType.Rook, us, rFrom);
                 int bRFrom = GetBlackFeatureIndex(PieceType.Rook, us, rFrom);
                 int wRTo = GetWhiteFeatureIndex(PieceType.Rook, us, rTo);
                 int bRTo = GetBlackFeatureIndex(PieceType.Rook, us, rTo);
 
-                SubAddFeature(wRFrom, wRTo, ftWeights, dstWhiteAcc, dstWhiteAcc, dim);
-                SubAddFeature(bRFrom, bRTo, ftWeights, dstBlackAcc, dstBlackAcc, dim);
+                SubSubAddAddFeature(wFrom, wRFrom, wTo, wRTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubSubAddAddFeature(bFrom, bRFrom, bTo, bRTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
+            }
+            else
+            {
+                SubAddFeature(wFrom, wTo, ftWeights, srcWhiteAcc, dstWhiteAcc, dim);
+                SubAddFeature(bFrom, bTo, ftWeights, srcBlackAcc, dstBlackAcc, dim);
             }
             return;
         }

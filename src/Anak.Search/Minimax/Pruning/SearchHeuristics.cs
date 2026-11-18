@@ -154,44 +154,4 @@ public static class SearchHeuristics
         ulong nonPawnNonKing = sidePieces & ~board.Pawns & ~board.Kings;
         return nonPawnNonKing != 0;
     }
-
-    /// <summary>
-    /// Reverse Futility Pruning (Static Null Move Pruning) margin:
-    /// Prunes when staticEval - margin >= beta.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetReverseFutilityMargin(int depth, bool improving, float openness)
-    {
-        int baseMargin = improving ? 80 * depth : 120 * depth;
-        if (openness < 0.40f)
-        {
-            baseMargin = (baseMargin * 3) / 4; // Tighter margin in closed structures
-        }
-        return baseMargin;
-    }
-
-    /// <summary>
-    /// Futility Pruning margin for shallow depths:
-    /// Prunes quiet moves when staticEval + margin <= alpha.
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetFutilityMargin(int depth, bool improving)
-    {
-        return improving ? 100 * depth : 150 * depth;
-    }
-
-    /// <summary>
-    /// Razor Pruning margin for very shallow plies (depth 1 to 3).
-    /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int GetRazorMargin(int depth)
-    {
-        return depth switch
-        {
-            1 => 300,
-            2 => 500,
-            3 => 750,
-            _ => 1000
-        };
-    }
 }

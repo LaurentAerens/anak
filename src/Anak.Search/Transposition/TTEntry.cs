@@ -124,6 +124,10 @@ public struct TTEntry
         get => Key != 0 && (Depth > 0 || Flags != TTFlags.None);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static short ClampEval(int rawEval)
+        => rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+
     /// <summary>
     /// Resets the entry.
     /// </summary>

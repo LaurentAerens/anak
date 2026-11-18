@@ -1118,10 +1118,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 depth++;
             }
 
-            // 2. Quiescence Search at leaf nodes
+            // 2. Quiescence Search at leaf nodes (inCheck is guaranteed false here)
             if (depth <= 0)
             {
-                return _qsearch.Search(ref board, alpha, beta, ply);
+                return _qsearch.Search(ref board, alpha, beta, ply, knownInCheck: 0);
             }
 
             // Stack limit safety
@@ -1142,7 +1142,6 @@ public sealed class AlphaBetaEngine : ISearchEngine
             {
                 if (_engine._stopped ||
                     cancellationToken.IsCancellationRequested ||
-                    _engine._timeManager.ShouldStop(Nodes) ||
                     _engine._timeManager.IsHardTimeUp())
                 {
                     _engine._stopped = true;
@@ -1373,6 +1372,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Span<Piece> capturesSearchedPiece = stackalloc Piece[32];
             Span<Piece> capturesSearchedVictim = stackalloc Piece[32];
             int capturesCount = 0;
+            int contBase1 = ContinuationHistory.GetBaseOffset(prev1Piece, prev1To);
+            int contBase2 = ContinuationHistory.GetBaseOffset(prev2Piece, prev2To);
+            bool hasPrev2 = prev2Piece != Piece.None;
+
             while (picker.Next(out Move move))
             {
                 // Skip singular extension excluded move
@@ -1386,8 +1389,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 // Pre-move pruning (exempt checking moves and positions where a mate threat was seen)
                 if (!isPv && !inCheck && bestScore > -TTEntry.MateBound)
                 {
+                    int givesCheckState = -1;
+
                     // Bad Captures Pruning at shallow depth
-                    if (depth <= 2 && picker.Stage == MovePickerStage.BadCaptures && !board.GivesCheck(move))
+                    if (depth <= 2 && picker.Stage == MovePickerStage.BadCaptures && !GivesCheckCached(in board, move, ref givesCheckState))
                     {
                         continue;
                     }
@@ -1395,11 +1400,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     // Shallow Futility Pruning for non-tactical quiet moves at shallow depth
                     if (isQuiet && movesSearched > 0)
                     {
-                        if (depth <= 2 && eval + (_engine.FutilityMarginD1D2 * depth) <= alpha && !board.GivesCheck(move))
+                        if (depth <= 2 && eval + (_engine.FutilityMarginD1D2 * depth) <= alpha && !GivesCheckCached(in board, move, ref givesCheckState))
                         {
                             continue;
                         }
-                        if (depth == 3 && staticEval + (_engine.FutilityMarginD3 * depth) <= alpha && !board.GivesCheck(move))
+                        if (depth == 3 && staticEval + (_engine.FutilityMarginD3 * depth) <= alpha && !GivesCheckCached(in board, move, ref givesCheckState))
                         {
                             continue;
                         }
@@ -1408,10 +1413,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     // Late Move Pruning (LMP) for quiet moves
                     if (depth <= 3 && isQuiet)
                     {
-                        int lmpThreshold = improving
-                            ? _engine.LmpBase + (_engine.LmpMultiplier * depth * depth)
-                            : _engine.LmpBase + (depth * depth);
-                        if (movesSearched >= lmpThreshold && !board.GivesCheck(move))
+                        int lmpThreshold = _engine.LmpBase + ((improving ? _engine.LmpMultiplier : 1) * depth * depth);
+                        if (movesSearched >= lmpThreshold && !GivesCheckCached(in board, move, ref givesCheckState))
                         {
                             continue;
                         }
@@ -1423,7 +1426,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         // Bad Captures Pruning: Prune clearly losing exchanges at shallow depths
                         if (depth <= 5 && move.IsCapture && !move.IsPromotion)
                         {
-                            if (picker.CurrentSee < -_engine.SeeCaptureMargin * depth && !board.GivesCheck(move))
+                            if (picker.CurrentSee < -_engine.SeeCaptureMargin * depth && !GivesCheckCached(in board, move, ref givesCheckState))
                             {
                                 continue;
                             }
@@ -1432,7 +1435,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         // Quiet SEE Pruning: Prune quiet moves that blunder pieces onto attacked squares
                         if (depth <= 4 && isQuiet)
                         {
-                            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -_engine.SeeQuietMargin * depth * depth) && !board.GivesCheck(move))
+                            if (!GivesCheckCached(in board, move, ref givesCheckState) && !StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -_engine.SeeQuietMargin * depth * depth))
                             {
                                 continue;
                             }
@@ -1490,9 +1493,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             if (hist < -_engine.HistoryThreshold) r++;
                             else if (hist > _engine.HistoryThreshold) r--;
 
-                            int conthist1 = _continuationHistory.Get1PlyScore(prev1Piece, prev1To, movedPiece, move.To);
-                            int conthist2 = _continuationHistory.Get2PlyScore(prev2Piece, prev2To, movedPiece, move.To);
-                            int conthist = prev2Piece != Piece.None ? (conthist1 + conthist2) / 2 : conthist1;
+                            int conthist1 = _continuationHistory.Get1PlyAt(contBase1, movedPiece, move.To);
+                            int conthist2 = _continuationHistory.Get2PlyAt(contBase2, movedPiece, move.To);
+                            int conthist = hasPrev2 ? (conthist1 + conthist2) / 2 : conthist1;
                             if (conthist > _engine.ConthistReward) r--;
                             else if (conthist < -_engine.ConthistPenalty) r++;
 
@@ -1584,7 +1587,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             // Transposition Table LowerBound store
                             if (_stack[ply].ExcludedMove.IsNull)
                             {
-                                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                                short evalShort = TTEntry.ClampEval(rawEval);
                                 _tt.Store(key, move, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(score, ply), _tt.CurrentAge, TTFlags.LowerBound, _activeExpertId, evalShort);
                             }
 
@@ -1620,7 +1623,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             {
                 TTFlags flag = (bestScore > alphaOrig) ? TTFlags.Exact : TTFlags.UpperBound;
                 Move storeMove = !bestMove.IsNull ? bestMove : ttMove;
-                short evalShort = rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
+                short evalShort = TTEntry.ClampEval(rawEval);
                 _tt.Store(key, storeMove, (byte)Math.Clamp(depth, 0, 255), TTEntry.ScoreToTt(bestScore, ply), _tt.CurrentAge, flag, _activeExpertId, evalShort);
             }
 
@@ -1697,6 +1700,16 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static bool GivesCheckCached(in Board board, Move move, ref int givesCheckState)
+        {
+            if (givesCheckState < 0)
+            {
+                givesCheckState = board.GivesCheck(move) ? 1 : 0;
+            }
+            return givesCheckState != 0;
+        }
+
         /// <summary>
         /// Traces the Principal Variation sequence through the Transposition Table.
         /// </summary>
@@ -1732,19 +1745,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 Move m = entry.BestMove;
 
                 // Validate move legality
-                MoveList legal = default;
-                MoveGenerator.GenerateLegalMoves(in pvBoard, ref legal);
-                bool isLegal = false;
-                for (int j = 0; j < legal.Count; j++)
-                {
-                    if (legal[j] == m)
-                    {
-                        isLegal = true;
-                        break;
-                    }
-                }
-
-                if (!isLegal) break;
+                if (!pvBoard.IsLegal(m)) break;
 
                 pv.Add(m);
                 pvBoard.MakeMove(m, out _);

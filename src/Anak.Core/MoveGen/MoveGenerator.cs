@@ -84,13 +84,7 @@ public static class MoveGenerator
         if (numCheckers == 1)
         {
             Square checkerSq = Bitboard.Lsb(checkers);
-            ulong captureMask = 1UL << (int)checkerSq;
-            ulong pushMask = 0UL;
-            if (((enemyBq | enemyRq) & captureMask) != 0)
-            {
-                pushMask = Bitboard.Between[(int)kingSq, (int)checkerSq];
-            }
-            targetMask = captureMask | pushMask;
+            targetMask = (1UL << (int)checkerSq) | Bitboard.Between[(int)kingSq, (int)checkerSq];
         }
         else
         {

@@ -212,7 +212,7 @@ public static class Bitboard
     public static Square Lsb(ulong bb) => (Square)BitOperations.TrailingZeroCount(bb);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static Square Msb(ulong bb) => (Square)(63 - BitOperations.LeadingZeroCount(bb));
+    public static Square Msb(ulong bb) => (Square)BitOperations.Log2(bb);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong FromSquare(Square sq) => 1UL << (byte)sq;

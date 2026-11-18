@@ -112,7 +112,7 @@ public sealed class CorrectionHistory
     {
         int diff = Math.Clamp(searchScore - rawEval, -MaxCorrection, MaxCorrection);
         int target = diff * ScaleFactor;
-        int weight = Math.Clamp(depth * 32, 16, 512);
+        int weight = Math.Min(depth * 32, 512);
 
         int index = GetIndex(side, pawnKey);
         ref short entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), index);
