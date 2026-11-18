@@ -9,20 +9,41 @@ namespace Zanak.Time;
 /// </summary>
 public sealed class TimeManager
 {
+    private const int FallbackSoftLimitMs = 1000;
+    private const int FallbackHardLimitMs = 2000;
+    private const double LogBaseDepthOffset = 1.0;
+    private const double LogBaseDepthScale = 3.2;
+    private const double LogHorizonDeltaOffset = 1.5;
+    private const double LogHorizonDeltaScale = 1.5;
+    private const double PanicSoftThresholdRatio = 0.85;
+
     private readonly TimeParams _params;
     private readonly Stopwatch _stopwatch = new();
     private int _stableDominanceCount;
     private int _lastLeaderMoveRaw;
     private int _lastDominanceDepth;
 
+    /// <summary>
+    /// Time management parameters used to compute search budgets.
+    /// </summary>
     public TimeParams Parameters => _params;
+
+    /// <summary>
+    /// Elapsed milliseconds since <see cref="Start"/> was called.
+    /// </summary>
     public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
 
+    /// <summary>
+    /// Initializes a new <see cref="TimeManager"/> instance.
+    /// </summary>
     public TimeManager(TimeParams? parameters = null)
     {
         _params = parameters ?? TimeParams.Default;
     }
 
+    /// <summary>
+    /// Resets per-search dominance state and restarts the search stopwatch.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Start()
     {
@@ -32,6 +53,9 @@ public sealed class TimeManager
         _stopwatch.Restart();
     }
 
+    /// <summary>
+    /// Stops the search stopwatch.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Stop()
     {
@@ -67,8 +91,8 @@ public sealed class TimeManager
         else if (remainingTimeMs <= 0)
         {
             // Fallback for unbounded or zero-clock tests
-            softMs = 1000;
-            hardMs = 2000;
+            softMs = FallbackSoftLimitMs;
+            hardMs = FallbackHardLimitMs;
         }
         else
         {
@@ -119,9 +143,9 @@ public sealed class TimeManager
         {
             double computeMs = Math.Max(1.0, (double)softMs * Math.Max(1, threads));
             double logComputeMs = Math.Log10(computeMs);
-            int scaledBase = (int)Math.Round(1.0 + 3.2 * logComputeMs);
+            int scaledBase = (int)Math.Round(LogBaseDepthOffset + LogBaseDepthScale * logComputeMs);
             targetBaseDepth = Math.Clamp(scaledBase, 1, _params.ClassicalMaxBaseDepth);
-            int horizonDelta = Math.Clamp((int)Math.Round(1.5 + 1.5 * logComputeMs), 2, _params.ClassicalHorizonOffset);
+            int horizonDelta = Math.Clamp((int)Math.Round(LogHorizonDeltaOffset + LogHorizonDeltaScale * logComputeMs), 2, _params.ClassicalHorizonOffset);
             maxDepthHorizon = targetBaseDepth + horizonDelta;
         }
 
@@ -129,28 +153,28 @@ public sealed class TimeManager
     }
 
     /// <summary>
-    /// Checks periodic mid-search termination conditions every CheckNodeInterval nodes.
+    /// Checks whether the search has been cancelled or reached its hard time limit.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool ShouldStop(long nodes, in SearchBudget budget, CancellationToken cancellationToken)
+    public bool ShouldStop(in SearchBudget budget, CancellationToken cancellationToken)
     {
         if (cancellationToken.IsCancellationRequested) return true;
         return _stopwatch.ElapsedMilliseconds >= budget.HardLimitMs;
     }
 
     /// <summary>
-    /// Checks if soft time limit has expired at the end of an iteration.
+    /// Checks if the soft time limit has expired at the end of an iteration.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool HasReachedSoftLimit(in SearchBudget budget, int leaderScore, int contenderScore, int leaderMoveRaw)
+    public bool HasReachedSoftLimit(in SearchBudget budget, int leaderScore, int contenderScore)
     {
         long elapsed = _stopwatch.ElapsedMilliseconds;
         if (elapsed >= budget.HardLimitMs) return true;
 
         int effectiveSoftMs = budget.SoftLimitMs;
 
-        // Panic extension check: if gap <= 10 cp and nearing soft limit, extend soft limit up to 1.5x
-        if (Math.Abs(leaderScore - contenderScore) <= _params.PanicExtensionGapCp && elapsed >= (budget.SoftLimitMs * 0.85))
+        // Panic extension check: if gap <= PanicExtensionGapCp and nearing soft limit, extend soft limit
+        if (Math.Abs(leaderScore - contenderScore) <= _params.PanicExtensionGapCp && elapsed >= (budget.SoftLimitMs * PanicSoftThresholdRatio))
         {
             effectiveSoftMs = Math.Min((int)(budget.SoftLimitMs * _params.PanicExtensionFactor), budget.HardLimitMs);
         }

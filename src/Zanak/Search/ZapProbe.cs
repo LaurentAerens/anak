@@ -11,6 +11,14 @@ namespace Zanak.Search;
 /// </summary>
 public static class ZapProbe
 {
+    private const int MateScoreBase = 30000;
+    private const int GreedyWinCapCp = 2500;
+    private const int GreedyWinBaseCp = 1500;
+    private const int GreedyWinDepthSlope = 10;
+    private const int GreedyWinMaxPly = 32;
+    private const int TablebaseWinScore = 29000;
+    private const int TablebaseCursedScore = 100;
+
     /// <summary>
     /// Traces a single linear greedy trajectory from the given scratch board.
     /// Records steps and eval deltas into trajectory buffer, and returns the terminal score from the engine's perspective.
@@ -25,9 +33,7 @@ public static class ZapProbe
         ref ZapTrajectory trajectory,
         Move initialLastMove = default,
         ZapParams? parameters = null,
-        int leaderScore = int.MinValue,
         ZapSharedState? sharedState = null,
-        int rootCandidateIndex = -1,
         ITablebaseProber? tablebase = null,
         int searchPly = 1,
         ZapTranspositionTable? tt = null,
@@ -58,7 +64,6 @@ public static class ZapProbe
         // Initial evaluation at the start of the probe
         int initialRaw = (int)evaluator.Evaluate(in board);
         int prevEngineEval = board.SideToMove == engineColor ? initialRaw : -initialRaw;
-        int probeStartEngineEval = prevEngineEval;
 
         int pliesTraced = 0;
         Move lastMove = initialLastMove;
@@ -96,8 +101,8 @@ public static class ZapProbe
                     // Cap at decisive win (e.g. +2000 cp) rather than +30000 to prevent false UCI mate reports
                     // and avoid corrupting root candidate pruning before workers verify the line!
                     int mateScore = moverColor == engineColor
-                        ? -30000 + pliesTraced
-                        : Math.Min(2500, 1500 + Math.Max(0, 32 - pliesTraced) * 10);
+                        ? -MateScoreBase + pliesTraced
+                        : Math.Min(GreedyWinCapCp, GreedyWinBaseCp + Math.Max(0, GreedyWinMaxPly - pliesTraced) * GreedyWinDepthSlope);
                     return mateScore;
                 }
                 // Stalemate
@@ -138,11 +143,11 @@ public static class ZapProbe
                 isTablebaseHit = true;
                 int moverWdlScore = wdl switch
                 {
-                    2 => 29000 - pliesTraced,
-                    1 => 100,
+                    2 => TablebaseWinScore - pliesTraced,
+                    1 => TablebaseCursedScore,
                     0 => 0,
-                    -1 => -100,
-                    -2 => -29000 + pliesTraced,
+                    -1 => -TablebaseCursedScore,
+                    -2 => -TablebaseWinScore + pliesTraced,
                     _ => 0
                 };
                 currentEngineEval = board.SideToMove == engineColor ? moverWdlScore : -moverWdlScore;

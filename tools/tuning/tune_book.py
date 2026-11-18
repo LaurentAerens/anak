@@ -137,9 +137,16 @@ class BookEntry:
         return self.learn & 0xFFFF
 
     @property
+    def has_valid_learn_stats(self) -> bool:
+        """True only when learn holds plausible packed (games_played, games_won) stats rather than external PolyGlot metadata."""
+        gp = self.games_played
+        gw = self.games_won
+        return gw <= gp and gp <= 5000
+
+    @property
     def win_rate(self) -> float:
         gp = self.games_played
-        if gp <= 0:
+        if gp <= 0 or not self.has_valid_learn_stats:
             return 0.5
         return min(1.0, max(0.0, self.games_won / gp))
 
@@ -213,8 +220,12 @@ class PolyGlotBookTable:
         entry.weight = new_weight
 
         # Update packed learn field: [games_played: 16 bits | games_won: 16 bits]
-        gp = min(65535, entry.games_played + 1)
-        gw = min(65535, entry.games_won + (1 if is_win else 0))
+        if entry.has_valid_learn_stats:
+            gp = min(5000, entry.games_played + 1)
+            gw = min(gp, entry.games_won + (1 if is_win else 0))
+        else:
+            gp = 1
+            gw = 1 if is_win else 0
         entry.learn = (gp << 16) | gw
 
         return entry
@@ -227,10 +238,9 @@ class PolyGlotBookTable:
 
     def prune_blunders(self, min_games: int = 3, max_win_rate: float = 0.25) -> int:
         """Removes entries with sufficient sample size that have an abysmal win rate."""
-        before = len(self.entries)
         to_del = []
         for k, v in self.entries.items():
-            if v.games_played >= min_games and v.win_rate < max_win_rate:
+            if v.has_valid_learn_stats and v.games_played >= min_games and v.win_rate < max_win_rate:
                 to_del.append(k)
         for k in to_del:
             del self.entries[k]

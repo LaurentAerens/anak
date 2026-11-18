@@ -9,6 +9,12 @@ namespace Zanak.Uci;
 /// </summary>
 public static class UciOutput
 {
+    private const int MateScoreThreshold = 29000;
+    private const int MateScoreBase = 30000;
+
+    /// <summary>
+    /// Formats a UCI <c>info</c> line from the current search statistics.
+    /// </summary>
     public static string FormatInfo(in ZapSearchStats stats)
     {
         var sb = new StringBuilder(128);
@@ -16,9 +22,9 @@ public static class UciOutput
 
         // Score formatting
         int score = stats.ScoreCp;
-        if (Math.Abs(score) >= 29000)
+        if (Math.Abs(score) >= MateScoreThreshold)
         {
-            int mateIn = score > 0 ? (30000 - score + 1) / 2 : (-30000 - score) / 2;
+            int mateIn = score > 0 ? (MateScoreBase - score + 1) / 2 : (-MateScoreBase - score) / 2;
             sb.Append(" score mate ").Append(mateIn);
         }
         else
@@ -45,6 +51,9 @@ public static class UciOutput
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Formats a UCI <c>bestmove</c> line for the selected move.
+    /// </summary>
     public static string FormatBestMove(Move move)
     {
         return $"bestmove {move.ToUci()}";

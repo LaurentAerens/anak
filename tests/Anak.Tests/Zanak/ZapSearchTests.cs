@@ -215,10 +215,9 @@ public sealed class ZapSearchTests
         Board board = root;
         Assert.True(board.MakeMove(rootMove, out _));
         var steps = Steps(board, "e7e5", "g1f3", "b8c6");
-        var budget = new SearchBudget(1000, 2000, 4, 8);
 
-        search.ExtractCrosspoints(in root, rootMove, 0, steps, 4, in budget, Color.White, 1, ZapAgentRole.Refutation);
-        search.ExtractCrosspoints(in root, rootMove, 0, steps, 4, in budget, Color.White, 1, ZapAgentRole.Promotion);
+        search.ExtractCrosspoints(in root, rootMove, 0, steps, Color.White, 1, ZapAgentRole.Refutation);
+        search.ExtractCrosspoints(in root, rootMove, 0, steps, Color.White, 1, ZapAgentRole.Promotion);
 
         var plies = new List<int>();
         while (search.WorkQueue.TryDequeue(out var cp))

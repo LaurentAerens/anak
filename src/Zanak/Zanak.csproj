@@ -7,6 +7,10 @@
     <OutputType>Exe</OutputType>
     <RootNamespace>Zanak</RootNamespace>
     <AssemblyName>zanak</AssemblyName>
+    <Version>1.0.0</Version>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+    <InformationalVersion>1.0.0</InformationalVersion>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 

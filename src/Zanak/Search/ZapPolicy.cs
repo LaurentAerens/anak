@@ -21,12 +21,17 @@ public sealed class ZapPolicy
         FreeCapture = 2
     }
 
-    public ZapPolicy(ZapParams? parameters = null, ZapTranspositionTable? tt = null)
+    /// <summary>
+    /// Initializes a new <see cref="ZapPolicy"/> with the given search parameters.
+    /// </summary>
+    public ZapPolicy(ZapParams? parameters = null)
     {
         _params = parameters ?? ZapParams.Default;
-        _ = tt;
     }
 
+    /// <summary>
+    /// Selects a single greedy move using the 25-step stateless bitboard spine without a prior move hint.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetQuickMove(in Board board, int ply, out Move move)
     {
@@ -1510,15 +1515,9 @@ public sealed class ZapPolicy
     #region Preserved Public / Internal API
 
     /// <summary>
-    /// Checks whether playing <paramref name="move"/> allows the opponent to deliver an immediate mate or decisive material win (e.g. checking fork winning Rook/Queen, double attack on heavy pieces, or free Queen/Rook win) on reply 1.
+    /// Checks whether playing <paramref name="move"/> allows the opponent to deliver an immediate mate or decisive material win
+    /// (e.g. checking fork winning Rook/Queen, double attack on heavy pieces, or free Queen/Rook win) on reply 1.
     /// </summary>
-    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public static bool AllowsDecisiveLoss(in Board board, Move move)
-    {
-        CheckOpponentThreats(in board, move, out _, out bool allowsDecisiveLoss);
-        return allowsDecisiveLoss;
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     private static void CheckOpponentThreats(in Board board, Move move, out bool allowsMateIn1, out bool allowsDecisiveLoss)
     {
@@ -1652,13 +1651,11 @@ public sealed class ZapPolicy
                         {
                             Color us = board.SideToMove;
                             Color enemy = us.Opponent();
-                            if (move.To != reply.To &&
+                            bool isPreExistingHangingPiece =
+                                move.To != reply.To &&
                                 board.IsSquareAttacked(reply.To, enemy) &&
-                                !board.IsSquareAttacked(reply.To, us))
-                            {
-                                // Pre-existing hanging piece
-                            }
-                            else
+                                !board.IsSquareAttacked(reply.To, us);
+                            if (!isPreExistingHangingPiece)
                             {
                                 allowsDecisiveLoss = true;
                             }
@@ -1955,16 +1952,13 @@ public sealed class ZapPolicy
         return false;
     }
 
+    /// <summary>
+    /// Selects a winning capture (including immediate recaptures) from the current position.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool TryGetWinningCapture(in Board board, Move lastMove, out Move move)
     {
         return TryGetWinningCapture(in board, lastMove, 0, Square.None, out move);
-    }
-
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool TryGetWinningCapture(in Board board, out Move move)
-    {
-        return TryGetWinningCapture(in board, Move.Null, out move);
     }
 
     /// <summary>
@@ -2018,18 +2012,18 @@ public sealed class ZapPolicy
         ulong theirPieces = us == Color.White ? board.Black : board.White;
 
         int ours =
-            System.Numerics.BitOperations.PopCount(board.Pawns & ourPieces) * 100 +
-            System.Numerics.BitOperations.PopCount(board.Knights & ourPieces) * 320 +
-            System.Numerics.BitOperations.PopCount(board.Bishops & ourPieces) * 330 +
-            System.Numerics.BitOperations.PopCount(board.Rooks & ourPieces) * 500 +
-            System.Numerics.BitOperations.PopCount(board.Queens & ourPieces) * 900;
+            BitOperations.PopCount(board.Pawns & ourPieces) * 100 +
+            BitOperations.PopCount(board.Knights & ourPieces) * 320 +
+            BitOperations.PopCount(board.Bishops & ourPieces) * 330 +
+            BitOperations.PopCount(board.Rooks & ourPieces) * 500 +
+            BitOperations.PopCount(board.Queens & ourPieces) * 900;
 
         int theirs =
-            System.Numerics.BitOperations.PopCount(board.Pawns & theirPieces) * 100 +
-            System.Numerics.BitOperations.PopCount(board.Knights & theirPieces) * 320 +
-            System.Numerics.BitOperations.PopCount(board.Bishops & theirPieces) * 330 +
-            System.Numerics.BitOperations.PopCount(board.Rooks & theirPieces) * 500 +
-            System.Numerics.BitOperations.PopCount(board.Queens & theirPieces) * 900;
+            BitOperations.PopCount(board.Pawns & theirPieces) * 100 +
+            BitOperations.PopCount(board.Knights & theirPieces) * 320 +
+            BitOperations.PopCount(board.Bishops & theirPieces) * 330 +
+            BitOperations.PopCount(board.Rooks & theirPieces) * 500 +
+            BitOperations.PopCount(board.Queens & theirPieces) * 900;
 
         return ours - theirs;
     }

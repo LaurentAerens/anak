@@ -1058,10 +1058,11 @@ public sealed class MainForm : Form
 
     private void ExportPgnToFile()
     {
+        string prefix = _engine is ZapSearchEngine ? "zanak" : "anak";
         using var sfd = new SaveFileDialog
         {
             Filter = "PGN files (*.pgn)|*.pgn|All files (*.*)|*.*",
-            FileName = $"anak_game_{DateTime.Now:yyyyMMdd_HHmmss}.pgn",
+            FileName = $"{prefix}_game_{DateTime.Now:yyyyMMdd_HHmmss}.pgn",
             DefaultExt = "pgn"
         };
 
@@ -1075,7 +1076,8 @@ public sealed class MainForm : Form
     private string GeneratePgn()
     {
         var sb = new StringBuilder();
-        sb.AppendLine("[Event \"Anak Casual Game\"]");
+        string engineLabel = _engine is ZapSearchEngine ? "Zanak" : "Anak";
+        sb.AppendLine($"[Event \"{engineLabel} Casual Game\"]");
         sb.AppendLine("[Site \"Local\"]");
         sb.AppendLine($"[Date \"{DateTime.Now:yyyy.MM.dd}\"]");
         sb.AppendLine("[Round \"1\"]");

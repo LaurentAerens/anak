@@ -19,6 +19,7 @@ public sealed class UciHandler : IDisposable
     private readonly TimeParams _timeParams = new();
     private readonly TimeManager _timeManager;
     private readonly ZapSearch _search;
+    private readonly Dictionary<string, Action<string>> _optionHandlers;
 
     private Board _board;
     private Move _lastMove = Move.Null;
@@ -26,6 +27,9 @@ public sealed class UciHandler : IDisposable
     private Task? _searchTask;
     private string? _nnueError;
 
+    /// <summary>
+    /// Initializes a new <see cref="UciHandler"/> reading commands from <paramref name="input"/> and writing responses to <paramref name="output"/>.
+    /// </summary>
     public UciHandler(TextReader input, TextWriter output)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
@@ -34,8 +38,12 @@ public sealed class UciHandler : IDisposable
         _timeManager = new TimeManager(_timeParams);
         _search = new ZapSearch(_params, _timeManager);
         _board = Fen.Parse(Fen.StartPosition);
+        _optionHandlers = BuildOptionHandlers();
     }
 
+    /// <summary>
+    /// Writes a single UCI response line to the output stream in a thread-safe manner.
+    /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void SendLine(string line)
     {
@@ -46,6 +54,9 @@ public sealed class UciHandler : IDisposable
         }
     }
 
+    /// <summary>
+    /// Reads and dispatches UCI commands until <c>quit</c>, EOF, or cancellation.
+    /// </summary>
     public async Task RunAsync(CancellationToken cancellationToken = default)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -63,6 +74,9 @@ public sealed class UciHandler : IDisposable
         StopSearch();
     }
 
+    /// <summary>
+    /// Parses and executes a single UCI command line. Returns <c>true</c> if <c>quit</c> was received.
+    /// </summary>
     public bool HandleCommand(string line)
     {
         ReadOnlySpan<char> span = line.AsSpan().Trim();
@@ -122,7 +136,7 @@ public sealed class UciHandler : IDisposable
 
     private void HandleUci()
     {
-        SendLine("id name Zanak");
+        SendLine("id name Zanak 1.0.0");
         SendLine("id author Anak Team");
         SendLine($"option name Threads type spin default {_params.DefaultThreads} min 1 max 128");
         SendLine("option name Hash type spin default 64 min 1 max 65536");
@@ -207,27 +221,33 @@ public sealed class UciHandler : IDisposable
             string optName = string.Join(' ', tokens[(nameIdx + 1)..valIdx]);
             string optVal = string.Join(' ', tokens[(valIdx + 1)..]);
 
-            if (optName.Equals("SearchTraceFile", StringComparison.OrdinalIgnoreCase))
+            if (_optionHandlers.TryGetValue(optName, out Action<string>? handler))
             {
-                _search.SearchTraceFile = optVal == "<empty>" ? string.Empty : optVal;
+                handler(optVal);
             }
-            else if (optName.Equals("PickupTraceFile", StringComparison.OrdinalIgnoreCase))
-            {
-                _search.PickupTraceFile = optVal == "<empty>" ? string.Empty : optVal;
-            }
-            else if (optName.Equals("InterleaveRootSeeding", StringComparison.OrdinalIgnoreCase) && bool.TryParse(optVal, out bool interleave))
-            {
-                _params.InterleaveRootSeeding = interleave;
-            }
-            else if (optName.Equals("PickupCostWeight", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int costWeight))
-            {
-                _params.CrosspointCostWeight = Math.Clamp(costWeight, 0, 100);
-            }
-            else if (optName.Equals("NnuePath", StringComparison.OrdinalIgnoreCase))
+        }
+    }
+
+    private Dictionary<string, Action<string>> BuildOptionHandlers()
+    {
+        static Action<string> IntOpt(Action<int> setter) => v => { if (int.TryParse(v, out int x)) setter(x); };
+        static Action<string> ClampedIntOpt(Action<int> setter, int min, int max) =>
+            v => { if (int.TryParse(v, out int x)) setter(Math.Clamp(x, min, max)); };
+        static Action<string> ClampedPctOpt(Action<double> setter, int min, int max) =>
+            v => { if (int.TryParse(v, out int x)) setter(Math.Clamp(x, min, max) / 100.0); };
+        static Action<string> DoubleOpt(Action<double> setter) => v => { if (double.TryParse(v, out double x)) setter(x); };
+
+        return new Dictionary<string, Action<string>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["SearchTraceFile"] = v => _search.SearchTraceFile = v == "<empty>" ? string.Empty : v,
+            ["PickupTraceFile"] = v => _search.PickupTraceFile = v == "<empty>" ? string.Empty : v,
+            ["InterleaveRootSeeding"] = v => { if (bool.TryParse(v, out bool b)) _params.InterleaveRootSeeding = b; },
+            ["PickupCostWeight"] = IntOpt(x => _params.CrosspointCostWeight = Math.Clamp(x, 0, 100)),
+            ["NnuePath"] = v =>
             {
                 try
                 {
-                    _search.SetNnuePath(optVal);
+                    _search.SetNnuePath(v);
                     _nnueError = null;
                     SendLine($"info string NNUE active directory {_search.NnueEvaluator!.NnueDirectory}");
                 }
@@ -236,207 +256,69 @@ public sealed class UciHandler : IDisposable
                     _nnueError = ex.Message;
                     SendLine($"info string NNUE configuration error: {_nnueError}");
                 }
-            }
-            else if (optName.Equals("Threads", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int threads))
-            {
-                _search.SetWorkerThreads(threads);
-            }
-            else if (optName.Equals("Hash", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int hashMb))
-            {
-                _search.TranspositionTable.Resize(hashMb);
-            }
-            else if (optName.Equals("ShockThreshold", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int shock))
-            {
-                _params.ShockThresholdCp = shock;
-            }
-            else if (optName.Equals("DeadStemMargin", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int margin))
-            {
-                _params.DeadStemPruneMarginCp = margin;
-            }
-            else if (optName.Equals("HardAspirationMargin", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int hardAsp))
-            {
-                _params.HardAspirationMarginCp = hardAsp;
-            }
-            else if (optName.Equals("ContenderPromotionMargin", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int contPromo))
-            {
-                _params.ContenderPromotionMarginCp = contPromo;
-            }
-            else if (optName.Equals("WorkerPruneMargin", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int workPrune))
-            {
-                _params.WorkerPruneMarginCp = workPrune;
-            }
-            else if (optName.Equals("AdaptiveShockBase", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int adaptBase))
-            {
-                _params.AdaptiveShockBaseCp = adaptBase;
-            }
-            else if (optName.Equals("AdaptiveShockSlope", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int adaptSlope))
-            {
-                _params.AdaptiveShockSlopeCp = adaptSlope;
-            }
-            else if (optName.Equals("RecaptureBonus", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int recapBonus))
-            {
-                _params.RecaptureBonus = recapBonus;
-            }
-            else if (optName.Equals("EnPriseThreatPenalty", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int enPrisePen))
-            {
-                _params.EnPriseThreatPenalty = enPrisePen;
-            }
-            else if (optName.Equals("SpineAbandonThreshold", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int spineAb))
-            {
-                _params.SpineAbandonThresholdCp = spineAb;
-            }
-            else if (optName.Equals("CrosspointRootBiasWeight", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int cpBias))
-            {
-                _params.CrosspointRootBiasWeight = cpBias;
-            }
-            else if (optName.Equals("MaxSiblingExploration", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int maxSib))
-            {
-                _params.MaxSiblingExploration = Math.Clamp(maxSib, 1, 32);
-            }
-            else if (optName.Equals("HyperBulletBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int hbBd))
-            {
-                _timeParams.HyperBulletBaseDepth = hbBd;
-            }
-            else if (optName.Equals("HyperBulletMaxHorizon", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int hbMh))
-            {
-                _timeParams.HyperBulletMaxHorizon = hbMh;
-            }
-            else if (optName.Equals("FastBulletBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int fbBd))
-            {
-                _timeParams.FastBulletBaseDepth = fbBd;
-            }
-            else if (optName.Equals("FastBulletMaxHorizon", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int fbMh))
-            {
-                _timeParams.FastBulletMaxHorizon = fbMh;
-            }
-            else if (optName.Equals("BulletBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int bBd))
-            {
-                _timeParams.BulletBaseDepth = bBd;
-            }
-            else if (optName.Equals("BulletMaxHorizon", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int bMh))
-            {
-                _timeParams.BulletMaxHorizon = bMh;
-            }
-            else if (optName.Equals("BlitzBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int bzBd))
-            {
-                _timeParams.BlitzBaseDepth = bzBd;
-            }
-            else if (optName.Equals("BlitzMaxHorizon", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int bzMh))
-            {
-                _timeParams.BlitzMaxHorizon = bzMh;
-            }
-            else if (optName.Equals("RapidBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int rBd))
-            {
-                _timeParams.RapidBaseDepth = rBd;
-            }
-            else if (optName.Equals("RapidMaxHorizon", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int rMh))
-            {
-                _timeParams.RapidMaxHorizon = rMh;
-            }
-            else if (optName.Equals("AbsoluteMinBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int amBd))
-            {
-                _timeParams.AbsoluteMinBaseDepth = amBd;
-            }
-            else if (optName.Equals("AbsoluteMinMaxHorizon", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int amMh))
-            {
-                _timeParams.AbsoluteMinMaxHorizon = amMh;
-            }
-            else if (optName.Equals("SuddenDeathDivisor", StringComparison.OrdinalIgnoreCase) && double.TryParse(optVal, out double sdDiv))
-            {
-                _timeParams.SuddenDeathDivisor = sdDiv;
-            }
-            else if (optName.Equals("SuddenDeathIncFactor", StringComparison.OrdinalIgnoreCase) && double.TryParse(optVal, out double sdInc))
-            {
-                _timeParams.SuddenDeathIncFactor = sdInc > 1.0 ? sdInc / 100.0 : sdInc;
-            }
-            else if (optName.Equals("HardLimitMultiplier", StringComparison.OrdinalIgnoreCase) && double.TryParse(optVal, out double hlMult))
-            {
-                _timeParams.HardLimitMultiplier = hlMult > 10.0 ? hlMult / 10.0 : hlMult;
-            }
-            else if (optName.Equals("StableDominanceMinDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdMinDepth))
-            {
-                _timeParams.StableDominanceMinDepth = Math.Clamp(sdMinDepth, 3, 14);
-            }
-            else if (optName.Equals("StableDominanceLeadCp", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdLead))
-            {
-                _timeParams.StableDominanceLeadCp = Math.Clamp(sdLead, 40, 400);
-            }
-            else if (optName.Equals("StableDominanceIters", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdIters))
-            {
-                _timeParams.StableDominanceIters = Math.Clamp(sdIters, 1, 8);
-            }
-            else if (optName.Equals("StableDominanceMinSoftPct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int sdMinSoftPct))
-            {
-                _timeParams.StableDominanceMinSoftFraction = Math.Clamp(sdMinSoftPct, 5, 70) / 100.0;
-            }
-            else if (optName.Equals("PanicExtensionGapCp", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int panicGap))
-            {
-                _timeParams.PanicExtensionGapCp = Math.Clamp(panicGap, 0, 60);
-            }
-            else if (optName.Equals("PanicExtensionFactorPct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int panicFactorPct))
-            {
-                _timeParams.PanicExtensionFactor = Math.Clamp(panicFactorPct, 100, 250) / 100.0;
-            }
-            else if (optName.Equals("SurvivorSoftScale2Pct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int surv2Pct))
-            {
-                _timeParams.SurvivorSoftScale2 = Math.Clamp(surv2Pct, 10, 95) / 100.0;
-            }
-            else if (optName.Equals("SurvivorSoftScale3Pct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int surv3Pct))
-            {
-                _timeParams.SurvivorSoftScale3 = Math.Clamp(surv3Pct, 15, 95) / 100.0;
-            }
-            else if (optName.Equals("SurvivorSoftScale4Pct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int surv4Pct))
-            {
-                _timeParams.SurvivorSoftScale4 = Math.Clamp(surv4Pct, 25, 100) / 100.0;
-            }
-            else if (optName.Equals("SmallSurvivorMinSoftPct", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int smallMinSoftPct))
-            {
-                _timeParams.SmallSurvivorMinSoftFraction = Math.Clamp(smallMinSoftPct, 2, 50) / 100.0;
-            }
-            else if (optName.Equals("DominantLeaderLeadCp", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int domLead))
-            {
-                _timeParams.DominantLeaderLeadCp = Math.Clamp(domLead, 40, 400);
-            }
-            else if (optName.Equals("SmallSurvivorVerifyCrosspoints", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int smallVerify))
-            {
-                _timeParams.SmallSurvivorVerifyCrosspoints = Math.Clamp(smallVerify, 2, 20);
-            }
-            else if (optName.Equals("LeaderVerifyCrosspoints", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int leaderVerify))
-            {
-                _timeParams.LeaderVerifyCrosspoints = Math.Clamp(leaderVerify, 4, 35);
-            }
-            else if (optName.Equals("ContenderQuickCheckPerRoot", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int quickCheck))
-            {
-                _timeParams.ContenderQuickCheckPerRoot = Math.Clamp(quickCheck, 1, 10);
-            }
-            else if (optName.Equals("ClassicalMaxBaseDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int classicalBase))
-            {
-                _timeParams.ClassicalMaxBaseDepth = Math.Clamp(classicalBase, 6, 24);
-            }
-            else if (optName.Equals("ClassicalHorizonOffset", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int classicalOffset))
-            {
-                _timeParams.ClassicalHorizonOffset = Math.Clamp(classicalOffset, 2, 16);
-            }
-            else if (optName.Equals("ExtendedHorizonMaxPlies", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int extHorizon))
-            {
-                _timeParams.ExtendedHorizonMaxPlies = Math.Clamp(extHorizon, 10, 40);
-            }
-            else if (optName.Equals("SyzygyPath", StringComparison.OrdinalIgnoreCase))
+            },
+            ["Threads"] = IntOpt(_search.SetWorkerThreads),
+            ["Hash"] = IntOpt(_search.TranspositionTable.Resize),
+            ["ShockThreshold"] = IntOpt(x => _params.ShockThresholdCp = x),
+            ["DeadStemMargin"] = IntOpt(x => _params.DeadStemPruneMarginCp = x),
+            ["HardAspirationMargin"] = IntOpt(x => _params.HardAspirationMarginCp = x),
+            ["ContenderPromotionMargin"] = IntOpt(x => _params.ContenderPromotionMarginCp = x),
+            ["WorkerPruneMargin"] = IntOpt(x => _params.WorkerPruneMarginCp = x),
+            ["AdaptiveShockBase"] = IntOpt(x => _params.AdaptiveShockBaseCp = x),
+            ["AdaptiveShockSlope"] = IntOpt(x => _params.AdaptiveShockSlopeCp = x),
+            ["RecaptureBonus"] = IntOpt(x => _params.RecaptureBonus = x),
+            ["EnPriseThreatPenalty"] = IntOpt(x => _params.EnPriseThreatPenalty = x),
+            ["SpineAbandonThreshold"] = IntOpt(x => _params.SpineAbandonThresholdCp = x),
+            ["CrosspointRootBiasWeight"] = IntOpt(x => _params.CrosspointRootBiasWeight = x),
+            ["MaxSiblingExploration"] = ClampedIntOpt(x => _params.MaxSiblingExploration = x, 1, 32),
+            ["HyperBulletBaseDepth"] = IntOpt(x => _timeParams.HyperBulletBaseDepth = x),
+            ["HyperBulletMaxHorizon"] = IntOpt(x => _timeParams.HyperBulletMaxHorizon = x),
+            ["FastBulletBaseDepth"] = IntOpt(x => _timeParams.FastBulletBaseDepth = x),
+            ["FastBulletMaxHorizon"] = IntOpt(x => _timeParams.FastBulletMaxHorizon = x),
+            ["BulletBaseDepth"] = IntOpt(x => _timeParams.BulletBaseDepth = x),
+            ["BulletMaxHorizon"] = IntOpt(x => _timeParams.BulletMaxHorizon = x),
+            ["BlitzBaseDepth"] = IntOpt(x => _timeParams.BlitzBaseDepth = x),
+            ["BlitzMaxHorizon"] = IntOpt(x => _timeParams.BlitzMaxHorizon = x),
+            ["RapidBaseDepth"] = IntOpt(x => _timeParams.RapidBaseDepth = x),
+            ["RapidMaxHorizon"] = IntOpt(x => _timeParams.RapidMaxHorizon = x),
+            ["AbsoluteMinBaseDepth"] = IntOpt(x => _timeParams.AbsoluteMinBaseDepth = x),
+            ["AbsoluteMinMaxHorizon"] = IntOpt(x => _timeParams.AbsoluteMinMaxHorizon = x),
+            ["SuddenDeathDivisor"] = DoubleOpt(x => _timeParams.SuddenDeathDivisor = x),
+            ["SuddenDeathIncFactor"] = DoubleOpt(x => _timeParams.SuddenDeathIncFactor = x > 1.0 ? x / 100.0 : x),
+            ["HardLimitMultiplier"] = DoubleOpt(x => _timeParams.HardLimitMultiplier = x > 10.0 ? x / 10.0 : x),
+            ["StableDominanceMinDepth"] = ClampedIntOpt(x => _timeParams.StableDominanceMinDepth = x, 3, 14),
+            ["StableDominanceLeadCp"] = ClampedIntOpt(x => _timeParams.StableDominanceLeadCp = x, 40, 400),
+            ["StableDominanceIters"] = ClampedIntOpt(x => _timeParams.StableDominanceIters = x, 1, 8),
+            ["StableDominanceMinSoftPct"] = ClampedPctOpt(x => _timeParams.StableDominanceMinSoftFraction = x, 5, 70),
+            ["PanicExtensionGapCp"] = ClampedIntOpt(x => _timeParams.PanicExtensionGapCp = x, 0, 60),
+            ["PanicExtensionFactorPct"] = ClampedPctOpt(x => _timeParams.PanicExtensionFactor = x, 100, 250),
+            ["SurvivorSoftScale2Pct"] = ClampedPctOpt(x => _timeParams.SurvivorSoftScale2 = x, 10, 95),
+            ["SurvivorSoftScale3Pct"] = ClampedPctOpt(x => _timeParams.SurvivorSoftScale3 = x, 15, 95),
+            ["SurvivorSoftScale4Pct"] = ClampedPctOpt(x => _timeParams.SurvivorSoftScale4 = x, 25, 100),
+            ["SmallSurvivorMinSoftPct"] = ClampedPctOpt(x => _timeParams.SmallSurvivorMinSoftFraction = x, 2, 50),
+            ["DominantLeaderLeadCp"] = ClampedIntOpt(x => _timeParams.DominantLeaderLeadCp = x, 40, 400),
+            ["SmallSurvivorVerifyCrosspoints"] = ClampedIntOpt(x => _timeParams.SmallSurvivorVerifyCrosspoints = x, 2, 20),
+            ["LeaderVerifyCrosspoints"] = ClampedIntOpt(x => _timeParams.LeaderVerifyCrosspoints = x, 4, 35),
+            ["ContenderQuickCheckPerRoot"] = ClampedIntOpt(x => _timeParams.ContenderQuickCheckPerRoot = x, 1, 10),
+            ["ClassicalMaxBaseDepth"] = ClampedIntOpt(x => _timeParams.ClassicalMaxBaseDepth = x, 6, 24),
+            ["ClassicalHorizonOffset"] = ClampedIntOpt(x => _timeParams.ClassicalHorizonOffset = x, 2, 16),
+            ["ExtendedHorizonMaxPlies"] = ClampedIntOpt(x => _timeParams.ExtendedHorizonMaxPlies = x, 10, 40),
+            ["SyzygyPath"] = v =>
             {
                 if (_search.Tablebase is Anak.Data.Syzygy.SyzygyTablebase stb)
                 {
-                    stb.SyzygyPath = optVal;
+                    stb.SyzygyPath = v;
                 }
-            }
-            else if (optName.Equals("SyzygyProbeDepth", StringComparison.OrdinalIgnoreCase) && int.TryParse(optVal, out int probeDepth))
+            },
+            ["SyzygyProbeDepth"] = IntOpt(x =>
             {
-                _params.SyzygyProbeDepth = probeDepth;
+                _params.SyzygyProbeDepth = x;
                 if (_search.Tablebase != null)
                 {
-                    _search.Tablebase.SyzygyProbeDepth = probeDepth;
+                    _search.Tablebase.SyzygyProbeDepth = x;
                 }
-            }
-        }
+            }),
+        };
     }
 
     private void HandlePosition(string args)
@@ -596,6 +478,9 @@ public sealed class UciHandler : IDisposable
         }
     }
 
+    /// <summary>
+    /// Cancels any active search and waits for the background search task to finish.
+    /// </summary>
     public void StopSearch()
     {
         lock (_stateLock)
@@ -623,6 +508,9 @@ public sealed class UciHandler : IDisposable
         }
     }
 
+    /// <summary>
+    /// Stops any active search and disposes the underlying search engine.
+    /// </summary>
     public void Dispose()
     {
         StopSearch();

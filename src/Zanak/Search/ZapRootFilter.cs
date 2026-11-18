@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using Anak.Core;
-using Anak.Search;
 
 namespace Zanak.Search;
 
@@ -12,6 +11,8 @@ namespace Zanak.Search;
 /// </summary>
 public static class ZapRootFilter
 {
+    private const int HangingPieceThresholdCp = 200;
+
     /// <summary>
     /// Fills <paramref name="keep"/> (same indexing as <paramref name="moves"/>).
     /// Never rejects every move; never rejects checks or promotions.
@@ -58,9 +59,8 @@ public static class ZapRootFilter
                 if (capSee > bestRootCaptureSee) bestRootCaptureSee = capSee;
             }
         }
-        bool mustAddressFreeCapture = !nullAllowsMate && bestRootCaptureSee >= 200 && nullLoss < bestRootCaptureSee;
+        bool mustAddressFreeCapture = !nullAllowsMate && bestRootCaptureSee >= HangingPieceThresholdCp && nullLoss < bestRootCaptureSee;
 
-        Span<bool> mated = stackalloc bool[moves.Length];
         int rejected = 0;
 
         for (int i = 0; i < moves.Length; i++)
@@ -128,10 +128,10 @@ public static class ZapRootFilter
             }
 
             lossOut[i] = Math.Max(directSeeLoss, MaxCaptureLoss(in after, m, in root));
-            if (ZapPolicy.AllowsMateIn1(in root, m)) mated[i] = true;
+            bool isMated = ZapPolicy.AllowsMateIn1(in root, m);
 
-            bool unansweredThreat = nullLoss >= 200 && !m.IsCapture && lossOut[i] >= nullLoss;
-            if (mated[i] || unansweredThreat || lossOut[i] >= nullLoss + marginCp || directSeeLoss >= marginCp / 2)
+            bool unansweredThreat = nullLoss >= HangingPieceThresholdCp && !m.IsCapture && lossOut[i] >= nullLoss;
+            if (isMated || unansweredThreat || lossOut[i] >= nullLoss + marginCp || directSeeLoss >= marginCp / 2)
             {
                 keep[i] = false;
                 rejected++;

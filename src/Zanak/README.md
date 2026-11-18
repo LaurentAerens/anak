@@ -68,7 +68,7 @@ A pool of asynchronous background threads pops crosspoints from a prioritized `Z
 - **Promotion Squads (`isOpponentTurn == false`):**
   - Explore alternative engine moves at ply $k$ to see if a superior continuation exists.
   - Records an improvement floor, capped by any existing refutation ceiling. Promotions cannot override refutations.
-- **Subtree Splicing (`SpliceTrajectoryTail`):**
+- **Subtree Splicing (`ZapSpineTree.Expand`):**
   - The original move and alternatives are traced at matching bounded horizons. A replacement includes the alternative junction move itself, then its continuation. Cache entries are move hints, not substitutes for complete trajectories.
   - Accepted replacement positions become eligible crosspoints themselves, without repeatedly extending the horizon. Stale generations or superseded junction moves cannot overwrite the current trajectory.
 - **Back Credit (`CreditEarlierDecisions`):** A splice that moves a spine score by at least `BackCreditMinCp` changes the context for the other side's earlier decisions. For example, a refutation that ran while the spine scored 0 is stale once a promotion raises the score to +377. Positions at junction−1, −3, … (up to `BackCreditMaxSteps`, with decaying boost) are passed to `ZapWorkQueue.Reconsider`, which raises their pickup priority. Positions that were already explored are reopened up to `CrosspointMaxReopens` times. Back credit changes only scheduling; scores still change only through agent splices.
@@ -86,8 +86,12 @@ All Zanak source code lives under `src/Zanak/`:
 ```
 src/Zanak/
 ├── Program.cs                     # Entry point for standalone zanak binary
+├── README.md                      # Architecture and component documentation
+├── Zanak.csproj                   # Project configuration and AOT settings
 ├── Search/
+│   ├── ZanakNnueEvaluator.cs      # MoE NNUE evaluator and feature accumulator
 │   ├── ZapCrosspoint.cs           # Crosspoint struct (board, ply, shock, kind, role)
+│   ├── ZapDiagnosticsWriter.cs    # JSON diagnostics writer for search/pickup traces
 │   ├── ZapParams.cs               # Search hyper-parameters and tunable margins
 │   ├── ZapPolicy.cs               # Bitboard-first move ordering and quick-move ladder
 │   ├── ZapProbe.cs                # Linear greedy spine tracer (zero minimax)
@@ -95,6 +99,8 @@ src/Zanak/
 │   ├── ZapSearch.cs               # Main search orchestrator (Phase 1-4 pipeline)
 │   ├── ZapSearchEngine.cs         # ISearchEngine bridge for Anak framework integration
 │   ├── ZapSharedState.cs          # Thread-safe candidate state, ceilings/floors, and splicing
+│   ├── ZapSpineTree.cs            # Bounded per-root spine tree for worker expansions
+│   ├── ZapTables.cs               # Precomputed bitboard lookup tables
 │   ├── ZapTrajectory.cs           # Trajectory step and history representation
 │   ├── ZapTranspositionTable.cs   # Shared TT for verified refutations and probe steps
 │   ├── ZapWorkerPool.cs           # Multi-threaded Refutation and Promotion workers

@@ -511,6 +511,9 @@ ZANAK_TIME_PARAMETERS: List[SpsaParam] = [
     SpsaParam("SmallSurvivorVerifyCrosspoints", default=6.0, min_val=2.0, max_val=16.0, c=1.5, a=20.0),
     SpsaParam("LeaderVerifyCrosspoints", default=14.0, min_val=5.0, max_val=30.0, c=2.0, a=30.0),
     SpsaParam("ContenderQuickCheckPerRoot", default=3.0, min_val=1.0, max_val=8.0, c=1.0, a=12.0),
+    SpsaParam("ClassicalMaxBaseDepth", default=18.0, min_val=8.0, max_val=22.0, c=1.5, a=18.0),
+    SpsaParam("ClassicalHorizonOffset", default=8.0, min_val=2.0, max_val=14.0, c=1.5, a=18.0),
+    SpsaParam("ExtendedHorizonMaxPlies", default=32.0, min_val=12.0, max_val=38.0, c=2.5, a=30.0),
 ]
 
 # Zanak Search Exploration & Crosspoint Parameters (Aggressive tuning steps and wider margins)

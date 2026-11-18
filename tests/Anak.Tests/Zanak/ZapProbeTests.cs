@@ -304,8 +304,7 @@ public sealed class ZapProbeTests
             policy,
             evaluator,
             Color.White,
-            ref trajectory,
-            leaderScore: 500);
+            ref trajectory);
 
         Assert.True(trajectory.Count >= 8, $"Expected multi-ply spine (>= 8 plies), but traced {trajectory.Count}.");
     }

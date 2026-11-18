@@ -208,79 +208,64 @@ public sealed class ZapSharedState
         }
     }
 
+    /// <summary>
+    /// Returns the current best root candidate.
+    /// </summary>
     public ZapRootCandidate GetBestCandidate() => GetBestCandidate(out _);
 
+    /// <summary>
+    /// Returns the current best root candidate and its index.
+    /// </summary>
     public ZapRootCandidate GetBestCandidate(out int index)
     {
         lock (_syncLock)
         {
-            if (_candidates.Length == 0)
-            {
-                index = -1;
-                return default;
-            }
-            int best = _bestCandidateIndex;
-            if ((uint)best >= (uint)_candidates.Length || _candidates[best].IsDeadStem)
-            {
-                int maxScore = int.MinValue;
-                for (int i = 0; i < _candidates.Length; i++)
-                {
-                    if (!_candidates[i].IsDeadStem && _candidates[i].Score > maxScore)
-                    {
-                        maxScore = _candidates[i].Score;
-                        best = i;
-                    }
-                }
-                if (best < 0 && _candidates.Length > 0)
-                {
-                    for (int i = 0; i < _candidates.Length; i++)
-                    {
-                        if (_candidates[i].Score > maxScore)
-                        {
-                            maxScore = _candidates[i].Score;
-                            best = i;
-                        }
-                    }
-                }
-                if (best >= 0 && best < _candidates.Length) _bestCandidateIndex = best;
-            }
-            index = _bestCandidateIndex;
-            return _candidates[index];
+            index = GetBestIndexLocked();
+            return index < 0 ? default : _candidates[index];
         }
     }
 
+    /// <summary>
+    /// Returns the move of the current best root candidate, or <see cref="Move.Null"/> if empty.
+    /// </summary>
     public Move GetBestMove()
     {
         lock (_syncLock)
         {
-            if (_candidates.Length == 0) return Move.Null;
-            int best = _bestCandidateIndex;
-            if ((uint)best >= (uint)_candidates.Length || _candidates[best].IsDeadStem)
+            int index = GetBestIndexLocked();
+            return index < 0 ? Move.Null : _candidates[index].Move;
+        }
+    }
+
+    private int GetBestIndexLocked()
+    {
+        if (_candidates.Length == 0) return -1;
+        int best = _bestCandidateIndex;
+        if ((uint)best >= (uint)_candidates.Length || _candidates[best].IsDeadStem)
+        {
+            int maxScore = int.MinValue;
+            for (int i = 0; i < _candidates.Length; i++)
             {
-                int maxScore = int.MinValue;
+                if (!_candidates[i].IsDeadStem && _candidates[i].Score > maxScore)
+                {
+                    maxScore = _candidates[i].Score;
+                    best = i;
+                }
+            }
+            if (best < 0)
+            {
                 for (int i = 0; i < _candidates.Length; i++)
                 {
-                    if (!_candidates[i].IsDeadStem && _candidates[i].Score > maxScore)
+                    if (_candidates[i].Score > maxScore)
                     {
                         maxScore = _candidates[i].Score;
                         best = i;
                     }
                 }
-                if (best < 0 && _candidates.Length > 0)
-                {
-                    for (int i = 0; i < _candidates.Length; i++)
-                    {
-                        if (_candidates[i].Score > maxScore)
-                        {
-                            maxScore = _candidates[i].Score;
-                            best = i;
-                        }
-                    }
-                }
-                if (best >= 0 && best < _candidates.Length) _bestCandidateIndex = best;
             }
-            return _candidates[_bestCandidateIndex].Move;
+            if ((uint)best < (uint)_candidates.Length) _bestCandidateIndex = best;
         }
+        return _bestCandidateIndex;
     }
 
     public void AppendCandidateScoreHistory(int index, string text)
@@ -516,20 +501,11 @@ public sealed class ZapSharedState
             _candidates[leaderIndex].ScoreHistory += $"Refuted:{refutedScore} ";
             _candidates[leaderIndex].CompletedDepth = Math.Max(_candidates[leaderIndex].CompletedDepth, depth);
 
-            // Recompute best candidate across all active candidates
-            int bestIdx = -1;
-            int bestScore = int.MinValue;
-            for (int i = 0; i < _candidates.Length; i++)
+            RecomputeBestLocked();
+            int bestIdx = _bestCandidateIndex;
+            if ((uint)bestIdx < (uint)_candidates.Length)
             {
-                if (!_candidates[i].IsDeadStem && _candidates[i].Score > bestScore)
-                {
-                    bestScore = _candidates[i].Score;
-                    bestIdx = i;
-                }
-            }
-
-            if (bestIdx >= 0)
-            {
+                int bestScore = _candidates[bestIdx].Score;
                 if (bestIdx != leaderIndex && bestScore > _candidates[leaderIndex].Score)
                 {
                     // Leader Demoted!
@@ -611,29 +587,9 @@ public sealed class ZapSharedState
             _candidates[candidateIndex].ScoreHistory += $"TryUpdate:{newScore} ";
             _candidates[candidateIndex].CompletedDepth = Math.Max(_candidates[candidateIndex].CompletedDepth, depth);
 
-            // Recompute best candidate across all non-dead, non-refuted candidates
-            int bestIdx = -1;
-            int bestScore = int.MinValue;
-            for (int i = 0; i < _candidates.Length; i++)
-            {
-                if (!_candidates[i].IsDeadStem)
-                {
-                    if (_candidates[i].Score > bestScore)
-                    {
-                        bestScore = _candidates[i].Score;
-                        bestIdx = i;
-                    }
-                }
-            }
-
-            if (bestIdx >= 0)
-            {
-                bool changed = bestIdx != _bestCandidateIndex;
-                _bestCandidateIndex = bestIdx;
-                return changed;
-            }
-
-            return false;
+            int prevBest = _bestCandidateIndex;
+            RecomputeBestLocked();
+            return _bestCandidateIndex != prevBest;
         }
     }
 

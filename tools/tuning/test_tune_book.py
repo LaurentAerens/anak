@@ -93,6 +93,19 @@ class TestPolyGlotBookTable(unittest.TestCase):
         self.assertEqual(pruned_wr, 1)
         self.assertEqual(len(table), 1)
 
+    def test_prune_ignores_external_polyglot_learn_metadata(self):
+        table = PolyGlotBookTable()
+        # External PolyGlot learn field (e.g. 2902397952 -> gp=44287, gw=5120) must not be pruned as blunder stats
+        table.entries[(1, 1)] = BookEntry(key=1, raw_move=1, weight=1, learn=2902397952)
+        pruned_wr = table.prune_blunders(min_games=3, max_win_rate=0.25)
+        self.assertEqual(pruned_wr, 0)
+        self.assertEqual(len(table), 1)
+
+        # Updating an entry with external learn metadata resets learn cleanly to 1 game played
+        updated = table.add_or_update(key=1, raw_move=1, delta_weight=5, is_win=True, is_loss=False)
+        self.assertEqual(updated.games_played, 1)
+        self.assertEqual(updated.games_won, 1)
+
 
 class TestReinforcementLearning(unittest.TestCase):
     def setUp(self):
