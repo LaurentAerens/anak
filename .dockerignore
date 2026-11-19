@@ -1,0 +1,21 @@
+# Exclude everything by default, then allow only what the container builds need
+*
+!Directory.Build.props
+!book.bin
+!networks/
+!networks/**
+!syzygy/
+!syzygy/**
+!src/
+!src/Anak.Core/**
+!src/Anak.Data/**
+!src/Anak.Search/**
+!src/Zanak/**
+!tools/
+!tools/lichess-bot/**
+
+# Exclude local build outputs inside allowed src/ folders
+**/bin/
+**/obj/
+**/TestResults/
+.git/

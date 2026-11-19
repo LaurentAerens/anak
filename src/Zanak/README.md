@@ -1,5 +1,7 @@
 # Zanak Chess Engine — ZAP (Zero-branching Accelerated Probe)
 
+> **Play Zanak online:** Challenge [**@zanak-bot**](https://lichess.org/@/zanak-bot) on Lichess! (Hosted via [`tools/lichess-bot`](../../tools/lichess-bot/README.md))
+
 ![Zanak Search Demo](../../docs/zanak-v0.0.4-demo.gif)
 
 ## 1. Executive Summary & Philosophy
