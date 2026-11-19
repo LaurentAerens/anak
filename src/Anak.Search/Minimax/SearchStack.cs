@@ -60,7 +60,7 @@ public struct SearchStack
         ExcludedMove = Move.Null;
         Killer0 = Move.Null;
         Killer1 = Move.Null;
-        StaticEval = 0;
+        StaticEval = -Value.InfiniteValue;
         MoveCount = 0;
         InCheck = false;
     }

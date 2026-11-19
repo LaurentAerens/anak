@@ -91,7 +91,7 @@ public class MinimaxFoundationsTests
         stack.Reset();
         Assert.Equal(Move.Null, stack.Killer0);
         Assert.Equal(Move.Null, stack.Killer1);
-        Assert.Equal(0, stack.StaticEval);
+        Assert.Equal(-Value.InfiniteValue, stack.StaticEval);
         Assert.Equal(0, stack.MoveCount);
         Assert.False(stack.InCheck);
         Assert.Equal(Piece.None, stack.MovedPiece);

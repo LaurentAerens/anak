@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.2` (Estimated Rating: **2969 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.3` (Estimated Rating: **2978 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.3` (2026-11-19) — Root `StaticEval` Initialization & `SearchStack.Reset()` Fix
+- **Category:** Search Bugfix (Patch Release)
+- **Estimated Elo:** **2978 &plusmn; 7** (`+9.25 ± 7.36` logistic Elo / `+11.23 ± 8.92` nElo over `v1.1.2` in 5,824 games at `1+0.01`: `2220W / 2065L / 1539D`, `51.33%`, `99.32% LOS`)
+- **Highlights:**
+  - **Root `StaticEval` Initialization (`AlphaBetaEngine.cs`, `SearchStack.cs`):** Fixed `SearchStack.Reset()` to initialize `StaticEval = -Value.InfiniteValue` (matching the sentinel checked by `AlphaBeta`) and computed `_stack[0].StaticEval` in `SearchRoot` when not in check, fixing `improving` heuristic classification at ply 2 across RFP, LMP, and LMR.
 
 ### `v1.1.2` (2026-11-19) — Blended Quiet Move Scoring (CPW 4.1 Revisit)
 - **Category:** Move Ordering (Patch Release)

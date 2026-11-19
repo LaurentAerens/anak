@@ -837,6 +837,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.1_20261118_220309.pgn",
       "notes": "Blended quiet move scoring in MovePicker.ScoreQuiets() preserving the positive ContinuationMoves stage (CPW 4.1 revisit)"
+    },
+    "v1.1.3": {
+      "version": "v1.1.3",
+      "date": "2026-11-19",
+      "estimated_elo": 2978,
+      "elo_margin": 7,
+      "baseline_opponent": "Anak v1.1.2 (+9.25 logistic / +11.23 nElo in 5,824 games, 99.32% LOS)",
+      "score": "2989.5 / 5824",
+      "wins": 2220,
+      "losses": 2065,
+      "draws": 1539,
+      "perf_percent": 51.33,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.2_20261119_115538.pgn",
+      "notes": "Initialize _stack[0].StaticEval in SearchRoot and reset SearchStack.StaticEval to -Value.InfiniteValue (fixes improving at ply 2)"
     }
   }
 }

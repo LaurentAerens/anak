@@ -908,11 +908,18 @@ public sealed class AlphaBetaEngine : ISearchEngine
             int alphaOrig = alpha;
             ulong key = board.ZobristKey;
 
-            _tt.TryGet(key, out TTEntry entry);
-            Move ttMove = entry.BestMove;
+            bool ttHit = _tt.TryGet(key, out TTEntry entry);
+            Move ttMove = ttHit ? entry.BestMove : Move.Null;
 
             _stack[0].Reset();
             _stack[0].InCheck = board.IsInCheck();
+            if (!_stack[0].InCheck)
+            {
+                int rawEval = (ttHit && entry.ExpertId == _activeExpertId && entry.StaticEval != short.MinValue)
+                    ? entry.StaticEval
+                    : _evaluator.Evaluate(in board).Raw;
+                _stack[0].StaticEval = _correctionHistory.GetAdjustedEval(board.SideToMove, board.PawnKey, rawEval);
+            }
 
             // Root move picker
             var picker = new MovePicker(
