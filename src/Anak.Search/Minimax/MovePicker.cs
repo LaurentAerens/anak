@@ -580,6 +580,12 @@ public ref struct MovePicker
             if (m.IsCapture || m.IsPromotion) continue;
 
             int score = _history?.GetScore(side, m) ?? 0;
+            if (_continuationHistory != null && (_prev1Offset >= 0 || _prev2Offset >= 0))
+            {
+                Piece moved = _board.GetPieceAt(m.From);
+                score += _continuationHistory.Get1PlyAt(_prev1Offset, moved, m.To) +
+                         _continuationHistory.Get2PlyAt(_prev2Offset, moved, m.To);
+            }
             _scores[i] = score;
             _quietIndices[_quietCount++] = (byte)i;
         }

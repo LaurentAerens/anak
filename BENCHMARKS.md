@@ -54,6 +54,7 @@ This document tracks the estimated Elo rating progression of Anak releases and p
 | [**v1.0.33**](https://github.com/LaurentAerens/anak/releases/tag/v1.0.33) | 2026-11-17 | **2965** | &plusmn;21 | **Re-Anchored** (5-Engine Ordo CCRL Gauntlet; +4.00 Elo vs v1.0.32 in 8k) | 305.5 / 1105 (27.65%) | 193 / 687 / 225 | 5+0.05 | [`ordo_gauntlet_20261117_090026_clean.pgn`](tools/fastchess/results/ordo_gauntlet_20261117_090026_clean.pgn) |
 | [**v1.1.0**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.0) | 2026-11-17 | **2965** | &plusmn;21 | Milestone Consolidation (`v1.0.0` → `v1.0.33`; +497 Elo chained vs v1.0.0) | 305.5 / 1105 (27.65%) | 193 / 687 / 225 | 5+0.05 | [`ordo_gauntlet_20261117_090026_clean.pgn`](tools/fastchess/results/ordo_gauntlet_20261117_090026_clean.pgn) |
 | [**v1.1.1**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.1) | 2026-11-18 | **2965** | &plusmn;6 | Anak v1.0.32 (+4.04 Elo in 8k; zero-regression NPS & cleanup) | 4046.5 / 8000 (50.58%) | 2747 / 2654 / 2599 | 1+0.01 | [`anak_dev_vs_v1.0.32_20261118_195839.pgn`](tools/fastchess/results/anak_dev_vs_v1.0.32_20261118_195839.pgn) |
+| [**v1.1.2**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.2) | 2026-11-19 | **2969** | &plusmn;5 | Anak v1.1.1 (+4.07 paired nElo / +0.87 Elo in 8k) | 4010.0 / 8000 (50.12%) | 2670 / 2650 / 2680 | 1+0.01 | [`anak_dev_vs_v1.1.1_20261118_220309.pgn`](tools/fastchess/results/anak_dev_vs_v1.1.1_20261118_220309.pgn) |
 
 ## ⚔️ Self-Benchmarking (Candidate vs Baseline)
 

@@ -822,6 +822,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.0.32_20261118_195839.pgn",
       "notes": "Bit-identical core/data/search simplifications (+2.17% bench 12 NPS, 0/10k fixed-node mismatches), dead-code cleanup, and book.bin retuning"
+    },
+    "v1.1.2": {
+      "version": "v1.1.2",
+      "date": "2026-11-19",
+      "estimated_elo": 2969,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.1 (+4.07 paired nElo / +0.87 Elo in 8,000 games)",
+      "score": "4010.0 / 8000",
+      "wins": 2670,
+      "losses": 2650,
+      "draws": 2680,
+      "perf_percent": 50.12,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.1_20261118_220309.pgn",
+      "notes": "Blended quiet move scoring in MovePicker.ScoreQuiets() preserving the positive ContinuationMoves stage (CPW 4.1 revisit)"
     }
   }
 }

@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.1` (Estimated Rating: **2965 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.2` (Estimated Rating: **2969 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.2` (2026-11-19) — Blended Quiet Move Scoring (CPW 4.1 Revisit)
+- **Category:** Move Ordering (Patch Release)
+- **Estimated Elo:** **2969 &plusmn; 5** (`+4.07 ± 5.38` paired nElo / `+0.87 ± 6.21` logistic Elo over `v1.1.1` in 8,000 games at `1+0.01`: `2670W / 2650L / 2680D`, `50.12%`, `61.14% LOS`)
+- **Highlights:**
+  - **Blended Quiet Scoring in `MovePicker.ScoreQuiets()`:** Preserves the positive `ContinuationMoves` stage while blending `1-ply + 2-ply` continuation history with Butterfly history in `ScoreQuiets()`, properly demoting quiet moves with negative continuation history.
 
 ### `v1.1.1` (2026-11-18) — Bit-Identical Code & Math Simplification, NPS Gains & Book Retuning
 - **Category:** Zero-Regression Throughput & Maintainability (Patch Release)
