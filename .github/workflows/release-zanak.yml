@@ -199,7 +199,10 @@ jobs:
       - name: Select Zanak Release Notes
         shell: bash
         run: |
-          NOTES_FILE="ZANAK_RELEASE_${{ steps.release_info.outputs.ver }}.md"
+          NOTES_FILE="docs/releases/ZANAK_RELEASE_${{ steps.release_info.outputs.ver }}.md"
+          if [ ! -f "${NOTES_FILE}" ]; then
+            NOTES_FILE="ZANAK_RELEASE_${{ steps.release_info.outputs.ver }}.md"
+          fi
           if [ -f "${NOTES_FILE}" ]; then
             cp "${NOTES_FILE}" dist/release_notes.md
           else

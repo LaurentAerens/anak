@@ -40,7 +40,7 @@ BIN_DIR = SCRIPT_DIR / "bin"
 RESULTS_DIR = SCRIPT_DIR / "results"
 BASELINES_DIR = SCRIPT_DIR / "baselines"
 RATINGS_FILE = SCRIPT_DIR / "ratings.json"
-BENCHMARKS_MD = REPO_ROOT / "BENCHMARKS.md"
+BENCHMARKS_MD = REPO_ROOT / "docs" / "BENCHMARKS.md"
 OPENINGS_FILE = SCRIPT_DIR / "openings.epd"
 ANAK_PUBLISH_DIR = BIN_DIR / "anak"
 ANAK_EXE = ANAK_PUBLISH_DIR / ("anak.exe" if os.name == "nt" else "anak")

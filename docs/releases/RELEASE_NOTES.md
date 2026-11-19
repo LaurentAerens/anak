@@ -3,9 +3,9 @@
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
 > **Current Active Version:** `v1.1.2` (Estimated Rating: **2969 Elo — Ordo CCRL-Anchored**)  
-> **Benchmark Archive & Progression:** [`BENCHMARKS.md`](BENCHMARKS.md)  
-> **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](docs/BENCHMARKING_POLICY.md)  
-> **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](docs/FAILED_IDEAS.md)
+> **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
+> **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
+> **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
 
 ---
 

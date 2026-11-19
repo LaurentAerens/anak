@@ -25,7 +25,7 @@ python tools\fastchess\run_elo_bench.py
    - If no baselines are archived, falls back to Stockfish 19 (1800 Elo).
 3. **Executes Balanced Match**: Plays a tournament match using the 50-opening suite in `openings.epd` (with color reversal for fair testing).
 4. **Computes Elo Rating**: Analyzes game results, prints a final Elo Evaluation Report with 95% confidence intervals, and writes game PGNs to `tools/fastchess/results/`.
-5. **Tracks Version Progress**: Centralized tracking in [`BENCHMARKS.md`](../../BENCHMARKS.md) and [`tools/fastchess/ratings.json`](ratings.json).
+5. **Tracks Version Progress**: Centralized tracking in [`BENCHMARKS.md`](../../docs/BENCHMARKS.md) and [`tools/fastchess/ratings.json`](ratings.json).
 
 ---
 

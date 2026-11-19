@@ -2,7 +2,7 @@
 
 **Zanak** is an experimental chess engine in the Anak repository built around **ZAP (Zero-branching Accelerated Probe)**.
 
-![Zanak v0.0.4 Search Movie](docs/zanak-v0.0.4-demo.gif)
+![Zanak v0.0.4 Search Movie](../zanak-v0.0.4-demo.gif)
 
 ---
 
@@ -27,4 +27,4 @@
 | `5+0.05` | 50 | 60.00% | 28-18-4 | `+70.44 ± 101.42` | **~1390** | 92.55% |
 | `10+0.1` | 30 | 43.33% | 13-17-0 | `-46.60 ± 114.91` | **~1273** | 20.18% |
 
-![Zanak Elo vs Time Control](docs/zanak-v0.0.4-elo-tc.png)
+![Zanak Elo vs Time Control](../zanak-v0.0.4-elo-tc.png)

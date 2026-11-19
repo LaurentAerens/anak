@@ -460,7 +460,7 @@ def render_badges(tag: str, elo: any, test_status: str, repo: str) -> str:
         f"[![Runtime: .NET 11](https://img.shields.io/badge/.NET-11.0-512BD4.svg)](https://dotnet.microsoft.com/) "
         f"[![Tests Status]({badge_tests})](https://github.com/{repo}/actions) "
         f"[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://github.com/{repo}/blob/main/LICENSE) "
-        f"[![Rating](https://img.shields.io/badge/Elo-{elo_str}-success.svg)](https://github.com/{repo}/blob/main/BENCHMARKS.md)"
+        f"[![Rating](https://img.shields.io/badge/Elo-{elo_str}-success.svg)](https://github.com/{repo}/blob/main/docs/BENCHMARKS.md)"
     )
 
 

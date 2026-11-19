@@ -2,7 +2,7 @@
 
 This document tracks search, pruning, movegen, and move-ordering techniques cataloged on [Chess Programming Wiki (chessprogramming.org)](https://chessprogramming.org/) to evaluate, benchmark, and progress across multiple development machines.
 
-> **Note:** Cross-referenced against previous optimization history ([`RELEASE_NOTES.md`](../RELEASE_NOTES.md)) and the failed experiments archive ([`docs/FAILED_IDEAS.md`](FAILED_IDEAS.md)). Features previously tested and rejected are documented in [Section 7](#7-previously-tested--rejected-techniques-from-cpw-archive) to prevent duplicate work.
+> **Note:** Cross-referenced against previous optimization history ([`RELEASE_NOTES.md`](releases/RELEASE_NOTES.md)) and the failed experiments archive ([`docs/FAILED_IDEAS.md`](FAILED_IDEAS.md)). Features previously tested and rejected are documented in [Section 7](#7-previously-tested--rejected-techniques-from-cpw-archive) to prevent duplicate work.
 
 ---
 
