@@ -68,7 +68,7 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int CalculateBonus(int depth)
     {
-        return Math.Min((depth * depth * BonusScale) / 16, MaxBonus);
+        return Math.Min(Math.Max(0, 300 * depth - 250), MaxBonus);
     }
 
     /// <summary>

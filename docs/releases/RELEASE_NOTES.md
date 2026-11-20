@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.7` (Estimated Rating: **2992 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.8` (Estimated Rating: **3092 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.8` (2026-11-20) — History Bonus Scaling Overhaul & `Board.IsLegal` Correctness Fix
+- **Category:** Move Ordering / History & Core Correctness (Patch Release)
+- **Estimated Elo:** **3092 &plusmn; 9** (`+99.80 ± 8.88` logistic Elo / `+125.98 ± 10.61` nElo over `v1.1.7` in 4,120 games at `1+0.01`, early-stopped: `2142W / 990L / 988D`, `63.98%`, `100.00% LOS`)
+- **Highlights & Per-Change Elo:**
+  - **History Bonus Scaling & CaptureHistory `-malus` (`HistoryTable.cs`, `AlphaBetaEngine.cs`) — `+99.80 ± 8.88` logistic Elo (`+125.98 ± 10.61` nElo, 4,120 games):** Fixed `HistoryTable.CalculateBonus(depth)` from `depth * depth` (which was ~50× underscaled against `MaxHistory = 16384` and LMR/history thresholds) to `Math.Min(Math.Max(0, 300 * depth - 250), MaxBonus)`, and fixed `_captureHistory.Update` to apply `-malus` instead of `-bonus` on failed captures.
+  - **`Board.IsLegal` Validation Fix (`Board.cs`) — `0.00 ± 5.76` Elo (5,978 games, zero-regression correctness fix):** Rejected `MoveType.DoublePawnPush` on non-pawns and non-capture promotions on capture squares, preventing silent `EpSquare`/`ZobristKey` corruption on TT hash collisions while simplifying non-pawn legality checks.
 
 ### `v1.1.7` (2026-11-20) — `TimeManager` Low-Time Invariant & Fail-Low Extension Preservation
 - **Category:** Time Management Bugfix (Patch Release)

@@ -912,6 +912,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.6_20261120_070700.pgn",
       "notes": "Fix TimeManager low-time soft/hard limit invariant and preserve fail-low extensions across UpdateMoveStability"
+    },
+    "v1.1.8": {
+      "version": "v1.1.8",
+      "date": "2026-11-20",
+      "estimated_elo": 3092,
+      "elo_margin": 9,
+      "baseline_opponent": "Anak v1.1.7 (+99.80 logistic / +125.98 nElo in 4,120 games, 100.00% LOS)",
+      "score": "2636.0 / 4120",
+      "wins": 2142,
+      "losses": 990,
+      "draws": 988,
+      "perf_percent": 63.98,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.7_20261120_224358.pgn",
+      "notes": "Fix underscaled HistoryTable.CalculateBonus(depth) (+99.80 Elo) and -malus in CaptureHistory, bundled with Board.IsLegal correctness fix (0.00 Elo over 5,978 games)"
     }
   }
 }

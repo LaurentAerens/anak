@@ -786,7 +786,7 @@ public struct Board : IEquatable<Board>
                                 if (!isCaptureDest) return false;
                                 if (to.Rank() == Rank.Rank8)
                                 {
-                                    if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                    if (!move.IsPromotion || !move.IsCapture || move.PromotionPieceType == PieceType.None) return false;
                                 }
                                 else
                                 {
@@ -846,7 +846,7 @@ public struct Board : IEquatable<Board>
                                 if (!isCaptureDest) return false;
                                 if (to.Rank() == Rank.Rank1)
                                 {
-                                    if (!move.IsPromotion || move.PromotionPieceType == PieceType.None) return false;
+                                    if (!move.IsPromotion || !move.IsCapture || move.PromotionPieceType == PieceType.None) return false;
                                 }
                                 else
                                 {
@@ -864,44 +864,39 @@ public struct Board : IEquatable<Board>
 
             case PieceType.Knight:
                 {
-                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if (move.Type != (isCaptureDest ? MoveType.Capture : MoveType.Quiet)) return false;
                     if ((Bitboard.KnightAttacks[(int)from] & toBit) == 0) return false;
-                    if (isCaptureDest != move.IsCapture) return false;
                     break;
                 }
 
             case PieceType.Bishop:
                 {
-                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if (move.Type != (isCaptureDest ? MoveType.Capture : MoveType.Quiet)) return false;
                     if ((MagicBitboards.GetBishopAttacks(from, occupied) & toBit) == 0) return false;
-                    if (isCaptureDest != move.IsCapture) return false;
                     break;
                 }
 
             case PieceType.Rook:
                 {
-                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if (move.Type != (isCaptureDest ? MoveType.Capture : MoveType.Quiet)) return false;
                     if ((MagicBitboards.GetRookAttacks(from, occupied) & toBit) == 0) return false;
-                    if (isCaptureDest != move.IsCapture) return false;
                     break;
                 }
 
             case PieceType.Queen:
                 {
-                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if (move.Type != (isCaptureDest ? MoveType.Capture : MoveType.Quiet)) return false;
                     ulong qAttacks = (from.Rank() == to.Rank() || from.File() == to.File())
                         ? MagicBitboards.GetRookAttacks(from, occupied)
                         : MagicBitboards.GetBishopAttacks(from, occupied);
                     if ((qAttacks & toBit) == 0) return false;
-                    if (isCaptureDest != move.IsCapture) return false;
                     break;
                 }
 
             case PieceType.King:
                 {
-                    if (move.IsPromotion || move.IsEnPassant) return false;
+                    if (move.Type != (isCaptureDest ? MoveType.Capture : MoveType.Quiet)) return false;
                     if ((Bitboard.KingAttacks[(int)from] & toBit) == 0) return false;
-                    if (isCaptureDest != move.IsCapture) return false;
                     break;
                 }
 

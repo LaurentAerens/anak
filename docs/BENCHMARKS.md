@@ -60,6 +60,7 @@ This document tracks the estimated Elo rating progression of Anak releases and p
 | [**v1.1.5**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.5) | 2026-11-20 | **2990** | &plusmn;5 | Anak v1.1.4 (+3.74 logistic / +5.76 nElo in 8,000 games) | 4043 / 8000 (50.54%) | 2867 / 2781 / 2352 | 1+0.01 | [`anak_dev_vs_v1.1.4_20261120_034234.pgn`](tools/fastchess/results/anak_dev_vs_v1.1.4_20261120_034234.pgn) |
 | [**v1.1.6**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.6) | 2026-11-20 | **2991** | &plusmn;5 | Anak v1.1.5 (+2.35 logistic / +1.42 nElo in 8,000 games) | 4027 / 8000 (50.34%) | 2795 / 2741 / 2464 | 1+0.01 | [`anak_dev_vs_v1.1.5_20261120_055905.pgn`](tools/fastchess/results/anak_dev_vs_v1.1.5_20261120_055905.pgn) |
 | [**v1.1.7**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.7) | 2026-11-20 | **2992** | &plusmn;6 | Anak v1.1.6 (+1.09 logistic / +1.43 nElo in 8,000 games) | 4012.5 / 8000 (50.16%) | 2770 / 2745 / 2485 | 1+0.01 | [`anak_dev_vs_v1.1.6_20261120_070700.pgn`](tools/fastchess/results/anak_dev_vs_v1.1.6_20261120_070700.pgn) |
+| [**v1.1.8**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.8) | 2026-11-20 | **3092** | &plusmn;9 | Anak v1.1.7 (+99.80 logistic / +125.98 nElo in 4,120 games) | 2636.0 / 4120 (63.98%) | 2142 / 990 / 988 | 1+0.01 | [`anak_dev_vs_v1.1.7_20261120_224358.pgn`](tools/fastchess/results/anak_dev_vs_v1.1.7_20261120_224358.pgn) |
 
 ## ⚔️ Self-Benchmarking (Candidate vs Baseline)
 

@@ -79,11 +79,11 @@
 - **Fix:** Handle `checkers` in `GenerateLegalCaptures` and expose an explicit `GenerateLegalCapturesNoCheck` overload for `MovePicker`/`QS` where `!inCheck` is already proven.
 - **Est. Impact:** Correctness fix (0 NPS cost) | **Complexity:** Low | **Test:** `MoveGenTests` check-capture invariant test.
 
-### 11. Fix `Board.IsLegal` Accepting `DoublePawnPush` on Non-Pawns & Non-Capture Promotions on Captures
+### 11. [x] Fix `Board.IsLegal` Accepting `DoublePawnPush` on Non-Pawns & Non-Capture Promotions on Captures — **Released in `v1.1.8` (0 Elo Fix)**
 - **Location:** [`Board.cs`](../src/Anak.Core/Board/Board.cs#L787-L906)
-- **Bug:** Non-pawn checks (`L865â€“906`) fail to reject `MoveType.DoublePawnPush` (which on a TT hash collision corrupts `EpSquare` and `ZobristKey` in `MakeMove:356`). Pawn capture-promotions (`L787â€“790, L847â€“850`) do not check `!move.IsCapture`.
+- **Bug:** Non-pawn checks (`L865–906`) fail to reject `MoveType.DoublePawnPush` (which on a TT hash collision corrupts `EpSquare` and `ZobristKey` in `MakeMove:356`). Pawn capture-promotions (`L787–790, L847–850`) do not check `!move.IsCapture`.
 - **Fix:** Use `if (move.Type != (isCaptureDest ? MoveType.Capture : MoveType.Quiet)) return false;` for non-pawns and add `|| !move.IsCapture` to capture-promotion checks.
-- **Est. Impact:** Prevents TT-collision board corruption + fewer branches | **Complexity:** Trivial | **Test:** `MoveGenTests`.
+- **Result (vs `v1.1.7`, `1+0.01`, 5,978 games):** **0.00 ± 5.76 Elo** (`1957W / 1957L / 2064D`, `50.00%`, `50.00% LOS`) — kept as a zero-regression correctness fix, bundled into `v1.1.8`.
 
 ### 12. Fix Mid-Search `limits.Nodes` Enforcement & Include QS Nodes in `SearchWorker.Nodes`
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L645-L647), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1141-L1150), [`QuiescenceSearch.cs`](../src/Anak.Search/Minimax/QuiescenceSearch.cs#L24-L57)
@@ -141,10 +141,10 @@
 
 ## 3. Move Ordering & History Heuristics (`#21â€“#24`)
 
-### 21. Fix Underscaled `HistoryTable.CalculateBonus(depth)` (~50Ã— Too Small) & `-malus` in `CaptureHistory`
-- **Location:** [`HistoryTable.cs`](../src/Anak.Search/Minimax/History/HistoryTable.cs#L69-L81), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1698)
-- **Improvement:** `CalculateBonus(depth)` returns `depth * depth` (`1..36` for depths `1..6`) against `MaxHistory = 16384` and thresholds of `2139..3805` (requiring 134 cutoffs at depth 4 just to reach LMR threshold!). Switch to a Stockfish-style formula like `Math.Min(300 * depth - 250, 2000)` (or `16 * depth * depth + 128 * depth`), and pass `-malus` instead of `-bonus` to `_captureHistory.Update` at L1698.
-- **Est. Impact:** **+10 to +25 Elo** | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.
+### 21. [x] Fix Underscaled `HistoryTable.CalculateBonus(depth)` (~50× Too Small) & `-malus` in `CaptureHistory` — **Released in `v1.1.8`**
+- **Location:** [`HistoryTable.cs`](../src/Anak.Search/Minimax/History/HistoryTable.cs#L69-L72), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1715)
+- **Improvement:** `CalculateBonus(depth)` returned `depth * depth` (`1..36` for depths `1..6`) against `MaxHistory = 16384` and thresholds of `2139..3805`. Switched to `Math.Min(Math.Max(0, 300 * depth - 250), MaxBonus)`, and passed `-malus` instead of `-bonus` to `_captureHistory.Update`.
+- **Result (`v1.1.8` vs `v1.1.7`, `1+0.01`, 4,120 games early-stopped):** **+99.80 ± 8.88 logistic Elo** (`+125.98 ± 10.61` nElo, `2142W / 990L / 988D`, `63.98%`, `100.00% LOS`).
 
 ### 22. Rebalance `CaptureHistory` vs. MVV-LVA Scaling & Halve `CaptureHistory` Table
 - **Location:** [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L484-L489), [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L639-L657), [`CaptureHistory.cs`](../src/Anak.Search/Minimax/History/CaptureHistory.cs#L48-L64)

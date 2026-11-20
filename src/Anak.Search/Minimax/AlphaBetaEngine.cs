@@ -1712,7 +1712,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 Move failed = capturesSearched[i];
                 if (failed != move)
                 {
-                    _captureHistory.Update(capturesSearchedPiece[i], failed.To, capturesSearchedVictim[i], -bonus);
+                    _captureHistory.Update(capturesSearchedPiece[i], failed.To, capturesSearchedVictim[i], -malus);
                 }
             }
         }
