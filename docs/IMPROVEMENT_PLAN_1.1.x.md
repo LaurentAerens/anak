@@ -31,11 +31,11 @@
 - **Fix:** Return `0` immediately on `_isTimeUp()` both at L261 and immediately after the recursive call at L274, before any alpha/beta update or TT store.
 - **Est. Impact:** **+3 to +8 Elo** (bullet/blitz) | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.
 
-### 3. Fix SEE Promotion Bug (Uses Pawn `100cp` Instead of Promoted Piece Value on Target Square)
+### 3. [x] Fix SEE Promotion Bug (Uses Pawn `100cp` Instead of Promoted Piece Value on Target Square) — **Released in `v1.1.4`**
 - **Location:** [`SEE.cs`](../src/Anak.Core/Evaluation/SEE.cs#L42-L64), [`SEE.cs`](../src/Anak.Core/Evaluation/SEE.cs#L137-L179)
 - **Bug:** Both `HasPositiveOrEqualSee` and `Evaluate` add `GetPieceValue(PromotionPieceType) - 100` to `victimVal`, but leave `attackerType = Pawn` (`100cp`) as the piece sitting on `to` that the opponent can recapture. On a losing promotion like `e7e8q` into a defended square, `Evaluate` returns **`+700cp`** instead of **`-100cp`**, and `HasPositiveOrEqualSee` immediately returns `true`.
 - **Fix:** Set `PieceType attackerType = move.IsPromotion ? move.PromotionPieceType : movedPiece.Type();` in both methods.
-- **Est. Impact:** **+3 to +8 Elo** | **Complexity:** Trivial | **Test:** Unit tests (`SEETests`) + Tier 1 -> Tier 2 SPRT.
+- **Result (`v1.1.4` vs `v1.1.3`, `1+0.01`, 8,000 games):** **+5.86 ± 5.89 logistic Elo** (`+7.58 ± 7.61` nElo, `50.84%`, `97.45% LOS`).
 
 ### 4. Fix SEE Quiet-Move Fast Path Missing X-Ray Attacks
 - **Location:** [`SEE.cs`](../src/Anak.Core/Evaluation/SEE.cs#L70-L73), [`SEE.cs`](../src/Anak.Core/Evaluation/SEE.cs#L152-L158)

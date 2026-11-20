@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.3` (Estimated Rating: **2978 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.4` (Estimated Rating: **2984 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.4` (2026-11-20) — Fix SEE Promotion Attacker Piece Value
+- **Category:** Evaluation / SEE Bugfix (Patch Release)
+- **Estimated Elo:** **2984 &plusmn; 6** (`+5.86 ± 5.89` logistic Elo / `+7.58 ± 7.61` nElo over `v1.1.3` in 8,000 games at `1+0.01`: `2878W / 2743L / 2379D`, `50.84%`, `97.45% LOS`)
+- **Highlights:**
+  - **SEE Promotion Attacker Fix (`SEE.cs`):** Fixed `HasPositiveOrEqualSee` and `Evaluate` to use `move.PromotionPieceType` instead of `Pawn` (`100cp`) as the piece sitting on the destination square after a promotion, preventing losing promotions into defended squares from being misscored as `+700cp`.
 
 ### `v1.1.3` (2026-11-19) — Root `StaticEval` Initialization & `SearchStack.Reset()` Fix
 - **Category:** Search Bugfix (Patch Release)

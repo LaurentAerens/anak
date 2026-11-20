@@ -45,7 +45,7 @@
     "SeeAndLegalityChecksum": 15413505561324672136,
     "BestMoveUci": "g1h1",
     "SearchScoreCp": -463,
-    "SearchNodes": 1385
+    "SearchNodes": 1377
   },
   {
     "Fen": "rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8",
@@ -54,7 +54,7 @@
     "OpennessMillipawns": 770,
     "ExpertId": 0,
     "StaticEval": -46,
-    "SeeAndLegalityChecksum": 2109530971776920121,
+    "SeeAndLegalityChecksum": 8705599932257467223,
     "BestMoveUci": "d7c8q",
     "SearchScoreCp": 517,
     "SearchNodes": 2001
@@ -453,7 +453,7 @@
     "SeeAndLegalityChecksum": 17303811074551151865,
     "BestMoveUci": "a4b5",
     "SearchScoreCp": -1074,
-    "SearchNodes": 7627
+    "SearchNodes": 7592
   },
   {
     "Fen": "r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4",
@@ -620,8 +620,8 @@
     "StaticEval": 23,
     "SeeAndLegalityChecksum": 7101477822152929934,
     "BestMoveUci": "a7a8q",
-    "SearchScoreCp": 806,
-    "SearchNodes": 9409
+    "SearchScoreCp": 838,
+    "SearchNodes": 21418
   },
   {
     "Fen": "r3k2r/P6P/8/8/8/8/p6p/R3K2R b KQkq - 0 1",
@@ -633,7 +633,7 @@
     "SeeAndLegalityChecksum": 11437902733335003456,
     "BestMoveUci": "a8a7",
     "SearchScoreCp": 14,
-    "SearchNodes": 1520
+    "SearchNodes": 1395
   },
   {
     "Fen": "r1bq1rk1/ppp2ppp/2nb1n2/3pp3/8/2PP1NP1/PP2PPBP/RNBQ1RK1 b - - 0 6",

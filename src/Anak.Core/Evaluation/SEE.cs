@@ -39,7 +39,7 @@ public static class StaticExchangeEvaluator
         Piece movedPiece = board.GetPieceAt(from);
         if (movedPiece == Piece.None) return 0 >= threshold;
 
-        PieceType attackerType = movedPiece.Type();
+        PieceType attackerType = move.IsPromotion ? move.PromotionPieceType : movedPiece.Type();
         Color us = board.SideToMove;
         Color them = us.Opponent();
 
@@ -134,7 +134,7 @@ public static class StaticExchangeEvaluator
         Piece movedPiece = board.GetPieceAt(from);
         if (movedPiece == Piece.None) return 0;
 
-        PieceType attackerType = movedPiece.Type();
+        PieceType attackerType = move.IsPromotion ? move.PromotionPieceType : movedPiece.Type();
         Color us = board.SideToMove;
         Color them = us.Opponent();
 
