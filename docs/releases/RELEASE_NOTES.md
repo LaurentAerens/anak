@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.6` (Estimated Rating: **2991 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.7` (Estimated Rating: **2992 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.7` (2026-11-20) — `TimeManager` Low-Time Invariant & Fail-Low Extension Preservation
+- **Category:** Time Management Bugfix (Patch Release)
+- **Estimated Elo:** **2992 &plusmn; 6** (`+1.09 ± 5.80` logistic Elo / `+1.43 ± 7.61` nElo over `v1.1.6` in 8,000 games at `1+0.01`: `2770W / 2745L / 2485D`, `50.16%`, `64.32% LOS`)
+- **Highlights:**
+  - **`TimeManager` Invariant & Fail-Low Fix (`TimeManager.cs`):** Clamped `_softLimitMs` against `_hardLimitMs - 1` across `ScaleSoftLimit`, `UpdateMoveStability`, `HandleScoreDrop`, and `ExtendForFailLow`, and added a per-iteration `_hadFailLowThisIter` flag so move-stability contraction never erases fail-low extensions.
 
 ### `v1.1.6` (2026-11-20) — Singular Extensions Mate-Score Guard, Stop Check & Ply Cap
 - **Category:** Search Stability & Bugfix (Patch Release)

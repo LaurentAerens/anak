@@ -897,6 +897,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.5_20261120_055905.pgn",
       "notes": "Add mate-score guard, stop-check guard, and ply/depth cap to Singular Extensions in AlphaBetaEngine"
+    },
+    "v1.1.7": {
+      "version": "v1.1.7",
+      "date": "2026-11-20",
+      "estimated_elo": 2992,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.1.6 (+1.09 logistic / +1.43 nElo in 8,000 games, 64.32% LOS)",
+      "score": "4012.5 / 8000",
+      "wins": 2770,
+      "losses": 2745,
+      "draws": 2485,
+      "perf_percent": 50.16,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.6_20261120_070700.pgn",
+      "notes": "Fix TimeManager low-time soft/hard limit invariant and preserve fail-low extensions across UpdateMoveStability"
     }
   }
 }

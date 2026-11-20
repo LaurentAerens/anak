@@ -61,11 +61,11 @@
 - **Fix:** Add `Math.Abs(ttScore) < TTEntry.MateBound`, abort check after L1331, and `ply < 2 * _rootDepth` / `depth < MaxSearchDepth - 2` cap.
 - **Result (`v1.1.6` vs `v1.1.5`, `1+0.01`, 8,000 games):** **+2.35 ± 5.74 logistic Elo** (`+3.11 ± 7.61` fastchess nElo / `+1.42 ± 5.38` paired nElo, `50.34%`, `78.84% LOS`).
 
-### 8. Fix `TimeManager` Low-Time Invariant Violation & Fail-Low Extension Wipeout
+### 8. [x] Fix `TimeManager` Low-Time Invariant Violation & Fail-Low Extension Wipeout — **Released in `v1.1.7`**
 - **Location:** [`TimeManager.cs`](../src/Anak.Search/Time/TimeManager.cs#L185-L249), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L729-L730)
 - **Bug:** (a) `Math.Max(10, ...)` at L185/L215 can push `_softLimitMs` above `_hardLimitMs` when `_baseSoftLimitMs < 10ms`. (b) `UpdateMoveStability` (L215) resets `_softLimitMs` down to `0.75 * _baseSoftLimitMs` when `_stableMoveDepths >= 4`, wiping out `ExtendForFailLow` extensions.
-- **Fix:** Clamp `_softLimitMs` against `_hardLimitMs - 1` and track a per-iteration `hadFailLow` flag so stability contraction never erases fail-low extensions.
-- **Est. Impact:** Fewer bullet/blitz timeouts + better tactical fail-lows | **Complexity:** Low | **Test:** Tier 1 -> Tier 2 SPRT.
+- **Fix:** Clamp `_softLimitMs` against `_hardLimitMs - 1` and track a per-iteration `_hadFailLowThisIter` flag so stability contraction never erases fail-low extensions.
+- **Result (`v1.1.7` vs `v1.1.6`, `1+0.01`, 8,000 games):** **+1.09 ± 5.80 logistic Elo** (`+1.43 ± 7.61` nElo, `50.16%`, `64.32% LOS`).
 
 ### 9. Fix Unchecked `IndexBuffer128` Stack Overflow in `MovePicker` & `QuiescenceSearch`
 - **Location:** [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L92-L97), [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L315-L590), [`QuiescenceSearch.cs`](../src/Anak.Search/Minimax/QuiescenceSearch.cs#L170-L231)

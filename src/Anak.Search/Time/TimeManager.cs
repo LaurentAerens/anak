@@ -18,6 +18,7 @@ public sealed class TimeManager
     private bool _hasTimeLimit;
     private Move _lastBestMove = Move.Null;
     private int _stableMoveDepths;
+    private bool _hadFailLowThisIter;
 
     public const int CheckInterval = 512;
     public const int SafetyLagMs = 40;
@@ -65,6 +66,7 @@ public sealed class TimeManager
         CheckMask = 1023;
         _lastBestMove = Move.Null;
         _stableMoveDepths = 0;
+        _hadFailLowThisIter = false;
 
         if (limits.Infinite)
         {
@@ -182,8 +184,10 @@ public sealed class TimeManager
     public void ScaleSoftLimit(float factor)
     {
         if (!_hasTimeLimit) return;
-        _softLimitMs = Math.Max(10, (long)(_baseSoftLimitMs * factor));
-        _hardLimitMs = Math.Max(_softLimitMs, (long)(_baseHardLimitMs * factor));
+        long newHard = Math.Max(2, (long)(_baseHardLimitMs * factor));
+        long maxSoft = Math.Max(1, newHard - 1);
+        _hardLimitMs = newHard;
+        _softLimitMs = Math.Clamp((long)(_baseSoftLimitMs * factor), 1, maxSoft);
     }
 
     /// <summary>
@@ -202,18 +206,22 @@ public sealed class TimeManager
             // Move flipped late in search (depth >= 8) with prior confidence: extend time, capped at 80% of hard limit
             if (depth >= 8 && _stableMoveDepths >= 2)
             {
-                long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
-                _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeFlipScale / 100.0f)), 5, maxSoft);
+                long maxSoft = Math.Max(1, Math.Min(_hardLimitMs - 1, (long)(_hardLimitMs * 0.80f)));
+                _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeFlipScale / 100.0f)), 1, maxSoft);
             }
             _lastBestMove = currentBest;
             _stableMoveDepths = 1;
         }
 
-        // Highly stable move (stable for >= 4 depths): scale back allocation to TimeStableScale% to conserve clock
-        if (_stableMoveDepths >= 4)
+        // Highly stable move (stable for >= 4 depths): scale back allocation to TimeStableScale% to conserve clock,
+        // unless this iteration experienced a fail-low extension.
+        if (_stableMoveDepths >= 4 && !_hadFailLowThisIter)
         {
-            _softLimitMs = Math.Max(10, (long)(_baseSoftLimitMs * (TimeStableScale / 100.0f)));
+            long maxSoft = Math.Max(1, _hardLimitMs - 1);
+            _softLimitMs = Math.Clamp((long)(_baseSoftLimitMs * (TimeStableScale / 100.0f)), Math.Min(10, maxSoft), maxSoft);
         }
+
+        _hadFailLowThisIter = false;
     }
 
     /// <summary>
@@ -224,8 +232,8 @@ public sealed class TimeManager
         if (!_hasTimeLimit || depth < 6) return;
         if (Math.Abs(prevScore) < Value.MateValue - 100 && currentScore < prevScore - ScoreDropThreshold)
         {
-            long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
-            _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeScoreDropScale / 100.0f)), 5, maxSoft);
+            long maxSoft = Math.Max(1, Math.Min(_hardLimitMs - 1, (long)(_hardLimitMs * 0.80f)));
+            _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeScoreDropScale / 100.0f)), 1, maxSoft);
         }
     }
 
@@ -237,6 +245,8 @@ public sealed class TimeManager
     {
         if (!_hasTimeLimit || depth < 6 || IsTimeCrunch) return;
 
+        _hadFailLowThisIter = true;
+
         // Allow hard limit to expand up to 2.2x base soft limit within maxAllowed
         if (_maxAllowedMs > _hardLimitMs)
         {
@@ -244,8 +254,8 @@ public sealed class TimeManager
             _hardLimitMs = Math.Clamp(potentialHard, _hardLimitMs, _maxAllowedMs);
         }
 
-        long maxSoft = Math.Max(5, (long)(_hardLimitMs * 0.80f));
-        _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeFailLowScale / 100.0f)), 5, maxSoft);
+        long maxSoft = Math.Max(1, Math.Min(_hardLimitMs - 1, (long)(_hardLimitMs * 0.80f)));
+        _softLimitMs = Math.Clamp((long)(_softLimitMs * (TimeFailLowScale / 100.0f)), 1, maxSoft);
     }
 
     /// <summary>
