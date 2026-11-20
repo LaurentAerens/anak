@@ -253,9 +253,13 @@ public sealed unsafe class TranspositionTable : IDisposable
             existing.Flags = flags;
             existing.Age = age;
             existing.ExpertId = expertId;
-        }
 
-        if (bestMove != Move.Null)
+            if (bestMove != Move.Null)
+            {
+                existing.BestMove = bestMove;
+            }
+        }
+        else if (existing.BestMove == Move.Null && bestMove != Move.Null)
         {
             existing.BestMove = bestMove;
         }

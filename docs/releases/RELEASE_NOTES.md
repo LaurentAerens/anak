@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.4` (Estimated Rating: **2984 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.5` (Estimated Rating: **2990 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.5` (2026-11-20) — Preserve Deep `TTEntry.BestMove` in `TranspositionTable`
+- **Category:** Search / Transposition Table Bugfix (Patch Release)
+- **Estimated Elo:** **2990 &plusmn; 5** (`+3.74 ± 6.01` logistic Elo / `+5.76 ± 5.39` nElo over `v1.1.4` in 8,000 games at `1+0.01`: `2867W / 2781L / 2352D`, `50.54%`, `88.85% LOS`)
+- **Highlights:**
+  - **Preserve Deep `BestMove` (`TranspositionTable.cs`):** Fixed `UpdateMinimaxEntry` so shallow/QS stores no longer overwrite an existing deeper entry's `BestMove` when its `Score`/`Depth` are preserved, updating `BestMove` only on full replacement or when `existing.BestMove == Move.Null`.
 
 ### `v1.1.4` (2026-11-20) — Fix SEE Promotion Attacker Piece Value
 - **Category:** Evaluation / SEE Bugfix (Patch Release)

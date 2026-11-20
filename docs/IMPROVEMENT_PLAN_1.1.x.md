@@ -43,11 +43,11 @@
 - **Fix:** Remove L70â€“73 in `HasPositiveOrEqualSee` (the main loop exits on iteration 1 with updated `occupied`), and in `Evaluate` compute `occupied` and `attackers` first before checking `(attackers & themPieces) == 0`.
 - **Est. Impact:** **+2 to +5 Elo** + small NPS gain | **Complexity:** Trivial | **Test:** `SEETests` + Tier 1 -> Tier 2 SPRT.
 
-### 5. Fix `TranspositionTable.UpdateMinimaxEntry` Overwriting Deep `BestMove` with Shallow `BestMove`
+### 5. [x] Fix `TranspositionTable.UpdateMinimaxEntry` Overwriting Deep `BestMove` with Shallow `BestMove` — **Released in `v1.1.5`**
 - **Location:** [`TranspositionTable.cs`](../src/Anak.Search/Transposition/TranspositionTable.cs#L248-L261)
-- **Bug:** Even when the depth/flag/age guard at L248 preserves a deeper entry's `Score` and `Depth`, L258â€“261 unconditionally overwrite `existing.BestMove` with the shallow/QS `bestMove`, degrading move ordering and PV extraction.
-- **Fix:** Only overwrite `existing.BestMove` when the entry itself is replaced (inside the L248 `if`) or when `existing.BestMove.IsNull`.
-- **Est. Impact:** **+3 to +8 Elo** | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.
+- **Bug:** Even when the depth/flag/age guard at L248 preserves a deeper entry's `Score` and `Depth`, L258–261 unconditionally overwrite `existing.BestMove` with the shallow/QS `bestMove`, degrading move ordering and PV extraction.
+- **Fix:** Only overwrite `existing.BestMove` when the entry itself is replaced (inside the L248 `if`) or when `existing.BestMove == Move.Null`.
+- **Result (`v1.1.5` vs `v1.1.4`, `1+0.01`, 8,000 games):** **+3.74 ± 6.01 logistic Elo** (`+4.73 ± 7.61` fastchess nElo / `+5.76 ± 5.39` paired nElo, `50.54%`, `88.85% LOS`).
 
 ### 6. Fix `QuiescenceSearch` Taking TT Cutoffs on PV Nodes
 - **Location:** [`QuiescenceSearch.cs`](../src/Anak.Search/Minimax/QuiescenceSearch.cs#L55-L84), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1122-L1125)

@@ -867,6 +867,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.3_20261120_012802.pgn",
       "notes": "Fix SEE promotion attacker piece value (use PromotionPieceType instead of Pawn in HasPositiveOrEqualSee and Evaluate)"
+    },
+    "v1.1.5": {
+      "version": "v1.1.5",
+      "date": "2026-11-20",
+      "estimated_elo": 2990,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.4 (+3.74 logistic / +5.76 nElo in 8,000 games, 88.85% LOS)",
+      "score": "4043 / 8000",
+      "wins": 2867,
+      "losses": 2781,
+      "draws": 2352,
+      "perf_percent": 50.54,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.4_20261120_034234.pgn",
+      "notes": "Preserve deep TTEntry.BestMove in TranspositionTable.UpdateMinimaxEntry against shallow/QS overwrites"
     }
   }
 }
