@@ -927,6 +927,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.7_20261120_224358.pgn",
       "notes": "Fix underscaled HistoryTable.CalculateBonus(depth) (+99.80 Elo) and -malus in CaptureHistory, bundled with Board.IsLegal correctness fix (0.00 Elo over 5,978 games)"
+    },
+    "v1.1.9": {
+      "version": "v1.1.9",
+      "date": "2026-11-21",
+      "estimated_elo": 3094,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.1.8 (+1.52 logistic / +1.96 nElo in 8,000 games, 69.29% LOS)",
+      "score": "4017.5 / 8000",
+      "wins": 2731,
+      "losses": 2696,
+      "draws": 2573,
+      "perf_percent": 50.22,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.8_20261120_231622.pgn",
+      "notes": "Continuous history-scaled LMR (r -= (hist + conthist1 + conthist2) / 8192) replacing binary +/-1 thresholds"
     }
   }
 }

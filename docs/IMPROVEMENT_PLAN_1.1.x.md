@@ -107,10 +107,10 @@
 
 ## 2. Search, Pruning & Extensions (`#15â€“#20`)
 
-### 15. Continuous History-Scaled LMR Replacing Binary `Â±1` Thresholds
-- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1492-L1501)
-- **Improvement:** Replace the binary `Â±1` threshold steps (`TunedHistoryThreshold`, `TunedConthistReward/Penalty`) with continuous proportional scaling: `r -= (hist + conthist1 + conthist2) / divisor` (e.g., `divisor ~ 8192`, SPSA-tunable), allowing `Â±2` to `Â±3` ply adjustments on extreme history moves. *(Matches `FAILED_IDEAS.md` #0c revisit condition.)*
-- **Est. Impact:** **+8 to +15 Elo** (synergizes strongly with `#21`) | **Complexity:** Low | **Test:** Tier 1 -> Tier 2 SPRT.
+### 15. [x] Continuous History-Scaled LMR Replacing Binary `±1` Thresholds — **Released in `v1.1.9`**
+- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1509-L1515)
+- **Improvement:** Replaced the binary `±1` threshold steps (`HistoryThreshold`, `ConthistReward`/`ConthistPenalty`) with continuous proportional scaling: `r -= (hist + conthist1 + conthist2) / 8192`, allowing `±2` to `±3` ply adjustments on extreme history moves.
+- **Result (`v1.1.9` vs `v1.1.8`, `1+0.01`, 8,000 games):** **+1.52 ± 5.91 logistic Elo** (`+1.96 ± 7.61` nElo, `2731W / 2696L / 2573D`, `50.22%`, `69.29% LOS`).
 
 ### 16. Persist `ttPv` Flag in `TTEntry` for PV-Aware LMR & Pruning
 - **Location:** [`TTEntry.cs`](../src/Anak.Search/Transposition/TTEntry.cs#L11-L18), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1202-L1284), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1474-L1503)

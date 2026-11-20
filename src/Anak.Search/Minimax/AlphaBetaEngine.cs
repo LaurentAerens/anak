@@ -1507,14 +1507,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             }
 
                             int hist = _history.GetScore(movedPiece.Color(), move);
-                            if (hist < -_engine.HistoryThreshold) r++;
-                            else if (hist > _engine.HistoryThreshold) r--;
-
                             int conthist1 = _continuationHistory.Get1PlyAt(contBase1, movedPiece, move.To);
                             int conthist2 = _continuationHistory.Get2PlyAt(contBase2, movedPiece, move.To);
-                            int conthist = hasPrev2 ? (conthist1 + conthist2) / 2 : conthist1;
-                            if (conthist > _engine.ConthistReward) r--;
-                            else if (conthist < -_engine.ConthistPenalty) r++;
+                            int statScore = hist + conthist1 + conthist2;
+                            r -= statScore / 8192;
 
                             r = Math.Clamp(r, 0, depth - 2);
                         }

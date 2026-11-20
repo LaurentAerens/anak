@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.8` (Estimated Rating: **3092 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.9` (Estimated Rating: **3094 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.9` (2026-11-21) — Continuous History-Scaled LMR
+- **Category:** Search / Late Move Reductions (Patch Release)
+- **Estimated Elo:** **3094 &plusmn; 6** (`+1.52 ± 5.91` logistic Elo / `+1.96 ± 7.61` nElo over `v1.1.8` in 8,000 games at `1+0.01`: `2731W / 2696L / 2573D`, `50.22%`, `69.29% LOS`)
+- **Highlights:**
+  - **Continuous History-Scaled LMR (`AlphaBetaEngine.cs`) — `+1.52 ± 5.91` logistic Elo (8,000 games):** Replaced binary `±1` LMR thresholds (`HistoryThreshold`, `ConthistReward`/`ConthistPenalty`) with proportional scaling `r -= (hist + conthist1 + conthist2) / 8192`.
 
 ### `v1.1.8` (2026-11-20) — History Bonus Scaling Overhaul & `Board.IsLegal` Correctness Fix
 - **Category:** Move Ordering / History & Core Correctness (Patch Release)
