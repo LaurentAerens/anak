@@ -55,11 +55,11 @@
 - **Fix:** Pass `bool isPv` into `QuiescenceSearch.Search` and guard L81â€“83 with `if (!isPv && ttHit && entry.ExpertId == ActiveExpertId)`.
 - **Est. Impact:** **+2 to +5 Elo** | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.
 
-### 7. Fix Singular Extensions Missing Mate-Score Guard, Stop-Check Guard & Ply Cap
+### 7. [x] Fix Singular Extensions Missing Mate-Score Guard, Stop-Check Guard & Ply Cap — **Released in `v1.1.6`**
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1323-L1338)
 - **Bug:** (a) Missing `Math.Abs(ttScore) < TTEntry.MateBound` allows `singularBeta` to stay in mate territory or underflow `-Value.MateValue`. (b) Missing stop/cancellation check after L1331 lets an aborted singular search return `0 < singularBeta` and falsely extend. (c) No ply cap (`ply < 2 * rootDepth`) allows stacked `+2` singular + `+1` check extensions to explode deep forcing lines.
-- **Fix:** Add `Math.Abs(ttScore) < TTEntry.MateBound`, abort check after L1331, and `ply < 2 * rootDepth` / `depth < MaxSearchDepth - 2` cap.
-- **Est. Impact:** **+2 to +5 Elo** + stability | **Complexity:** Low | **Test:** Tier 1 -> Tier 2 SPRT.
+- **Fix:** Add `Math.Abs(ttScore) < TTEntry.MateBound`, abort check after L1331, and `ply < 2 * _rootDepth` / `depth < MaxSearchDepth - 2` cap.
+- **Result (`v1.1.6` vs `v1.1.5`, `1+0.01`, 8,000 games):** **+2.35 ± 5.74 logistic Elo** (`+3.11 ± 7.61` fastchess nElo / `+1.42 ± 5.38` paired nElo, `50.34%`, `78.84% LOS`).
 
 ### 8. Fix `TimeManager` Low-Time Invariant Violation & Fail-Low Extension Wipeout
 - **Location:** [`TimeManager.cs`](../src/Anak.Search/Time/TimeManager.cs#L185-L249), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L729-L730)

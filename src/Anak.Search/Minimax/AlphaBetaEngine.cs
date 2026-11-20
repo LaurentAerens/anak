@@ -535,6 +535,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly List<RootMoveCandidate> _rootCandidates = [];
         private ulong _lastPawnKey;
         private float _lastOpenness = -1.0f;
+        private int _rootDepth;
 
         public SearchWorker(int id, AlphaBetaEngine engine, IEvaluator evaluator, TranspositionTable tt)
         {
@@ -638,6 +639,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             // --- Iterative Deepening ---
             for (int currentDepth = 1; currentDepth <= maxDepth; currentDepth++)
             {
+                _rootDepth = currentDepth;
                 long currentElapsed = _engine._timeManager.ElapsedMilliseconds;
                 long iterDuration = currentElapsed - lastIterElapsed;
                 lastIterElapsed = currentElapsed;
@@ -868,6 +870,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             for (int currentDepth = startDepth; currentDepth <= maxDepth; currentDepth++)
             {
+                _rootDepth = currentDepth;
                 if (_engine._stopped || cancellationToken.IsCancellationRequested)
                 {
                     break;
@@ -1327,7 +1330,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             // 10. Singular Extensions (requires matching expert score)
             int singularExtension = 0;
-            if (depth >= 6 && ply > 0 && ttExpertMatch && !entry.BestMove.IsNull &&
+            if (depth >= 6 && ply > 0 && ply < 2 * _rootDepth && depth < MaxSearchDepth - 2 &&
+                ttExpertMatch && !entry.BestMove.IsNull &&
+                Math.Abs(ttScore) < TTEntry.MateBound &&
                 entry.Depth >= depth - 3 && entry.Flags != TTFlags.UpperBound &&
                 _stack[ply].ExcludedMove.IsNull)
             {
@@ -1337,6 +1342,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
                 int sScore = AlphaBeta(ref board, sDepth, singularBeta - 1, singularBeta, ply, isPv: false, cancellationToken);
                 _stack[ply].ExcludedMove = Move.Null;
+
+                if (_engine._stopped || cancellationToken.IsCancellationRequested)
+                {
+                    return 0;
+                }
 
                 if (sScore < singularBeta)
                 {

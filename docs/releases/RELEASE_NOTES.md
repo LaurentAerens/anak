@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.5` (Estimated Rating: **2990 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.6` (Estimated Rating: **2991 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.6` (2026-11-20) — Singular Extensions Mate-Score Guard, Stop Check & Ply Cap
+- **Category:** Search Stability & Bugfix (Patch Release)
+- **Estimated Elo:** **2991 &plusmn; 5** (`+2.35 ± 5.74` logistic Elo / `+1.42 ± 5.38` nElo over `v1.1.5` in 8,000 games at `1+0.01`: `2795W / 2741L / 2464D`, `50.34%`, `78.84% LOS`)
+- **Highlights:**
+  - **Singular Extensions Guards (`AlphaBetaEngine.cs`):** Added `Math.Abs(ttScore) < TTEntry.MateBound` to prevent `singularBeta` underflow/mate-territory extensions, added an immediate stop/cancellation check after the singular verification search, and capped singular extensions with `ply < 2 * _rootDepth && depth < MaxSearchDepth - 2`.
 
 ### `v1.1.5` (2026-11-20) — Preserve Deep `TTEntry.BestMove` in `TranspositionTable`
 - **Category:** Search / Transposition Table Bugfix (Patch Release)
