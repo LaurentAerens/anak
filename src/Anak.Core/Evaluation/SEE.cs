@@ -79,8 +79,8 @@ public static class StaticExchangeEvaluator
             occupied ^= 1UL << ((byte)to ^ 8);
         }
 
-        ulong diagSliders = board.Bishops | board.Queens;
-        ulong orthSliders = board.Rooks | board.Queens;
+        ulong diagSliders = (board.Bishops | board.Queens) & Bitboard.GetBishopRays(to);
+        ulong orthSliders = (board.Rooks | board.Queens) & Bitboard.GetRookRays(to);
         ulong attackers = GetAllAttackers(in board, to, occupied) & occupied;
         Color side = them;
 
@@ -93,7 +93,7 @@ public static class StaticExchangeEvaluator
             }
 
             res ^= 1;
-            Square attackerSq = GetLeastValuableAttacker(in board, sideAttackers, out PieceType currentAttacker);
+            ulong attackerBit = GetLeastValuableAttackerBit(in board, sideAttackers, out PieceType currentAttacker);
             if (currentAttacker == PieceType.None)
             {
                 break;
@@ -104,7 +104,7 @@ public static class StaticExchangeEvaluator
                 break;
             }
 
-            occupied ^= 1UL << (byte)attackerSq;
+            occupied ^= attackerBit;
 
             if ((currentAttacker is PieceType.Pawn or PieceType.Bishop or PieceType.Queen) && (diagSliders & occupied) != 0)
             {
@@ -166,8 +166,8 @@ public static class StaticExchangeEvaluator
             occupied ^= 1UL << ((byte)to ^ 8);
         }
 
-        ulong diagSliders = board.Bishops | board.Queens;
-        ulong orthSliders = board.Rooks | board.Queens;
+        ulong diagSliders = (board.Bishops | board.Queens) & Bitboard.GetBishopRays(to);
+        ulong orthSliders = (board.Rooks | board.Queens) & Bitboard.GetRookRays(to);
         ulong attackers = GetAllAttackers(in board, to, occupied);
         Color side = them;
         int d = 0;
@@ -185,13 +185,13 @@ public static class StaticExchangeEvaluator
                 break;
             }
 
-            Square attackerSq = GetLeastValuableAttacker(in board, sideAttackers, out currentAttacker);
+            ulong attackerBit = GetLeastValuableAttackerBit(in board, sideAttackers, out currentAttacker);
             if (currentAttacker == PieceType.None)
             {
                 break;
             }
 
-            occupied ^= 1UL << (byte)attackerSq;
+            occupied ^= attackerBit;
 
             // X-rays uncovered?
             if ((currentAttacker is PieceType.Pawn or PieceType.Bishop or PieceType.Queen) && (diagSliders & occupied) != 0)
@@ -233,16 +233,24 @@ public static class StaticExchangeEvaluator
         attackers |= Bitboard.KingAttacks[s] & board.Kings;
 
         // Bishops / Queens
-        attackers |= MagicBitboards.GetBishopAttacks(to, occupied) & (board.Bishops | board.Queens);
+        ulong diagSliders = (board.Bishops | board.Queens) & Bitboard.GetBishopRays(to);
+        if (diagSliders != 0)
+        {
+            attackers |= MagicBitboards.GetBishopAttacks(to, occupied) & diagSliders;
+        }
 
         // Rooks / Queens
-        attackers |= MagicBitboards.GetRookAttacks(to, occupied) & (board.Rooks | board.Queens);
+        ulong orthSliders = (board.Rooks | board.Queens) & Bitboard.GetRookRays(to);
+        if (orthSliders != 0)
+        {
+            attackers |= MagicBitboards.GetRookAttacks(to, occupied) & orthSliders;
+        }
 
         return attackers;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static Square GetLeastValuableAttacker(in Board board, ulong sideAttackers, out PieceType type)
+    private static ulong GetLeastValuableAttackerBit(in Board board, ulong sideAttackers, out PieceType type)
     {
         ulong subset;
 
@@ -250,45 +258,45 @@ public static class StaticExchangeEvaluator
         if ((subset = sideAttackers & board.Pawns) != 0)
         {
             type = PieceType.Pawn;
-            return Bitboard.Lsb(subset);
+            return subset & (0UL - subset);
         }
 
         // 2. Knight
         if ((subset = sideAttackers & board.Knights) != 0)
         {
             type = PieceType.Knight;
-            return Bitboard.Lsb(subset);
+            return subset & (0UL - subset);
         }
 
         // 3. Bishop
         if ((subset = sideAttackers & board.Bishops) != 0)
         {
             type = PieceType.Bishop;
-            return Bitboard.Lsb(subset);
+            return subset & (0UL - subset);
         }
 
         // 4. Rook
         if ((subset = sideAttackers & board.Rooks) != 0)
         {
             type = PieceType.Rook;
-            return Bitboard.Lsb(subset);
+            return subset & (0UL - subset);
         }
 
         // 5. Queen
         if ((subset = sideAttackers & board.Queens) != 0)
         {
             type = PieceType.Queen;
-            return Bitboard.Lsb(subset);
+            return subset & (0UL - subset);
         }
 
         // 6. King
         if ((subset = sideAttackers & board.Kings) != 0)
         {
             type = PieceType.King;
-            return Bitboard.Lsb(subset);
+            return subset & (0UL - subset);
         }
 
         type = PieceType.None;
-        return Square.A1;
+        return 0UL;
     }
 }

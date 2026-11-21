@@ -38,13 +38,13 @@ public static class MoveGenerator
         checkers |= Bitboard.KnightAttacks[(int)kingSq] & enemyKnights;
 
         // Bishop / Queen checkers
-        if (enemyBq != 0)
+        if ((enemyBq & Bitboard.GetBishopRays(kingSq)) != 0)
         {
             checkers |= MagicBitboards.GetBishopAttacks(kingSq, occupied) & enemyBq;
         }
 
         // Rook / Queen checkers
-        if (enemyRq != 0)
+        if ((enemyRq & Bitboard.GetRookRays(kingSq)) != 0)
         {
             checkers |= MagicBitboards.GetRookAttacks(kingSq, occupied) & enemyRq;
         }
@@ -95,11 +95,11 @@ public static class MoveGenerator
         ulong pinnedPieces = 0UL;
 
         ulong pinners = 0UL;
-        if (enemyBq != 0)
+        if ((enemyBq & Bitboard.GetBishopRays(kingSq)) != 0)
         {
             pinners |= MagicBitboards.GetBishopAttacks(kingSq, enemyPieces) & enemyBq;
         }
-        if (enemyRq != 0)
+        if ((enemyRq & Bitboard.GetRookRays(kingSq)) != 0)
         {
             pinners |= MagicBitboards.GetRookAttacks(kingSq, enemyPieces) & enemyRq;
         }
@@ -434,8 +434,8 @@ public static class MoveGenerator
             : Bitboard.BlackPawnAttacks[(int)kingSq];
         checkers |= pawnAttackers & enemyPawns;
         checkers |= Bitboard.KnightAttacks[(int)kingSq] & enemyKnights;
-        if (enemyBq != 0) checkers |= MagicBitboards.GetBishopAttacks(kingSq, occupied) & enemyBq;
-        if (enemyRq != 0) checkers |= MagicBitboards.GetRookAttacks(kingSq, occupied) & enemyRq;
+        if ((enemyBq & Bitboard.GetBishopRays(kingSq)) != 0) checkers |= MagicBitboards.GetBishopAttacks(kingSq, occupied) & enemyBq;
+        if ((enemyRq & Bitboard.GetRookRays(kingSq)) != 0) checkers |= MagicBitboards.GetRookAttacks(kingSq, occupied) & enemyRq;
 
         // 2. King Quiet Moves
         ulong enemyPawnAttacks = us == Color.White
@@ -490,8 +490,8 @@ public static class MoveGenerator
         // 4. Calculate Pinned Pieces
         ulong pinnedPieces = 0UL;
         ulong pinners = 0UL;
-        if (enemyBq != 0) pinners |= MagicBitboards.GetBishopAttacks(kingSq, enemyPieces) & enemyBq;
-        if (enemyRq != 0) pinners |= MagicBitboards.GetRookAttacks(kingSq, enemyPieces) & enemyRq;
+        if ((enemyBq & Bitboard.GetBishopRays(kingSq)) != 0) pinners |= MagicBitboards.GetBishopAttacks(kingSq, enemyPieces) & enemyBq;
+        if ((enemyRq & Bitboard.GetRookRays(kingSq)) != 0) pinners |= MagicBitboards.GetRookAttacks(kingSq, enemyPieces) & enemyRq;
 
         while (pinners != 0)
         {
@@ -717,11 +717,11 @@ public static class MoveGenerator
         ulong pinnedPieces = 0UL;
 
         ulong pinners = 0UL;
-        if (enemyBq != 0)
+        if ((enemyBq & Bitboard.GetBishopRays(kingSq)) != 0)
         {
             pinners |= MagicBitboards.GetBishopAttacks(kingSq, enemyPieces) & enemyBq;
         }
-        if (enemyRq != 0)
+        if ((enemyRq & Bitboard.GetRookRays(kingSq)) != 0)
         {
             pinners |= MagicBitboards.GetRookAttacks(kingSq, enemyPieces) & enemyRq;
         }
@@ -968,10 +968,10 @@ public static class MoveGenerator
         }
 
         ulong rAttackers = (board.Rooks | board.Queens) & enemySliders;
-        if (rAttackers != 0 && (MagicBitboards.GetRookAttacks(kingSq, occAfter) & rAttackers) != 0) return;
+        if ((rAttackers & Bitboard.GetRookRays(kingSq)) != 0 && (MagicBitboards.GetRookAttacks(kingSq, occAfter) & rAttackers) != 0) return;
 
         ulong bAttackers = (board.Bishops | board.Queens) & enemySliders;
-        if (bAttackers != 0 && (MagicBitboards.GetBishopAttacks(kingSq, occAfter) & bAttackers) != 0) return;
+        if ((bAttackers & Bitboard.GetBishopRays(kingSq)) != 0 && (MagicBitboards.GetBishopAttacks(kingSq, occAfter) & bAttackers) != 0) return;
 
         list.Add(new Move(from, to, MoveType.EnPassant));
     }
@@ -988,9 +988,9 @@ public static class MoveGenerator
 
         if (enemyKnights != 0 && (Bitboard.KnightAttacks[s] & enemyKnights) != 0) return true;
 
-        if (enemyBq != 0 && (MagicBitboards.GetBishopAttacks(sq, occ) & enemyBq) != 0) return true;
+        if ((enemyBq & Bitboard.GetBishopRays(sq)) != 0 && (MagicBitboards.GetBishopAttacks(sq, occ) & enemyBq) != 0) return true;
 
-        if (enemyRq != 0 && (MagicBitboards.GetRookAttacks(sq, occ) & enemyRq) != 0) return true;
+        if ((enemyRq & Bitboard.GetRookRays(sq)) != 0 && (MagicBitboards.GetRookAttacks(sq, occ) & enemyRq) != 0) return true;
 
         return false;
     }

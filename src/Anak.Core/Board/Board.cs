@@ -133,11 +133,11 @@ public struct Board : IEquatable<Board>
         // Bishops & Queens
         ulong occ = Occupied;
         ulong enemyBishopsQueens = (Bishops | Queens) & attackerPieces;
-        if (enemyBishopsQueens != 0 && (MagicBitboards.GetBishopAttacks(sq, occ) & enemyBishopsQueens) != 0) return true;
+        if ((enemyBishopsQueens & Bitboard.GetBishopRays(sq)) != 0 && (MagicBitboards.GetBishopAttacks(sq, occ) & enemyBishopsQueens) != 0) return true;
 
         // Rooks & Queens
         ulong enemyRooksQueens = (Rooks | Queens) & attackerPieces;
-        if (enemyRooksQueens != 0 && (MagicBitboards.GetRookAttacks(sq, occ) & enemyRooksQueens) != 0) return true;
+        if ((enemyRooksQueens & Bitboard.GetRookRays(sq)) != 0 && (MagicBitboards.GetRookAttacks(sq, occ) & enemyRooksQueens) != 0) return true;
 
         return false;
     }
@@ -172,6 +172,7 @@ public struct Board : IEquatable<Board>
         Square to = move.To;
         ulong fromBit = 1UL << (byte)from;
         ulong toBit = 1UL << (byte)to;
+        int checkSq = (byte)to;
 
         PieceType movedType = move.IsPromotion ? move.PromotionPieceType : GetPieceAt(from).Type();
         ulong occ = (Occupied & ~fromBit) | toBit;
@@ -188,10 +189,11 @@ public struct Board : IEquatable<Board>
             Square rTo = (Square)(rankBase + (kingCastle ? 5 : 3));
             occ = (occ & ~(1UL << (byte)rFrom)) | (1UL << (byte)rTo);
             toBit = 1UL << (byte)rTo;
+            checkSq = (byte)rTo;
             movedType = PieceType.Rook;
         }
 
-        // 1. Direct check from the moved (or promoted) piece on 'to'
+        // 1. Direct check from the moved (or promoted) piece on 'to' (zero magic lookups)
         switch (movedType)
         {
             case PieceType.Pawn:
@@ -204,25 +206,25 @@ public struct Board : IEquatable<Board>
                 if ((Bitboard.KnightAttacks[k] & toBit) != 0) return true;
                 break;
             case PieceType.Bishop:
-                if ((MagicBitboards.GetBishopAttacks(kSq, occ) & toBit) != 0) return true;
+                if ((Bitboard.GetBishopRays(kSq) & toBit) != 0 && (Bitboard.Between[k, checkSq] & occ) == 0) return true;
                 break;
             case PieceType.Rook:
-                if ((MagicBitboards.GetRookAttacks(kSq, occ) & toBit) != 0) return true;
+                if ((Bitboard.GetRookRays(kSq) & toBit) != 0 && (Bitboard.Between[k, checkSq] & occ) == 0) return true;
                 break;
             case PieceType.Queen:
-                if (((MagicBitboards.GetBishopAttacks(kSq, occ) | MagicBitboards.GetRookAttacks(kSq, occ)) & toBit) != 0) return true;
+                if (((Bitboard.GetBishopRays(kSq) | Bitboard.GetRookRays(kSq)) & toBit) != 0 && (Bitboard.Between[k, checkSq] & occ) == 0) return true;
                 break;
         }
 
         // 2. Discovered check from our remaining sliders
         ulong usPieces = (us == Color.White ? White : Black) & ~fromBit;
-        ulong diagSliders = usPieces & (Bishops | Queens);
+        ulong diagSliders = usPieces & (Bishops | Queens) & Bitboard.GetBishopRays(kSq);
         if (diagSliders != 0 && (MagicBitboards.GetBishopAttacks(kSq, occ) & diagSliders) != 0)
         {
             return true;
         }
 
-        ulong orthSliders = usPieces & (Rooks | Queens);
+        ulong orthSliders = usPieces & (Rooks | Queens) & Bitboard.GetRookRays(kSq);
         if (orthSliders != 0 && (MagicBitboards.GetRookAttacks(kSq, occ) & orthSliders) != 0)
         {
             return true;

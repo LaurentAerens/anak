@@ -275,12 +275,12 @@
 
 ## 7. Core Board, MoveGen, SEE & Search NPS (`#44â€“#50`)
 
-### 44. Wire Dead `MoveGenerator.GenerateLegalQuiets` into `MovePicker`
+### 44. [x] Wire Dead `MoveGenerator.GenerateLegalQuiets` into `MovePicker`
 - **Location:** [`MoveGenerator.cs`](../src/Anak.Core/MoveGen/MoveGenerator.cs#L412), [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L216-L229), [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L380-L414)
 - **Improvement:** `GenerateLegalQuiets` currently has **zero callers**; `MovePicker.EnsureAllMovesGenerated()` wipes `_legalMoves`, regenerates all captures from scratch, and linearly scans `_playedGoodCaptures`. Append quiets via `GenerateLegalQuiets` when `_capturesGenerated == true` (and share a lightweight `MoveGenContext` for `kingSq`/`pinnedPieces`/`unsafeForKing`).
 - **Est. Impact:** **+4% to +8% NPS** (100% node-equivalent) | **Complexity:** Low-Medium.
 
-### 45. Pre-Filter Enemy Sliders by King Ray Masks Before Magic Lookups (+ Ray Guards & `blsi` in `SEE`)
+### 45. [x] Pre-Filter Enemy Sliders by King Ray Masks Before Magic Lookups (+ Ray Guards & `blsi` in `SEE`)
 - **Location:** [`MoveGenerator.cs`](../src/Anak.Core/MoveGen/MoveGenerator.cs#L41-L105), [`Board.cs`](../src/Anak.Core/Board/Board.cs#L133-L138), [`Bitboard.cs`](../src/Anak.Core/Bitboards/Bitboard.cs#L30-L45), [`SEE.cs`](../src/Anak.Core/Evaluation/SEE.cs#L96-L293)
 - **Improvement:** Add precomputed `BishopRays[64]` and `RookRays[64]` in `Bitboard.cs` and guard checker/pinner/attack magic lookups with `(enemyBq & GetBishopRays(sq)) != 0` and `(enemyRq & GetRookRays(sq)) != 0` (skipping magic lookups on ~70â€“80% of nodes). In `SEE.GetLeastValuableAttacker`, return `ulong lsbBit = subset & (0UL - subset)` (`blsi`) directly instead of `tzcnt` + `1UL << sq`.
 - **Est. Impact:** **+3% to +6% search NPS** (100% node-equivalent) | **Complexity:** Low.
@@ -290,7 +290,7 @@
 - **Improvement:** Split pawns into `unpinnedNot7`, `pawnsOn7`, and `pinnedNot7`. Compute all single pushes, double pushes, and left/right captures for `unpinnedNot7` in parallel via 3â€“4 bitboard shifts, then `PopLsb` only actual legal destinations (exits in ~4 cycles when pawns have no captures instead of looping over all 8 pawns).
 - **Est. Impact:** **+8% to +15% movegen NPS** (+2% to +4% search NPS) | **Complexity:** Medium | **Test:** Perft + Tier 1/2 check.
 
-### 47. `Board.GivesCheck` Fast-Path + Flip Short-Circuit Order in Quiet SEE Pruning
+### 47. [x] `Board.GivesCheck` Fast-Path + Flip Short-Circuit Order in Quiet SEE Pruning
 - **Location:** [`Board.cs`](../src/Anak.Core/Board/Board.cs#L159-L230), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1436-L1442)
 - **Improvement:** (a) In `AlphaBetaEngine.cs:1438`, flip `!GivesCheckCached(...) && !HasPositiveOrEqualSee(...)` to `!HasPositiveOrEqualSee(...) && !GivesCheckCached(...)` so `GivesCheck` isn't computed on quiet moves that pass SEE. (b) In `Board.GivesCheck`, use `BishopRays`/`RookRays` + `Between` (zero magic lookups) for direct slider checks, and skip discovered-check magic lookups unless `Bitboard.Line[k, (int)from] != 0`.
 - **Est. Impact:** **+5% to +12% search NPS** (100% node-equivalent) | **Complexity:** Low.

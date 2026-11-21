@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.14` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.15` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,14 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.15` (2026-11-21) — Core Movegen, SEE & `GivesCheck` NPS Optimizations
+- **Category:** Core / Search Throughput (Patch Release — 100% Node-Equivalent)
+- **Estimated Elo:** **3166 &plusmn; 5** (`+1.3%` `bench 12` NPS over `v1.1.14`: `680,990–682,674` vs `672,280–673,511` nps at exact `1,103,885` nodes; `409/409` unit tests passing)
+- **Highlights:**
+  - **Incremental Quiet Generation in `MovePicker` (`MovePicker.cs`) — 100% Node-Equivalent:** Wired `MoveGenerator.GenerateLegalQuiets` into `MovePicker.EnsureAllMovesGenerated` when captures are already generated, eliminating `_playedGoodCaptures` and redundant capture regeneration.
+  - **Ray-Mask Pre-Filtering & `blsi` SEE (`Bitboard.cs`, `MoveGenerator.cs`, `Board.cs`, `SEE.cs`) — 100% Node-Equivalent:** Added precomputed `Bitboard.BishopRays`/`RookRays` guards before magic lookups in checker/pinner/attack/SEE paths and switched `SEE.GetLeastValuableAttackerBit` to `blsi` (`subset & (0UL - subset)`).
+  - **`Board.GivesCheck` Zero-Magic Direct Check & Quiet SEE Short-Circuit (`Board.cs`, `AlphaBetaEngine.cs`) — `+1.3%` `bench 12` NPS, 100% Node-Equivalent:** Replaced direct slider magic lookups in `GivesCheck` with `BishopRays`/`RookRays` + `Between`, guarded discovered-check lookups with ray masks, and flipped quiet SEE pruning to check `HasPositiveOrEqualSee` before `GivesCheckCached`.
 
 ### `v1.1.14` (2026-11-21) — Smooth Best-Move Node-Fraction Soft-Limit Time Scaling
 - **Category:** Time Management (Patch Release)

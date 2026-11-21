@@ -42,6 +42,8 @@ public static class Bitboard
 
     public static readonly ulong[] SquareDiagonalMask = new ulong[64];
     public static readonly ulong[] SquareAntiDiagonalMask = new ulong[64];
+    public static readonly ulong[] BishopRays = new ulong[64];
+    public static readonly ulong[] RookRays = new ulong[64];
 
     public static readonly ulong[] WhitePawnAttacks = new ulong[64];
     public static readonly ulong[] BlackPawnAttacks = new ulong[64];
@@ -77,6 +79,9 @@ public static class Bitboard
         {
             SquareDiagonalMask[sq] = DiagonalMasks[(int)SquareDiagonalMask[sq]];
             SquareAntiDiagonalMask[sq] = AntiDiagonalMasks[(int)SquareAntiDiagonalMask[sq]];
+            ulong sqMask = 1UL << sq;
+            BishopRays[sq] = (SquareDiagonalMask[sq] | SquareAntiDiagonalMask[sq]) ^ sqMask;
+            RookRays[sq] = (RankMasks[sq >> 3] | FileMasks[sq & 7]) ^ sqMask;
         }
 
         // Precompute Pawn, Knight, and King attacks
@@ -252,6 +257,14 @@ public static class Bitboard
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong BlackPawnWestAttacks(ulong pawns) => (pawns & ~FileA) >> 9;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong GetBishopRays(Square sq) =>
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopRays), (byte)sq);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong GetRookRays(Square sq) =>
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookRays), (byte)sq);
 }
 
 /// <summary>

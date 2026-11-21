@@ -106,8 +106,6 @@ public ref struct MovePicker
     private bool _killer0Picked;
     private bool _killer1Picked;
     private bool _counterMovePicked;
-    private MoveBuffer32 _playedGoodCaptures;
-    private int _playedGoodCapturesCount;
 
     /// <summary>
     /// Gets the stage in which the current move was picked.
@@ -156,7 +154,6 @@ public ref struct MovePicker
         _capturesGenerated = false;
         _allMovesGenerated = false;
         _ttMovePicked = false;
-        _playedGoodCapturesCount = 0;
 
         Unsafe.SkipInit(out _scores);
         Unsafe.SkipInit(out _seeScores);
@@ -217,16 +214,19 @@ public ref struct MovePicker
     {
         if (_allMovesGenerated) return;
         _allMovesGenerated = true;
-        _legalMoves.Clear();
-        MoveGenerator.GenerateLegalMoves(in _board, ref _legalMoves);
-        _picked = default;
+
+        if (_capturesGenerated)
+        {
+            MoveGenerator.GenerateLegalQuiets(in _board, ref _legalMoves);
+        }
+        else
+        {
+            _legalMoves.Clear();
+            MoveGenerator.GenerateLegalMoves(in _board, ref _legalMoves);
+            _picked = default;
+        }
 
         MarkSpecialMovesPicked();
-        for (int p = 0; p < _playedGoodCapturesCount; p++)
-        {
-            int capIdx = FindMove(_playedGoodCaptures[p]);
-            if (capIdx >= 0) MarkPicked(capIdx);
-        }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -311,14 +311,9 @@ public ref struct MovePicker
                     if (bestCapIdx >= 0)
                     {
                         MarkPicked(bestCapIdx);
-                        Move pickedMove = _legalMoves[bestCapIdx];
-                        if (_playedGoodCapturesCount < 32)
-                        {
-                            _playedGoodCaptures[_playedGoodCapturesCount++] = pickedMove;
-                        }
                         CurrentStage = MovePickerStage.GoodCaptures;
                         CurrentSee = _seeScores[bestCapIdx];
-                        move = pickedMove;
+                        move = _legalMoves[bestCapIdx];
                         return true;
                     }
 

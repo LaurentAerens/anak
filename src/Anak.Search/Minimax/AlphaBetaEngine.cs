@@ -1484,7 +1484,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         // Quiet SEE Pruning: Prune quiet moves that blunder pieces onto attacked squares
                         if (depth <= 4 && isQuiet)
                         {
-                            if (!GivesCheckCached(in board, move, ref givesCheckState) && !StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -_engine.SeeQuietMargin * depth * depth))
+                            if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, move, -_engine.SeeQuietMargin * depth * depth) && !GivesCheckCached(in board, move, ref givesCheckState))
                             {
                                 continue;
                             }
