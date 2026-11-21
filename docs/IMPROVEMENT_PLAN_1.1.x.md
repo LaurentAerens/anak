@@ -156,10 +156,9 @@
 - **Improvement:** (a) Skips `CorrectionHistory.Update` when the cutoff/best move is a capture or promotion. (b) Added **Continuation Correction History** (`[2, 16, 64]` keyed by `[side, prev1Piece, prev1To]`) and **White/Black Non-Pawn Correction History** (incrementally maintained `WhiteNonPawnKey`/`BlackNonPawnKey` in `Board`) blended into `GetAdjustedEval`.
 - **Result (`v1.1.12` vs `v1.1.11`, `1+0.01`, 8,000 games):** **+38.81 ± 6.02 logistic Elo** (`+49.54 ± 7.61` fastchess nElo, `3084W / 2194L / 2722D`, `55.56%`, `100.00% LOS`).
 
-### 24. Order `BadCaptures` by Descending SEE in `MovePicker` (CPW 4.3)
-- **Location:** [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L325-L345), [`CPW_TECHNIQUES_TRACKER.md`](CPW_TECHNIQUES_TRACKER.md#L221-L227)
-- **Improvement:** `MovePicker` already caches `_badCaptureSee` (`v1.0.28`), but picks bad captures in generation order. Pick in descending order of SEE (e.g., `-10cp` before `-900cp`) so tactical sacrifices / near-equal exchanges are tried before queen hangs.
-- **Est. Impact:** **+1 to +4 Elo** | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.
+### 24. [x] Order `BadCaptures` by Descending SEE in `MovePicker` (CPW 4.3) — **Already Implemented**
+- **Location:** [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L424-L432), [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L616-L633)
+- **Status:** Verified `PickBestBadCaptureSlot()` already picks bad captures in descending order of `_badCaptureSee`.
 
 ---
 
@@ -175,10 +174,10 @@
 - **Improvement:** Give helper threads Stockfish-style depth-skip schedules and aspiration windows instead of full `[-inf, +inf]` windows with trivial `Id % 2`; implement best-thread voting across all workers at search end (instead of always taking Worker 0); replace per-move `Task.Run`/`Task.WaitAll` with persistent worker threads woken via `ManualResetEventSlim`.
 - **Est. Impact:** **+15 to +30 Elo** at `Threads >= 4` | **Complexity:** Medium | **Test:** Multi-threaded SPRT (`--threads 4`).
 
-### 27. Immediate / Fast Handling for Single Legal Move (`legalMoves.Count == 1`)
-- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L435-L453)
-- **Improvement:** Currently Anak burns a full move's time allocation on forced single legal moves in timed games. When `legalMoves.Count == 1 && _timeManager.HasTimeLimit && !limits.Infinite`, cap `SoftLimitMs`/`HardLimitMs` to a tiny budget (e.g., 5â€“10 ms or depth 4) to bank clock time for real decisions.
-- **Est. Impact:** **+5 to +10 Elo** (bullet/blitz) | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.
+### 27. [x] Immediate / Fast Handling for Single Legal Move (`legalMoves.Count == 1`) — **Released in `v1.1.13`**
+- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L454-L457), [`TimeManager.cs`](../src/Anak.Search/Time/TimeManager.cs#L196-L201)
+- **Improvement:** When `legalMoves.Count == 1 && _timeManager.HasTimeLimit && !limits.Infinite && !limits.HasDepthLimit && !limits.HasNodeLimit`, caps time budget to `5 ms` soft / `10 ms` hard via `TimeManager.CapForSingleMove`, banking clock time for real decisions.
+- **Result (`v1.1.13` vs `v1.1.12`, `1+0.01`, 8,000 games):** **+4.43 ± 5.09 logistic Elo** (`+6.62 ± 7.61` fastchess nElo, `2686W / 2584L / 2730D`, `50.64%`, `95.59% LOS`).
 
 ### 28. Smooth Best-Move Node-Fraction Continuous Soft-Limit Time Scaling
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L652-L659), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L951-L1063), [`TimeManager.cs`](../src/Anak.Search/Time/TimeManager.cs)

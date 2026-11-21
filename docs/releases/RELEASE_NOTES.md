@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.12` (Estimated Rating: **3139 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.13` (Estimated Rating: **3143 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.13` (2026-11-21) — Fast Single-Legal-Move Time Cap
+- **Category:** Time Management (Patch Release)
+- **Estimated Elo:** **3143 &plusmn; 5** (`+4.43 ± 5.09` logistic Elo / `+6.62 ± 7.61` fastchess nElo over `v1.1.12` in 8,000 games at `1+0.01`: `2686W / 2584L / 2730D`, `50.64%`, `95.59% LOS`)
+- **Highlights:**
+  - **Single-Legal-Move Time Cap (`AlphaBetaEngine.cs`, `TimeManager.cs`) — `+4.43 ± 5.09` logistic Elo (8,000 games):** Added `TimeManager.CapForSingleMove(maxSoftMs: 5, maxHardMs: 10)` when `legalMoves.Count == 1` in timed searches, banking clock time on forced moves.
 
 ### `v1.1.12` (2026-11-21) — Multi-Component `CorrectionHistory` & Tactical Filtering
 - **Category:** Evaluation / Correction History (Patch Release)

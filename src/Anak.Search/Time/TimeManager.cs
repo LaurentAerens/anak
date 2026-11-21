@@ -191,6 +191,17 @@ public sealed class TimeManager
     }
 
     /// <summary>
+    /// Caps soft and hard time limits to a minimal budget when only one legal move exists.
+    /// </summary>
+    public void CapForSingleMove(long maxSoftMs = 5, long maxHardMs = 10)
+    {
+        if (!_hasTimeLimit) return;
+        _hardLimitMs = Math.Min(_hardLimitMs, maxHardMs);
+        _softLimitMs = Math.Min(_softLimitMs, Math.Min(maxSoftMs, Math.Max(1, _hardLimitMs - 1)));
+        CheckMask = 31;
+    }
+
+    /// <summary>
     /// Adjusts soft time limits based on root best move stability and late move flips.
     /// </summary>
     public void UpdateMoveStability(Move currentBest, int depth)

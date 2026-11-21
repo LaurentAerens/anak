@@ -450,6 +450,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 });
                 return singleMove;
             }
+
+            if (_timeManager.HasTimeLimit && !limits.Infinite && !limits.HasDepthLimit && !limits.HasNodeLimit)
+            {
+                _timeManager.CapForSingleMove(maxSoftMs: 5, maxHardMs: 10);
+            }
         }
 
         // 6. Launch Lazy SMP helper threads if Threads > 1

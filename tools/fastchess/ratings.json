@@ -987,6 +987,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.11_20261121_061810.pgn",
       "notes": "Filter tactical best/cutoff moves out of CorrectionHistory and add White/Black Non-Pawn + Continuation Correction History"
+    },
+    "v1.1.13": {
+      "version": "v1.1.13",
+      "date": "2026-11-21",
+      "estimated_elo": 3143,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.12 (+4.43 logistic / +6.62 nElo in 8,000 games, 95.59% LOS)",
+      "score": "4051 / 8000",
+      "wins": 2686,
+      "losses": 2584,
+      "draws": 2730,
+      "perf_percent": 50.64,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.12_20261121_083207.pgn",
+      "notes": "Cap soft/hard time budget to 5ms/10ms when only 1 legal move exists in timed searches"
     }
   }
 }
