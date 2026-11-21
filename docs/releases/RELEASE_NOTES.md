@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.16` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.17` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.17` (2026-11-21) — Sparse `NNZ` Transposed NNUE L1 Matmul
+- **Category:** NNUE Inference Throughput (Patch Release — 100% Bit-Exact)
+- **Estimated Elo:** **3166 &plusmn; 5** (`+4.1%` `bench 12` NPS over `v1.1.16`: `709,437` vs `680,150–682,674` nps at exact `1,103,885` nodes; `409/409` unit tests passing)
+- **Highlights:**
+  - **Sparse `NNZ` Transposed L1 Matmul (`NnueWeights.cs`, `NnueInference.cs`) — `+4.1%` `bench 12` NPS, 100% Bit-Exact:** Transposed `HiddenWeights` at load time to `(inputDim / 4, l1Dim, 4)`, collected non-zero `uint` SCReLU activation chunks via `Avx.MoveMask`, and accumulated only non-zero chunks across all 64 L1 neurons in parallel (AVX-512BW / AVX-VNNI / AVX2), eliminating horizontal reductions.
 
 ### `v1.1.16` (2026-11-21) — `MagicBitboards` PextEntry, `Board`/`MoveList` & History NPS
 - **Category:** Core / Search Throughput (Patch Release — 100% Node-Equivalent)

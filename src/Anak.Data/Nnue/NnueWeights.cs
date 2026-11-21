@@ -228,6 +228,8 @@ public sealed unsafe class NnueWeights : IDisposable
         ptr += Align64(ftBiasesBytes);
 
         // 3. Per-Expert Heads (HiddenWeights, HiddenBiases, OutputWeights, OutputBias)
+        byte[]? transposeTmp = hiddenWeightsBytes > 0 ? new byte[hiddenWeightsBytes] : null;
+        int numChunks = (hiddenDim * 2) >> 2;
         for (int e = 0; e < experts; e++)
         {
             sbyte* hwPtr = (sbyte*)ptr;
@@ -240,6 +242,22 @@ public sealed unsafe class NnueWeights : IDisposable
                     Buffer.MemoryCopy(pSrc, hwPtr, hiddenWeightsBytes, copyLen);
                 }
                 offset += copyLen;
+            }
+            if (transposeTmp != null && numChunks > 0)
+            {
+                fixed (byte* pTmp = transposeTmp)
+                {
+                    Buffer.MemoryCopy(hwPtr, pTmp, hiddenWeightsBytes, hiddenWeightsBytes);
+                    uint* src32 = (uint*)pTmp;
+                    uint* dst32 = (uint*)hwPtr;
+                    for (int k = 0; k < l1Dim; k++)
+                    {
+                        for (int c = 0; c < numChunks; c++)
+                        {
+                            dst32[(c * l1Dim) + k] = src32[(k * numChunks) + c];
+                        }
+                    }
+                }
             }
             ptr += Align64(hiddenWeightsBytes);
 

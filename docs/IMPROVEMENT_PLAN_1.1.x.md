@@ -251,7 +251,7 @@
 
 ## 6. NNUE SIMD & Evaluation NPS (`#40â€“#43`)
 
-### 40. Sparse `NNZ` (Non-Zero `uint` Chunk) Transposed L1 Matmul in `ComputeHiddenAndOutputLayers`
+### 40. [x] Sparse `NNZ` (Non-Zero `uint` Chunk) Transposed L1 Matmul in `ComputeHiddenAndOutputLayers`
 - **Location:** [`NnueInference.cs`](../src/Anak.Data/Nnue/NnueInference.cs#L166-L299), [`NnueWeights.cs`](../src/Anak.Data/Nnue/NnueWeights.cs#L233-L244)
 - **Improvement:** Post-SCReLU `pAct` (`byte[1024]`) is 55â€“70% zeros, yet `ComputeHiddenAndOutputLayers` executes dense dot products over all 1024 bytes. Transpose `hiddenWeights` at load time to `(inputDim / 4, l1Dim, 4)` (no `.nnue` format change), collect non-zero 4-byte `uint` chunk indices via SIMD `MoveMask`, and accumulate only non-zero chunks across all 64 output accumulators.
 - **Est. Impact:** **+12% to +25% NPS** (100% bit-exact) | **Complexity:** Medium | **Test:** `NnueInferenceTests` + `bench 12`.
