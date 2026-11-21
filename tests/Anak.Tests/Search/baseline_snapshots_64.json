@@ -32,8 +32,8 @@
     "StaticEval": 189,
     "SeeAndLegalityChecksum": 11947831744557275294,
     "BestMoveUci": "b4f4",
-    "SearchScoreCp": 263,
-    "SearchNodes": 5611
+    "SearchScoreCp": 120,
+    "SearchNodes": 4106
   },
   {
     "Fen": "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1",
@@ -392,8 +392,8 @@
     "StaticEval": 93,
     "SeeAndLegalityChecksum": 12764673075382158199,
     "BestMoveUci": "d4d5",
-    "SearchScoreCp": 88,
-    "SearchNodes": 3364
+    "SearchScoreCp": 85,
+    "SearchNodes": 2604
   },
   {
     "Fen": "rnb1k2r/ppq2pb1/2pp1npp/4p3/3PPP1B/2PB4/PP1N2PP/R2QK1NR w KQkq e6 0 9",
@@ -439,9 +439,9 @@
     "ExpertId": 2,
     "StaticEval": 29,
     "SeeAndLegalityChecksum": 16473042723534255909,
-    "BestMoveUci": "d4e3",
-    "SearchScoreCp": 26,
-    "SearchNodes": 1703
+    "BestMoveUci": "c5d6",
+    "SearchScoreCp": 14,
+    "SearchNodes": 1327
   },
   {
     "Fen": "8/8/8/8/k2pP2Q/8/8/4K3 b - e3 0 1",
@@ -596,8 +596,8 @@
     "StaticEval": 14,
     "SeeAndLegalityChecksum": 12081276097666168761,
     "BestMoveUci": "d4d2",
-    "SearchScoreCp": 11,
-    "SearchNodes": 9287
+    "SearchScoreCp": -6,
+    "SearchNodes": 6173
   },
   {
     "Fen": "8/2k5/8/2n5/4B3/8/2K5/8 b - - 0 1",
@@ -620,8 +620,8 @@
     "StaticEval": 23,
     "SeeAndLegalityChecksum": 7101477822152929934,
     "BestMoveUci": "a7a8q",
-    "SearchScoreCp": 831,
-    "SearchNodes": 25729
+    "SearchScoreCp": 827,
+    "SearchNodes": 15698
   },
   {
     "Fen": "r3k2r/P6P/8/8/8/8/p6p/R3K2R b KQkq - 0 1",
@@ -752,8 +752,8 @@
     "StaticEval": 113,
     "SeeAndLegalityChecksum": 4543386009324041629,
     "BestMoveUci": "h1h8",
-    "SearchScoreCp": 766,
-    "SearchNodes": 9720
+    "SearchScoreCp": 692,
+    "SearchNodes": 5802
   },
   {
     "Fen": "3r1k2/8/8/8/8/8/8/R3K2R w KQ - 0 1",
@@ -764,7 +764,7 @@
     "StaticEval": 283,
     "SeeAndLegalityChecksum": 14036587079403139507,
     "BestMoveUci": "h1h8",
-    "SearchScoreCp": 697,
-    "SearchNodes": 5242
+    "SearchScoreCp": 652,
+    "SearchNodes": 2115
   }
 ]

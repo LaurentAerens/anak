@@ -669,10 +669,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     int delta = _engine.AspirationDelta;
                     int alpha = Math.Max(-Value.InfiniteValue, prevScore - delta);
                     int beta = Math.Min(Value.InfiniteValue, prevScore + delta);
+                    int failHighCount = 0;
 
                     while (true)
                     {
-                        score = SearchRoot(ref board, currentDepth, alpha, beta, out iterBestMove, cancellationToken);
+                        int searchDepth = Math.Max(1, currentDepth - failHighCount);
+                        score = SearchRoot(ref board, searchDepth, alpha, beta, out iterBestMove, cancellationToken);
 
                         if (_engine._stopped || cancellationToken.IsCancellationRequested)
                         {
@@ -683,6 +685,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         {
                             // Fail-low: widen alpha, avoid narrowing beta to prevent oscillations
                             alpha = Math.Max(-Value.InfiniteValue, alpha - delta);
+                            failHighCount = 0;
                             delta += delta + delta / 2;
 
                             // Technique 5.1: Extend time allocation on root fail-low to complete re-search
@@ -690,8 +693,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         }
                         else if (score >= beta)
                         {
-                            // Fail-high: widen beta
+                            // Fail-high: preserve the better move immediately in case re-search times out, and widen beta
+                            if (!iterBestMove.IsNull)
+                            {
+                                bestMove = iterBestMove;
+                            }
                             beta = Math.Min(Value.InfiniteValue, beta + delta);
+                            failHighCount++;
                             delta += delta + delta / 2;
                         }
                         else
@@ -700,7 +708,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                             break;
                         }
 
-                        if (delta > 2000)
+                        if (delta > 500)
                         {
                             alpha = -Value.InfiniteValue;
                             beta = Value.InfiniteValue;

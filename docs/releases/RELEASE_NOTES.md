@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.10` (Estimated Rating: **3097 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.11` (Estimated Rating: **3100 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.11` (2026-11-21) — Aspiration Fail-High Move Preservation & Delta Optimization
+- **Category:** Search / Aspiration Windows (Patch Release)
+- **Estimated Elo:** **3100 &plusmn; 5** (`+2.82 ± 5.70` logistic Elo / `+3.28 ± 5.38` nElo over `v1.1.10` in 8,000 games at `1+0.01`: `2677W / 2612L / 2711D`, `50.41%`, `83.42% LOS`)
+- **Highlights:**
+  - **Aspiration Fail-High Handling (`AlphaBetaEngine.cs`) — `+2.82 ± 5.70` logistic Elo (8,000 games):** Saves `bestMove = iterBestMove` immediately on root fail-high so timeouts during re-search preserve the better move, widens directly to `InfiniteValue` once `delta > 500`, and reduces re-search depth by `failHighCount`.
 
 ### `v1.1.10` (2026-11-21) — Deeper / Shallower LMR Re-Search (`doDeeperSearch` / `doShallowerSearch`)
 - **Category:** Search / Late Move Reductions (Patch Release)

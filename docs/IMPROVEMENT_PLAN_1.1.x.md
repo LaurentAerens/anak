@@ -132,10 +132,10 @@
 - **Improvement:** Guard NMP with `beta > -TTEntry.MateBound`, and when `depth >= 12` (or low non-pawn material) and `nullScore >= beta`, run a verification search at `nullDepth` with NMP disabled (`nmpMinPly = ply + 3 * nullDepth / 4`) to catch zugzwang without hurting shallow speed.
 - **Est. Impact:** **+3 to +8 Elo** (stronger at MTC/endgames) | **Complexity:** Low-Medium | **Test:** Tier 1 -> Tier 3 MTC / Tier 2 SPRT.
 
-### 20. Preserve `iterBestMove` on Aspiration Fail-High Timeout & Optimize Delta Growth
-- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L665-L721)
-- **Improvement:** Immediately save `bestMove = iterBestMove` on a completed root fail-high (`score >= beta && !iterBestMove.IsNull`) so timeouts during the fail-high re-search don't discard the better move; open directly to `InfiniteValue` once `delta > 500` instead of requiring up to 6 re-searches, and test `searchDepth = Math.Max(1, currentDepth - failHighCount)` on fail-high.
-- **Est. Impact:** **+3 to +8 Elo** (bullet/blitz) | **Complexity:** Low | **Test:** Tier 1 -> Tier 2 SPRT.
+### 20. [x] Preserve `iterBestMove` on Aspiration Fail-High Timeout & Optimize Delta Growth — **Released in `v1.1.11`**
+- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L669-L716)
+- **Improvement:** Immediately saves `bestMove = iterBestMove` on a completed root fail-high (`score >= beta && !iterBestMove.IsNull`) so timeouts during fail-high re-search don't discard the better move; opens directly to `InfiniteValue` once `delta > 500`, and searches `searchDepth = Math.Max(1, currentDepth - failHighCount)` on fail-high.
+- **Result (`v1.1.11` vs `v1.1.10`, `1+0.01`, 8,000 games):** **+2.82 ± 5.70 logistic Elo** (`+3.28 ± 5.38` paired nElo / `+3.77 ± 7.61` fastchess nElo, `2677W / 2612L / 2711D`, `50.41%`, `83.42% LOS`).
 
 ---
 

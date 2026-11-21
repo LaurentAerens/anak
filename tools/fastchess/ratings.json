@@ -957,6 +957,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.9_20261121_015437.pgn",
       "notes": "Deeper/shallower LMR re-search (doDeeperSearch / doShallowerSearch) on LMR fail-high"
+    },
+    "v1.1.11": {
+      "version": "v1.1.11",
+      "date": "2026-11-21",
+      "estimated_elo": 3100,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.10 (+2.82 logistic / +3.28 nElo in 8,000 games, 83.42% LOS)",
+      "score": "4032.5 / 8000",
+      "wins": 2677,
+      "losses": 2612,
+      "draws": 2711,
+      "perf_percent": 50.41,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.10_20261121_040516.pgn",
+      "notes": "Preserve iterBestMove on aspiration fail-high timeout, widen to InfiniteValue at delta > 500, and reduce searchDepth by failHighCount"
     }
   }
 }
