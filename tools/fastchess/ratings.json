@@ -1092,6 +1092,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.18_20261121_111848.pgn",
       "notes": "Scale leaf NNUE evaluation by (200 - HalfmoveClock) / 200 to dampen 50-move fortress shuffling"
+    },
+    "v1.1.20": {
+      "version": "v1.1.20",
+      "date": "2026-11-21",
+      "estimated_elo": 3174,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.19 (+3.13 logistic / +4.06 nElo in 8,000 games, 85.22% LOS)",
+      "score": "4036.0 / 8000",
+      "wins": 2643,
+      "losses": 2571,
+      "draws": 2786,
+      "perf_percent": 50.45,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.19_20261121_130523.pgn",
+      "notes": "Bitboard bulk pawn move generation in MoveGenerator and ExpertRouting.IsDefaultOrder fast-path in PawnTopology"
     }
   }
 }

@@ -217,74 +217,102 @@ public static class MoveGenerator
             }
         }
 
-        // 9. Pawn Moves
+        // 9. Pawn Moves (Bulk Bitboard Generation)
         if (us == Color.White)
         {
             ulong pawns = board.Pawns & ourPieces;
-            while (pawns != 0)
+            ulong pawnsOn7 = pawns & Bitboard.Rank7;
+            ulong pawnsNot7 = pawns & ~Bitboard.Rank7;
+            ulong unpinnedNot7 = pawnsNot7 & ~pinnedPieces;
+            ulong pinnedNot7 = pawnsNot7 & pinnedPieces;
+
+            if (unpinnedNot7 != 0)
             {
-                Square from = Bitboard.PopLsb(ref pawns);
-                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
-                ulong allowedMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
+                ulong empty = ~occupied;
+                ulong singlePush = (unpinnedNot7 << 8) & empty;
+                ulong doublePush = ((singlePush & Bitboard.Rank3) << 8) & empty & targetMask;
+                singlePush &= targetMask;
+                ulong capWest = ((unpinnedNot7 & ~Bitboard.FileA) << 7) & enemyPieces & targetMask;
+                ulong capEast = ((unpinnedNot7 & ~Bitboard.FileH) << 9) & enemyPieces & targetMask;
 
-                int r = (int)from.Rank();
+                while (singlePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref singlePush);
+                    list.Add(new Move((Square)((int)to - 8), to, MoveType.Quiet));
+                }
+                while (doublePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref doublePush);
+                    list.Add(new Move((Square)((int)to - 16), to, MoveType.DoublePawnPush));
+                }
+                while (capWest != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref capWest);
+                    list.Add(new Move((Square)((int)to - 7), to, MoveType.Capture));
+                }
+                while (capEast != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref capEast);
+                    list.Add(new Move((Square)((int)to - 9), to, MoveType.Capture));
+                }
+            }
 
-                // Single push
+            while (pinnedNot7 != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pinnedNot7);
+                ulong allowedMask = targetMask & Bitboard.Line[(int)kingSq, (int)from];
+
                 Square to1 = (Square)((int)from + 8);
                 ulong to1Bit = 1UL << (int)to1;
                 if ((occupied & to1Bit) == 0)
                 {
-                    if (r == 6) // Promotion
+                    if ((to1Bit & allowedMask) != 0)
                     {
-                        if ((to1Bit & allowedMask) != 0)
-                        {
-                            list.Add(new Move(from, to1, MoveType.QueenPromotion));
-                            list.Add(new Move(from, to1, MoveType.RookPromotion));
-                            list.Add(new Move(from, to1, MoveType.BishopPromotion));
-                            list.Add(new Move(from, to1, MoveType.KnightPromotion));
-                        }
+                        list.Add(new Move(from, to1, MoveType.Quiet));
                     }
-                    else
+                    if ((int)from < 16)
                     {
-                        if ((to1Bit & allowedMask) != 0)
+                        Square to2 = (Square)((int)from + 16);
+                        ulong to2Bit = to1Bit << 8;
+                        if ((occupied & to2Bit) == 0 && (to2Bit & allowedMask) != 0)
                         {
-                            list.Add(new Move(from, to1, MoveType.Quiet));
-                        }
-
-                        // Double push (from rank 2)
-                        if (r == 1)
-                        {
-                            Square to2 = (Square)((int)from + 16);
-                            ulong to2Bit = to1Bit << 8;
-                            if ((occupied & to2Bit) == 0 &&
-                                ((to2Bit & allowedMask) != 0))
-                            {
-                                list.Add(new Move(from, to2, MoveType.DoublePawnPush));
-                            }
+                            list.Add(new Move(from, to2, MoveType.DoublePawnPush));
                         }
                     }
                 }
 
-                // Captures
                 ulong attacks = Bitboard.WhitePawnAttacks[(int)from] & enemyPieces & allowedMask;
-                if (r == 6) // Promotion Capture
+                while (attacks != 0)
                 {
-                    while (attacks != 0)
-                    {
-                        Square to = Bitboard.PopLsb(ref attacks);
-                        list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
-                        list.Add(new Move(from, to, MoveType.RookPromotionCapture));
-                        list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
-                        list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
-                    }
+                    Square to = Bitboard.PopLsb(ref attacks);
+                    list.Add(new Move(from, to, MoveType.Capture));
                 }
-                else
+            }
+
+            while (pawnsOn7 != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pawnsOn7);
+                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
+                ulong allowedMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
+
+                Square to1 = (Square)((int)from + 8);
+                ulong to1Bit = 1UL << (int)to1;
+                if ((occupied & to1Bit) == 0 && (to1Bit & allowedMask) != 0)
                 {
-                    while (attacks != 0)
-                    {
-                        Square to = Bitboard.PopLsb(ref attacks);
-                        list.Add(new Move(from, to, MoveType.Capture));
-                    }
+                    list.Add(new Move(from, to1, MoveType.QueenPromotion));
+                    list.Add(new Move(from, to1, MoveType.RookPromotion));
+                    list.Add(new Move(from, to1, MoveType.BishopPromotion));
+                    list.Add(new Move(from, to1, MoveType.KnightPromotion));
+                }
+
+                ulong attacks = Bitboard.WhitePawnAttacks[(int)from] & enemyPieces & allowedMask;
+                while (attacks != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref attacks);
+                    list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
+                    list.Add(new Move(from, to, MoveType.RookPromotionCapture));
+                    list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
+                    list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
                 }
             }
 
@@ -298,7 +326,7 @@ public static class MoveGenerator
                 if (epFile > 0)
                 {
                     Square from = (Square)((int)epCapSq - 1);
-                    if (((1UL << (int)from) & board.Pawns & ourPieces) != 0)
+                    if (((1UL << (int)from) & pawns) != 0)
                     {
                         TryAddEnPassant(in board, from, epTo, epCapSq, kingSq, numCheckers, checkers, enemyPieces, occupied, ref list);
                     }
@@ -306,7 +334,7 @@ public static class MoveGenerator
                 if (epFile < 7)
                 {
                     Square from = (Square)((int)epCapSq + 1);
-                    if (((1UL << (int)from) & board.Pawns & ourPieces) != 0)
+                    if (((1UL << (int)from) & pawns) != 0)
                     {
                         TryAddEnPassant(in board, from, epTo, epCapSq, kingSq, numCheckers, checkers, enemyPieces, occupied, ref list);
                     }
@@ -316,70 +344,98 @@ public static class MoveGenerator
         else // Black Pawns
         {
             ulong pawns = board.Pawns & ourPieces;
-            while (pawns != 0)
+            ulong pawnsOn2 = pawns & Bitboard.Rank2;
+            ulong pawnsNot2 = pawns & ~Bitboard.Rank2;
+            ulong unpinnedNot2 = pawnsNot2 & ~pinnedPieces;
+            ulong pinnedNot2 = pawnsNot2 & pinnedPieces;
+
+            if (unpinnedNot2 != 0)
             {
-                Square from = Bitboard.PopLsb(ref pawns);
-                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
-                ulong allowedMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
+                ulong empty = ~occupied;
+                ulong singlePush = (unpinnedNot2 >> 8) & empty;
+                ulong doublePush = ((singlePush & Bitboard.Rank6) >> 8) & empty & targetMask;
+                singlePush &= targetMask;
+                ulong capWest = ((unpinnedNot2 & ~Bitboard.FileA) >> 9) & enemyPieces & targetMask;
+                ulong capEast = ((unpinnedNot2 & ~Bitboard.FileH) >> 7) & enemyPieces & targetMask;
 
-                int r = (int)from.Rank();
+                while (singlePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref singlePush);
+                    list.Add(new Move((Square)((int)to + 8), to, MoveType.Quiet));
+                }
+                while (doublePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref doublePush);
+                    list.Add(new Move((Square)((int)to + 16), to, MoveType.DoublePawnPush));
+                }
+                while (capWest != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref capWest);
+                    list.Add(new Move((Square)((int)to + 9), to, MoveType.Capture));
+                }
+                while (capEast != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref capEast);
+                    list.Add(new Move((Square)((int)to + 7), to, MoveType.Capture));
+                }
+            }
 
-                // Single push
+            while (pinnedNot2 != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pinnedNot2);
+                ulong allowedMask = targetMask & Bitboard.Line[(int)kingSq, (int)from];
+
                 Square to1 = (Square)((int)from - 8);
                 ulong to1Bit = 1UL << (int)to1;
                 if ((occupied & to1Bit) == 0)
                 {
-                    if (r == 1) // Promotion
+                    if ((to1Bit & allowedMask) != 0)
                     {
-                        if ((to1Bit & allowedMask) != 0)
-                        {
-                            list.Add(new Move(from, to1, MoveType.QueenPromotion));
-                            list.Add(new Move(from, to1, MoveType.RookPromotion));
-                            list.Add(new Move(from, to1, MoveType.BishopPromotion));
-                            list.Add(new Move(from, to1, MoveType.KnightPromotion));
-                        }
+                        list.Add(new Move(from, to1, MoveType.Quiet));
                     }
-                    else
+                    if ((int)from >= 48)
                     {
-                        if ((to1Bit & allowedMask) != 0)
+                        Square to2 = (Square)((int)from - 16);
+                        ulong to2Bit = to1Bit >> 8;
+                        if ((occupied & to2Bit) == 0 && (to2Bit & allowedMask) != 0)
                         {
-                            list.Add(new Move(from, to1, MoveType.Quiet));
-                        }
-
-                        // Double push (from rank 7)
-                        if (r == 6)
-                        {
-                            Square to2 = (Square)((int)from - 16);
-                            ulong to2Bit = to1Bit >> 8;
-                            if ((occupied & to2Bit) == 0 &&
-                                ((to2Bit & allowedMask) != 0))
-                            {
-                                list.Add(new Move(from, to2, MoveType.DoublePawnPush));
-                            }
+                            list.Add(new Move(from, to2, MoveType.DoublePawnPush));
                         }
                     }
                 }
 
-                // Captures
                 ulong attacks = Bitboard.BlackPawnAttacks[(int)from] & enemyPieces & allowedMask;
-                if (r == 1) // Promotion Capture
+                while (attacks != 0)
                 {
-                    while (attacks != 0)
-                    {
-                        Square to = Bitboard.PopLsb(ref attacks);
-                        list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
-                        list.Add(new Move(from, to, MoveType.RookPromotionCapture));
-                        list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
-                        list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
-                    }
+                    Square to = Bitboard.PopLsb(ref attacks);
+                    list.Add(new Move(from, to, MoveType.Capture));
                 }
-                else
+            }
+
+            while (pawnsOn2 != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pawnsOn2);
+                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
+                ulong allowedMask = isPinned ? (targetMask & Bitboard.Line[(int)kingSq, (int)from]) : targetMask;
+
+                Square to1 = (Square)((int)from - 8);
+                ulong to1Bit = 1UL << (int)to1;
+                if ((occupied & to1Bit) == 0 && (to1Bit & allowedMask) != 0)
                 {
-                    while (attacks != 0)
-                    {
-                        Square to = Bitboard.PopLsb(ref attacks);
-                        list.Add(new Move(from, to, MoveType.Capture));
-                    }
+                    list.Add(new Move(from, to1, MoveType.QueenPromotion));
+                    list.Add(new Move(from, to1, MoveType.RookPromotion));
+                    list.Add(new Move(from, to1, MoveType.BishopPromotion));
+                    list.Add(new Move(from, to1, MoveType.KnightPromotion));
+                }
+
+                ulong attacks = Bitboard.BlackPawnAttacks[(int)from] & enemyPieces & allowedMask;
+                while (attacks != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref attacks);
+                    list.Add(new Move(from, to, MoveType.QueenPromotionCapture));
+                    list.Add(new Move(from, to, MoveType.RookPromotionCapture));
+                    list.Add(new Move(from, to, MoveType.BishopPromotionCapture));
+                    list.Add(new Move(from, to, MoveType.KnightPromotionCapture));
                 }
             }
 
@@ -393,7 +449,7 @@ public static class MoveGenerator
                 if (epFile > 0)
                 {
                     Square from = (Square)((int)epCapSq - 1);
-                    if (((1UL << (int)from) & board.Pawns & ourPieces) != 0)
+                    if (((1UL << (int)from) & pawns) != 0)
                     {
                         TryAddEnPassant(in board, from, epTo, epCapSq, kingSq, numCheckers, checkers, enemyPieces, occupied, ref list);
                     }
@@ -401,7 +457,7 @@ public static class MoveGenerator
                 if (epFile < 7)
                 {
                     Square from = (Square)((int)epCapSq + 1);
-                    if (((1UL << (int)from) & board.Pawns & ourPieces) != 0)
+                    if (((1UL << (int)from) & pawns) != 0)
                     {
                         TryAddEnPassant(in board, from, epTo, epCapSq, kingSq, numCheckers, checkers, enemyPieces, occupied, ref list);
                     }
@@ -605,18 +661,36 @@ public static class MoveGenerator
             }
         }
 
-        // 9. Pawn Quiet Moves (Pushes only, no promotions)
+        // 9. Pawn Quiet Moves (Pushes only, no promotions — Bulk Bitboard Generation)
         if (us == Color.White)
         {
-            ulong pawns = board.Pawns & ourPieces;
-            while (pawns != 0)
-            {
-                Square from = Bitboard.PopLsb(ref pawns);
-                int r = (int)from.Rank();
-                if (r == 6) continue;
+            ulong pawnsNot7 = (board.Pawns & ourPieces) & ~Bitboard.Rank7;
+            ulong unpinnedNot7 = pawnsNot7 & ~pinnedPieces;
+            ulong pinnedNot7 = pawnsNot7 & pinnedPieces;
 
-                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
-                ulong allowedMask = isPinned ? (quietTargetMask & Bitboard.Line[(int)kingSq, (int)from]) : quietTargetMask;
+            if (unpinnedNot7 != 0)
+            {
+                ulong empty = ~occupied;
+                ulong singlePush = (unpinnedNot7 << 8) & empty;
+                ulong doublePush = ((singlePush & Bitboard.Rank3) << 8) & quietTargetMask;
+                singlePush &= quietTargetMask;
+
+                while (singlePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref singlePush);
+                    list.Add(new Move((Square)((int)to - 8), to, MoveType.Quiet));
+                }
+                while (doublePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref doublePush);
+                    list.Add(new Move((Square)((int)to - 16), to, MoveType.DoublePawnPush));
+                }
+            }
+
+            while (pinnedNot7 != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pinnedNot7);
+                ulong allowedMask = quietTargetMask & Bitboard.Line[(int)kingSq, (int)from];
 
                 Square to1 = (Square)((int)from + 8);
                 ulong to1Bit = 1UL << (int)to1;
@@ -626,12 +700,11 @@ public static class MoveGenerator
                     {
                         list.Add(new Move(from, to1, MoveType.Quiet));
                     }
-
-                    if (r == 1)
+                    if ((int)from < 16)
                     {
                         Square to2 = (Square)((int)from + 16);
                         ulong to2Bit = to1Bit << 8;
-                        if ((occupied & to2Bit) == 0 && ((to2Bit & allowedMask) != 0))
+                        if ((occupied & to2Bit) == 0 && (to2Bit & allowedMask) != 0)
                         {
                             list.Add(new Move(from, to2, MoveType.DoublePawnPush));
                         }
@@ -641,15 +714,33 @@ public static class MoveGenerator
         }
         else // Black Pawns
         {
-            ulong pawns = board.Pawns & ourPieces;
-            while (pawns != 0)
-            {
-                Square from = Bitboard.PopLsb(ref pawns);
-                int r = (int)from.Rank();
-                if (r == 1) continue;
+            ulong pawnsNot2 = (board.Pawns & ourPieces) & ~Bitboard.Rank2;
+            ulong unpinnedNot2 = pawnsNot2 & ~pinnedPieces;
+            ulong pinnedNot2 = pawnsNot2 & pinnedPieces;
 
-                bool isPinned = (pinnedPieces & (1UL << (int)from)) != 0;
-                ulong allowedMask = isPinned ? (quietTargetMask & Bitboard.Line[(int)kingSq, (int)from]) : quietTargetMask;
+            if (unpinnedNot2 != 0)
+            {
+                ulong empty = ~occupied;
+                ulong singlePush = (unpinnedNot2 >> 8) & empty;
+                ulong doublePush = ((singlePush & Bitboard.Rank6) >> 8) & quietTargetMask;
+                singlePush &= quietTargetMask;
+
+                while (singlePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref singlePush);
+                    list.Add(new Move((Square)((int)to + 8), to, MoveType.Quiet));
+                }
+                while (doublePush != 0)
+                {
+                    Square to = Bitboard.PopLsb(ref doublePush);
+                    list.Add(new Move((Square)((int)to + 16), to, MoveType.DoublePawnPush));
+                }
+            }
+
+            while (pinnedNot2 != 0)
+            {
+                Square from = Bitboard.PopLsb(ref pinnedNot2);
+                ulong allowedMask = quietTargetMask & Bitboard.Line[(int)kingSq, (int)from];
 
                 Square to1 = (Square)((int)from - 8);
                 ulong to1Bit = 1UL << (int)to1;
@@ -659,12 +750,11 @@ public static class MoveGenerator
                     {
                         list.Add(new Move(from, to1, MoveType.Quiet));
                     }
-
-                    if (r == 6)
+                    if ((int)from >= 48)
                     {
                         Square to2 = (Square)((int)from - 16);
                         ulong to2Bit = to1Bit >> 8;
-                        if ((occupied & to2Bit) == 0 && ((to2Bit & allowedMask) != 0))
+                        if ((occupied & to2Bit) == 0 && (to2Bit & allowedMask) != 0)
                         {
                             list.Add(new Move(from, to2, MoveType.DoublePawnPush));
                         }

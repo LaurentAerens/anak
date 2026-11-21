@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.19` (Estimated Rating: **3171 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.20` (Estimated Rating: **3174 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.20` (2026-11-21) — Bitboard Bulk Pawn Move Generation & `ExpertRouting` Fast-Path
+- **Category:** Move Generation & Topology Throughput (Patch Release)
+- **Estimated Elo:** **3174 &plusmn; 5** (`+3.13 ± 5.86` logistic Elo / `+4.06 ± 7.61` fastchess nElo over `v1.1.19` in 8,000 games at `1+0.01`: `2643W / 2571L / 2786D`, `50.45%`, `85.22% LOS`)
+- **Highlights:**
+  - **Bitboard Bulk Pawn Move Generation (`MoveGenerator.cs`) & `ExpertRouting.IsDefaultOrder` Fast-Path (`ExpertRouting.cs`, `PawnTopology.cs`) — `+3.13 ± 5.86` logistic Elo (8,000 games, `+3%–5%` `bench 12` NPS):** Split pawns into `unpinnedNot7`, `pinnedNot7`, and `pawnsOn7` to compute unpinned pawn pushes and captures in parallel via bitboard shifts, and added a branch-direct fast-path for default `"EQIA"` topology routing.
 
 ### `v1.1.19` (2026-11-21) — 50-Move Rule (`HalfmoveClock`) Drawishness Scaling
 - **Category:** Evaluation (Patch Release)

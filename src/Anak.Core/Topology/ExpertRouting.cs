@@ -57,6 +57,7 @@ public sealed class ExpertRouting
     {
         _order = TryParseOrder(order, out char[]? parsed) ? parsed! : DefaultOrder.ToCharArray();
         Order = new string(_order);
+        IsDefaultOrder = Order == DefaultOrder;
         EndgameMaxPieces = endgameMaxPieces;
         ImbalanceMargin = imbalanceMargin;
         OpenThreshold = openThreshold;
@@ -67,6 +68,8 @@ public sealed class ExpertRouting
 
     /// <summary>Normalized (upper-case) rule order string.</summary>
     public string Order { get; }
+
+    public bool IsDefaultOrder { get; }
 
     public int EndgameMaxPieces { get; }
 

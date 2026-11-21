@@ -250,6 +250,21 @@ public static class PawnTopology
         // Openness is only computed when a rule or the fallback needs it.
         opennessPct = -1;
 
+        if (routing.IsDefaultOrder)
+        {
+            if (IsEndgame(in board, routing.EndgameMaxPieces)) return NnueExpertType.Endgame;
+            if (IsQueenless(in board)) return NnueExpertType.Queenless;
+            if (HasMaterialImbalance(in board, routing.ImbalanceMargin)) return NnueExpertType.Imbalance;
+            if (IsOppositeSideCastling(in board))
+            {
+                if (routing.AttackMinOpenness <= 0.0f) return NnueExpertType.Attack;
+                opennessPct = CalculateOpennessPercent(in board);
+                if (opennessPct >= routing.AttackMinOpennessPct) return NnueExpertType.Attack;
+            }
+            if (opennessPct < 0) opennessPct = CalculateOpennessPercent(in board);
+            return opennessPct >= routing.OpenThresholdPct ? NnueExpertType.Open : NnueExpertType.Closed;
+        }
+
         foreach (char rule in routing.Rules)
         {
             switch (rule)

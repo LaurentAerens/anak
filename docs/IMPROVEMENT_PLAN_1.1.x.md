@@ -285,7 +285,7 @@
 - **Improvement:** Add precomputed `BishopRays[64]` and `RookRays[64]` in `Bitboard.cs` and guard checker/pinner/attack magic lookups with `(enemyBq & GetBishopRays(sq)) != 0` and `(enemyRq & GetRookRays(sq)) != 0` (skipping magic lookups on ~70â€“80% of nodes). In `SEE.GetLeastValuableAttacker`, return `ulong lsbBit = subset & (0UL - subset)` (`blsi`) directly instead of `tzcnt` + `1UL << sq`.
 - **Est. Impact:** **+3% to +6% search NPS** (100% node-equivalent) | **Complexity:** Low.
 
-### 46. Bitboard Bulk Pawn Move Generation (Eliminate Per-Pawn Loop & Branches)
+### 46. [x] Bitboard Bulk Pawn Move Generation (Eliminate Per-Pawn Loop & Branches)
 - **Location:** [`MoveGenerator.cs`](../src/Anak.Core/MoveGen/MoveGenerator.cs#L219-L382), [`MoveGenerator.cs`](../src/Anak.Core/MoveGen/MoveGenerator.cs#L605-L912)
 - **Improvement:** Split pawns into `unpinnedNot7`, `pawnsOn7`, and `pinnedNot7`. Compute all single pushes, double pushes, and left/right captures for `unpinnedNot7` in parallel via 3â€“4 bitboard shifts, then `PopLsb` only actual legal destinations (exits in ~4 cycles when pawns have no captures instead of looping over all 8 pawns).
 - **Est. Impact:** **+8% to +15% movegen NPS** (+2% to +4% search NPS) | **Complexity:** Medium | **Test:** Perft + Tier 1/2 check.
