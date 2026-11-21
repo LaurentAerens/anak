@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace Anak.Core;
 
 public enum Square : byte
@@ -15,10 +17,14 @@ public enum Square : byte
 
 public static class SquareExtensions
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static File File(this Square sq) => (File)((byte)sq & 7);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Rank Rank(this Square sq) => (Rank)((byte)sq >> 3);
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Square Create(File file, Rank rank) => (Square)(((byte)rank << 3) | (byte)file);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Square Create(int file, int rank) => (Square)((rank << 3) | file);
 
     public static string Name(this Square sq)

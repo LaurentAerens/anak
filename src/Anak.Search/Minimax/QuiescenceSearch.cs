@@ -256,7 +256,7 @@ public sealed class QuiescenceSearch
 
             if (bestSlot < 0 || bestScore == int.MinValue) break;
 
-            if ((++_qsNodes & 63) == 0 && _isTimeUp != null && _isTimeUp())
+            if ((++_qsNodes & 511) == 0 && _isTimeUp != null && _isTimeUp())
             {
                 break;
             }

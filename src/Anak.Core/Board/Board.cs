@@ -16,6 +16,7 @@ public struct Mailbox
     private byte _element0;
 }
 
+[SkipLocalsInit]
 [StructLayout(LayoutKind.Sequential)]
 public struct Board : IEquatable<Board>
 {
@@ -239,7 +240,7 @@ public struct Board : IEquatable<Board>
         ulong bit = 1UL << (byte)sq;
         Unsafe.Add(ref White, (int)color) |= bit;
         Unsafe.Add(ref Pawns, (int)type - 1) |= bit;
-        _mailbox[(byte)sq] = (byte)PieceExtensions.Create(color, type);
+        Unsafe.Add(ref Unsafe.As<Mailbox, byte>(ref _mailbox), (int)(byte)sq) = (byte)PieceExtensions.Create(color, type);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -248,7 +249,7 @@ public struct Board : IEquatable<Board>
         ulong bit = 1UL << (byte)sq;
         Unsafe.Add(ref White, (int)color) &= ~bit;
         Unsafe.Add(ref Pawns, (int)type - 1) &= ~bit;
-        _mailbox[(byte)sq] = 0;
+        Unsafe.Add(ref Unsafe.As<Mailbox, byte>(ref _mailbox), (int)(byte)sq) = 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -257,8 +258,9 @@ public struct Board : IEquatable<Board>
         ulong mask = (1UL << (byte)from) | (1UL << (byte)to);
         Unsafe.Add(ref White, (int)color) ^= mask;
         Unsafe.Add(ref Pawns, (int)type - 1) ^= mask;
-        _mailbox[(byte)to] = _mailbox[(byte)from];
-        _mailbox[(byte)from] = 0;
+        ref byte mb = ref Unsafe.As<Mailbox, byte>(ref _mailbox);
+        Unsafe.Add(ref mb, (int)(byte)to) = Unsafe.Add(ref mb, (int)(byte)from);
+        Unsafe.Add(ref mb, (int)(byte)from) = 0;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -365,9 +367,15 @@ public struct Board : IEquatable<Board>
         }
 
         // 4. Update castling rights branchlessly via 64-square mask table
-        ZobristKey ^= Zobrist.Castling[(int)Castling];
-        Castling &= (CastlingRights)(CastlingMask[(int)from] & CastlingMask[(int)to]);
-        ZobristKey ^= Zobrist.Castling[(int)Castling];
+        if (Castling != CastlingRights.None)
+        {
+            CastlingRights newCastling = Castling & (CastlingRights)(CastlingMask[(int)from] & CastlingMask[(int)to]);
+            if (newCastling != Castling)
+            {
+                ZobristKey ^= Zobrist.Castling[(int)Castling] ^ Zobrist.Castling[(int)newCastling];
+                Castling = newCastling;
+            }
+        }
 
         // 5. Update en passant square
         if (EpSquare != Square.None)
@@ -703,7 +711,6 @@ public struct Board : IEquatable<Board>
         // Fast O(1) castling legality check without generating moves
         if (move.IsCastling)
         {
-            if (IsInCheck()) return false;
             ulong occ = Occupied;
 
             if (us == Color.White)
@@ -714,6 +721,7 @@ public struct Board : IEquatable<Board>
                     return from == Square.E1 && to == Square.G1 &&
                            (Castling & CastlingRights.WhiteKingside) != 0 &&
                            (occ & emptyMask) == 0 &&
+                           !IsInCheck() &&
                            !IsSquareAttacked(Square.F1, Color.Black) &&
                            !IsSquareAttacked(Square.G1, Color.Black);
                 }
@@ -723,6 +731,7 @@ public struct Board : IEquatable<Board>
                     return from == Square.E1 && to == Square.C1 &&
                            (Castling & CastlingRights.WhiteQueenside) != 0 &&
                            (occ & emptyMask) == 0 &&
+                           !IsInCheck() &&
                            !IsSquareAttacked(Square.D1, Color.Black) &&
                            !IsSquareAttacked(Square.C1, Color.Black);
                 }
@@ -735,6 +744,7 @@ public struct Board : IEquatable<Board>
                     return from == Square.E8 && to == Square.G8 &&
                            (Castling & CastlingRights.BlackKingside) != 0 &&
                            (occ & emptyMask) == 0 &&
+                           !IsInCheck() &&
                            !IsSquareAttacked(Square.F8, Color.White) &&
                            !IsSquareAttacked(Square.G8, Color.White);
                 }
@@ -744,6 +754,7 @@ public struct Board : IEquatable<Board>
                     return from == Square.E8 && to == Square.C8 &&
                            (Castling & CastlingRights.BlackQueenside) != 0 &&
                            (occ & emptyMask) == 0 &&
+                           !IsInCheck() &&
                            !IsSquareAttacked(Square.D8, Color.White) &&
                            !IsSquareAttacked(Square.C8, Color.White);
                 }

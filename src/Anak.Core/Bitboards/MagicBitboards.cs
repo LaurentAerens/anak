@@ -6,10 +6,13 @@ using System.Runtime.InteropServices;
 
 namespace Anak.Core;
 
-public static class MagicBitboards
+public static unsafe class MagicBitboards
 {
     public static readonly MagicEntry[] BishopEntries = new MagicEntry[64];
     public static readonly MagicEntry[] RookEntries = new MagicEntry[64];
+
+    private static readonly PextEntry[] BishopPextEntries = new PextEntry[64];
+    private static readonly PextEntry[] RookPextEntries = new PextEntry[64];
 
     public static readonly ulong[] BishopMasks = new ulong[64];
     public static readonly ulong[] RookMasks = new ulong[64];
@@ -58,11 +61,14 @@ public static class MagicBitboards
         0x800600200834508AUL, 0x1051000400080203UL, 0x0002000804016082UL, 0x0080840080410022UL,
     ];
 
-    private static readonly ulong[] _bishopTable = new ulong[5248];
-    private static readonly ulong[] _rookTable = new ulong[102400];
+    private static readonly ulong[] _bishopTable = GC.AllocateArray<ulong>(5248, pinned: true);
+    private static readonly ulong[] _rookTable = GC.AllocateArray<ulong>(102400, pinned: true);
 
     static MagicBitboards()
     {
+        ulong* bishopBase = (ulong*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_bishopTable));
+        ulong* rookBase = (ulong*)Unsafe.AsPointer(ref MemoryMarshal.GetArrayDataReference(_rookTable));
+
         // 1. Compute masks, shifts, and table offsets
         int bishopOffset = 0;
         int rookOffset = 0;
@@ -75,7 +81,8 @@ public static class MagicBitboards
             int bBits = BitOperations.PopCount(bMask);
             int bShift = 64 - bBits;
             BishopShifts[sq] = bShift;
-            BishopEntries[sq] = new MagicEntry(bMask, BishopMagics[sq], bishopOffset, bShift);
+            BishopEntries[sq] = new MagicEntry(bMask, BishopMagics[sq], bishopBase + bishopOffset, bShift);
+            BishopPextEntries[sq] = new PextEntry(bMask, bishopBase + bishopOffset);
             bishopOffset += 1 << bBits;
 
             RookOffsets[sq] = rookOffset;
@@ -84,7 +91,8 @@ public static class MagicBitboards
             int rBits = BitOperations.PopCount(rMask);
             int rShift = 64 - rBits;
             RookShifts[sq] = rShift;
-            RookEntries[sq] = new MagicEntry(rMask, RookMagics[sq], rookOffset, rShift);
+            RookEntries[sq] = new MagicEntry(rMask, RookMagics[sq], rookBase + rookOffset, rShift);
+            RookPextEntries[sq] = new PextEntry(rMask, rookBase + rookOffset);
             rookOffset += 1 << rBits;
         }
 
@@ -136,40 +144,38 @@ public static class MagicBitboards
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetBishopAttacks(Square square, ulong occupancy)
     {
-        int sq = (int)(byte)square;
+        nuint sq = (byte)square;
         if (Bmi2.X64.IsSupported)
         {
-            ulong mask = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopMasks), sq);
-            int offset = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopOffsets), sq);
-            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, mask);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), offset + index);
+            ref readonly PextEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopPextEntries), sq);
+            nuint index = (nuint)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
+            return entry.TablePtr[index];
         }
         else
         {
             ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopEntries), sq);
             ulong occ = occupancy & entry.Mask;
-            int index = (int)((occ * entry.Magic) >> entry.Shift);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopTable), entry.Offset + index);
+            nuint index = (nuint)((occ * entry.Magic) >> entry.Shift);
+            return entry.TablePtr[index];
         }
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetRookAttacks(Square square, ulong occupancy)
     {
-        int sq = (int)(byte)square;
+        nuint sq = (byte)square;
         if (Bmi2.X64.IsSupported)
         {
-            ulong mask = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookMasks), sq);
-            int offset = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookOffsets), sq);
-            int index = (int)Bmi2.X64.ParallelBitExtract(occupancy, mask);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), offset + index);
+            ref readonly PextEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookPextEntries), sq);
+            nuint index = (nuint)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
+            return entry.TablePtr[index];
         }
         else
         {
             ref readonly MagicEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookEntries), sq);
             ulong occ = occupancy & entry.Mask;
-            int index = (int)((occ * entry.Magic) >> entry.Shift);
-            return Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookTable), entry.Offset + index);
+            nuint index = (nuint)((occ * entry.Magic) >> entry.Shift);
+            return entry.TablePtr[index];
         }
     }
 
@@ -307,12 +313,19 @@ public static class MagicBitboards
     }
 }
 
-[StructLayout(LayoutKind.Sequential)]
-public readonly struct MagicEntry(ulong mask, ulong magic, int offset, int shift)
+[StructLayout(LayoutKind.Sequential, Size = 16)]
+internal readonly unsafe struct PextEntry(ulong mask, ulong* tablePtr)
+{
+    public readonly ulong Mask = mask;
+    public readonly ulong* TablePtr = tablePtr;
+}
+
+[StructLayout(LayoutKind.Sequential, Size = 32)]
+public readonly unsafe struct MagicEntry(ulong mask, ulong magic, ulong* tablePtr, int shift)
 {
     public readonly ulong Mask = mask;
     public readonly ulong Magic = magic;
-    public readonly int Offset = offset;
+    public readonly ulong* TablePtr = tablePtr;
     public readonly int Shift = shift;
 }
 

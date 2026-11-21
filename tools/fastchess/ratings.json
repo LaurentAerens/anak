@@ -1032,6 +1032,21 @@
       "tc": "bench 12",
       "pgn": "",
       "notes": "Wire MoveGenerator.GenerateLegalQuiets in MovePicker, ray-mask pre-filtering & blsi SEE, zero-magic direct GivesCheck & quiet SEE short-circuit flip"
+    },
+    "v1.1.16": {
+      "version": "v1.1.16",
+      "date": "2026-11-21",
+      "estimated_elo": 3166,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.15 (+0.5% to +1.1% bench 12 NPS, 100% node-equivalent)",
+      "score": "N/A",
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "perf_percent": 50.0,
+      "tc": "bench 12",
+      "pgn": "",
+      "notes": "MagicBitboards 16-byte PextEntry & 32-byte MagicEntry, Board/MoveList/Castling micro-optimizations, MovePicker inCheck forwarding & short[] HistoryTable/CaptureHistory"
     }
   }
 }

@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.15` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.16` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,14 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.16` (2026-11-21) — `MagicBitboards` PextEntry, `Board`/`MoveList` & History NPS
+- **Category:** Core / Search Throughput (Patch Release — 100% Node-Equivalent)
+- **Estimated Elo:** **3166 &plusmn; 5** (`+0.5%` to `+1.1%` `bench 12` NPS over `v1.1.15`: `680,570–688,636` vs `679,732–680,990` nps at exact `1,103,885` nodes; `409/409` unit tests passing)
+- **Highlights:**
+  - **16-Byte `PextEntry` & 32-Byte Aligned `MagicEntry` (`MagicBitboards.cs`) — 100% Node-Equivalent:** Pinned `_bishopTable`/`_rookTable` and packed BMI2 masks with direct `ulong*` pointers into 16-byte `PextEntry` structs (plus 32-byte `MagicEntry` fallback).
+  - **Core `Board`/`MoveList`/Castling Micro-Optimizations (`Board.cs`, `MoveList.cs`, `MoveGenerator.cs`, `Piece.cs`, `Square.cs`, `Color.cs`) — 100% Node-Equivalent:** Added `[SkipLocalsInit]` to `Board`, `Unsafe.Add` for `_mailbox` and `MoveList._buffer`, guarded castling Zobrist updates, fast-pathed `Board.IsLegal` castling checks, reused `unsafeForKing` for castling in `MoveGenerator`, and added `[AggressiveInlining]` to core extensions.
+  - **`MovePicker`, `QuiescenceSearch` & `short[]` History Tables (`MovePicker.cs`, `QuiescenceSearch.cs`, `HistoryTable.cs`, `CaptureHistory.cs`, `AlphaBetaEngine.cs`) — 100% Node-Equivalent:** Passed `inCheck` into `MovePicker` to eliminate redundant `IsInCheck()` calls, relaxed `QuiescenceSearch` inner clock poll to `& 511`, and halved `HistoryTable`/`CaptureHistory` footprint from `int[]` to `short[]`.
 
 ### `v1.1.15` (2026-11-21) — Core Movegen, SEE & `GivesCheck` NPS Optimizations
 - **Category:** Core / Search Throughput (Patch Release — 100% Node-Equivalent)

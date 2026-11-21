@@ -122,9 +122,9 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.WhiteKingside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.F1) | (1UL << (int)Square.G1);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.F1, Color.Black) &&
-                        !board.IsSquareAttacked(Square.G1, Color.Black))
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & emptyMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.F1, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.G1, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E1, Square.G1, MoveType.KingCastle));
                     }
@@ -132,9 +132,10 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.WhiteQueenside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.B1) | (1UL << (int)Square.C1) | (1UL << (int)Square.D1);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.D1, Color.Black) &&
-                        !board.IsSquareAttacked(Square.C1, Color.Black))
+                    const ulong checkMask = (1UL << (int)Square.C1) | (1UL << (int)Square.D1);
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & checkMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.D1, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.C1, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E1, Square.C1, MoveType.QueenCastle));
                     }
@@ -145,9 +146,9 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.BlackKingside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.F8) | (1UL << (int)Square.G8);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.F8, Color.White) &&
-                        !board.IsSquareAttacked(Square.G8, Color.White))
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & emptyMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.F8, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.G8, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E8, Square.G8, MoveType.KingCastle));
                     }
@@ -155,9 +156,10 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.BlackQueenside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.B8) | (1UL << (int)Square.C8) | (1UL << (int)Square.D8);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.D8, Color.White) &&
-                        !board.IsSquareAttacked(Square.C8, Color.White))
+                    const ulong checkMask = (1UL << (int)Square.C8) | (1UL << (int)Square.D8);
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & checkMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.D8, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.C8, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E8, Square.C8, MoveType.QueenCastle));
                     }
@@ -511,9 +513,9 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.WhiteKingside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.F1) | (1UL << (int)Square.G1);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.F1, Color.Black) &&
-                        !board.IsSquareAttacked(Square.G1, Color.Black))
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & emptyMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.F1, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.G1, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E1, Square.G1, MoveType.KingCastle));
                     }
@@ -521,9 +523,10 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.WhiteQueenside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.B1) | (1UL << (int)Square.C1) | (1UL << (int)Square.D1);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.D1, Color.Black) &&
-                        !board.IsSquareAttacked(Square.C1, Color.Black))
+                    const ulong checkMask = (1UL << (int)Square.C1) | (1UL << (int)Square.D1);
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & checkMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.D1, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.C1, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E1, Square.C1, MoveType.QueenCastle));
                     }
@@ -534,9 +537,9 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.BlackKingside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.F8) | (1UL << (int)Square.G8);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.F8, Color.White) &&
-                        !board.IsSquareAttacked(Square.G8, Color.White))
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & emptyMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.F8, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.G8, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E8, Square.G8, MoveType.KingCastle));
                     }
@@ -544,9 +547,10 @@ public static class MoveGenerator
                 if ((board.Castling & CastlingRights.BlackQueenside) != 0)
                 {
                     const ulong emptyMask = (1UL << (int)Square.B8) | (1UL << (int)Square.C8) | (1UL << (int)Square.D8);
-                    if ((occupied & emptyMask) == 0 &&
-                        !board.IsSquareAttacked(Square.D8, Color.White) &&
-                        !board.IsSquareAttacked(Square.C8, Color.White))
+                    const ulong checkMask = (1UL << (int)Square.C8) | (1UL << (int)Square.D8);
+                    if ((occupied & emptyMask) == 0 && (unsafeForKing & checkMask) == 0 &&
+                        !IsSquareAttackedCustom(Square.D8, occupied, enemyKnights, enemyBq, enemyRq) &&
+                        !IsSquareAttackedCustom(Square.C8, occupied, enemyKnights, enemyBq, enemyRq))
                     {
                         list.Add(new Move(Square.E8, Square.C8, MoveType.QueenCastle));
                     }

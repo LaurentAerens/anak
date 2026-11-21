@@ -295,17 +295,17 @@
 - **Improvement:** (a) In `AlphaBetaEngine.cs:1438`, flip `!GivesCheckCached(...) && !HasPositiveOrEqualSee(...)` to `!HasPositiveOrEqualSee(...) && !GivesCheckCached(...)` so `GivesCheck` isn't computed on quiet moves that pass SEE. (b) In `Board.GivesCheck`, use `BishopRays`/`RookRays` + `Between` (zero magic lookups) for direct slider checks, and skip discovered-check magic lookups unless `Bitboard.Line[k, (int)from] != 0`.
 - **Est. Impact:** **+5% to +12% search NPS** (100% node-equivalent) | **Complexity:** Low.
 
-### 48. `MagicBitboards`: 16-Byte `PextEntry` with Direct Pinned Table Pointer & 32-Byte Aligned `MagicEntry`
+### 48. [x] `MagicBitboards`: 16-Byte `PextEntry` with Direct Pinned Table Pointer & 32-Byte Aligned `MagicEntry`
 - **Location:** [`MagicBitboards.cs`](../src/Anak.Core/Bitboards/MagicBitboards.cs#L11-L22), [`MagicBitboards.cs`](../src/Anak.Core/Bitboards/MagicBitboards.cs#L137-L174)
 - **Improvement:** Pin `_bishopTable`/`_rookTable` (`GC.AllocateArray(..., pinned: true)` or `NativeMemory.AlignedAlloc`) and pack BMI2 mask + direct `ulong*` pointer into a single 16-byte `PextEntry` (1 aligned load + `pext` + pointer index with `(nuint)(byte)square`), and align non-BMI2 `MagicEntry` to 32 bytes (avoiding 24-byte cacheline splits).
 - **Est. Impact:** **+2% to +4% search NPS** (100% node-equivalent) | **Complexity:** Low-Medium.
 
-### 49. `Board.MakeMove`, `MoveList`, Castling & Hot Table Micro-Optimizations
+### 49. [x] `Board.MakeMove`, `MoveList`, Castling & Hot Table Micro-Optimizations
 - **Location:** [`Board.cs`](../src/Anak.Core/Board/Board.cs#L20-L394), [`Board.cs`](../src/Anak.Core/Board/Board.cs#L673-L721), [`MoveList.cs`](../src/Anak.Core/Moves/MoveList.cs#L25-L37), [`Bitboard.cs`](../src/Anak.Core/Bitboards/Bitboard.cs#L46-L49), [`Zobrist.cs`](../src/Anak.Core/Zobrist/Zobrist.cs#L10-L11), [`Piece.cs`](../src/Anak.Core/Pieces/Piece.cs#L23-L30)
 - **Improvement:** Guard castling Zobrist updates with `if (Castling != CastlingRights.None)` + `if (newCastling != Castling)`; use `Unsafe.Add` on `_mailbox`, `MoveList._buffer`, `Bitboard` attack tables (unified `PawnAttacks[128]`), and `Zobrist` tables; add `[SkipLocalsInit]` to `Board`; reuse `unsafeForKing` for castling in `MoveGenerator` and check rights/occupancy before `IsInCheck()` in `Board.IsLegal`; branchless capture flag encoding in `MoveGenerator`; add `[AggressiveInlining]` to `Piece`/`Square`/`Color` extensions.
 - **Est. Impact:** **+5% to +10% search NPS** (100% node-equivalent) | **Complexity:** Low.
 
-### 50. `MovePicker`, `QuiescenceSearch` & History Table NPS Overhaul
+### 50. [x] `MovePicker`, `QuiescenceSearch` & History Table NPS Overhaul
 - **Location:** [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L72-L204), [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L502-L614), [`QuiescenceSearch.cs`](../src/Anak.Search/Minimax/QuiescenceSearch.cs#L57-L273), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L780-L808), [`HistoryTable.cs`](../src/Anak.Search/Minimax/History/HistoryTable.cs#L17)
 - **Improvement:** (a) Pass `inCheck` into `MovePicker` (eliminating redundant `_board.IsInCheck()`). (b) Cache `ContinuationHistory` sum in `PickBestContinuationMove` so `ScoreQuiets` doesn't re-probe 2 MB tables. (c) Use swap-with-last compaction in `MovePicker` selection sorts and shrink `_scores` to `short` to cut the 2.8 KB stack frame. (d) Replace hardcoded `& 63` clock poll in `QuiescenceSearch` with `TimeManager.CheckMask` and propagate `knownInCheck: 1` on QS quiet checks. (e) Remove per-depth `Dictionary`/LINQ `TopMoves` allocations for single-PV UCI. (f) Shrink `HistoryTable` & `CaptureHistory` from `int[]` to `short[]` (96 KB -> 48 KB).
 - **Est. Impact:** **+8% to +15% search NPS** + zero per-depth GC | **Complexity:** Low-Medium.

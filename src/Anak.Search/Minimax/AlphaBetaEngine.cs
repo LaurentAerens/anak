@@ -956,7 +956,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 counterMove: Move.Null,
                 _history,
                 _captureHistory,
-                _continuationHistory);
+                _continuationHistory,
+                inCheck: _stack[0].InCheck);
 
             int bestScore = -Value.InfiniteValue;
             int movesSearched = 0;
@@ -1408,7 +1409,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 prev1Piece,
                 prev1To,
                 prev2Piece,
-                prev2To);
+                prev2To,
+                inCheck);
 
             int bestScore = -Value.InfiniteValue;
             Move bestMove = Move.Null;

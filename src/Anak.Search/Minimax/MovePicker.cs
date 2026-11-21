@@ -85,6 +85,7 @@ public ref struct MovePicker
     private readonly Square _prev2To;
     private readonly int _prev1Offset;
     private readonly int _prev2Offset;
+    private readonly bool _inCheck;
 
     private MoveList _legalMoves;
     private ScoreBuffer _scores;
@@ -132,7 +133,8 @@ public ref struct MovePicker
         Piece prev1Piece = Piece.None,
         Square prev1To = Square.None,
         Piece prev2Piece = Piece.None,
-        Square prev2To = Square.None)
+        Square prev2To = Square.None,
+        bool? inCheck = null)
     {
         _board = ref board;
         _ttMove = ttMove;
@@ -148,6 +150,7 @@ public ref struct MovePicker
         _prev2To = prev2To;
         _prev1Offset = ContinuationHistory.GetBaseOffset(prev1Piece, prev1To);
         _prev2Offset = ContinuationHistory.GetBaseOffset(prev2Piece, prev2To);
+        _inCheck = inCheck ?? board.IsInCheck();
 
         Unsafe.SkipInit(out _legalMoves);
         _legalMoves.Clear();
@@ -198,7 +201,7 @@ public ref struct MovePicker
     private void EnsureCapturesGenerated()
     {
         if (_capturesGenerated || _allMovesGenerated) return;
-        if (_board.IsInCheck())
+        if (_inCheck)
         {
             EnsureAllMovesGenerated();
             return;
@@ -536,9 +539,9 @@ public ref struct MovePicker
                 Piece moved = _board.GetPieceAt(m.From);
                 int contScore = _continuationHistory.Get1PlyAt(_prev1Offset, moved, m.To) +
                                 _continuationHistory.Get2PlyAt(_prev2Offset, moved, m.To);
+                _scores[i] = contScore;
                 if (contScore > 0)
                 {
-                    _scores[i] = contScore;
                     _quietIndices[_quietCount++] = (byte)i;
                 }
             }

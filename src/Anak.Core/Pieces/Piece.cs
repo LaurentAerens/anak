@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace Anak.Core;
 
 public enum Piece : byte
@@ -20,13 +22,16 @@ public enum Piece : byte
 
 public static class PieceExtensions
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Piece Create(Color color, PieceType type)
     {
         if (type == PieceType.None) return Piece.None;
         return (Piece)((byte)type | ((byte)color << 3));
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Color Color(this Piece piece) => (Color)((byte)piece >> 3);
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static PieceType Type(this Piece piece) => (PieceType)((byte)piece & 7);
 
     public static char ToChar(this Piece piece) => piece switch

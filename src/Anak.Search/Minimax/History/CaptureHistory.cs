@@ -15,7 +15,7 @@ public sealed class CaptureHistory
 {
     public const int MaxHistory = 16384;
     private const int TableSize = 16 * 64 * 16;
-    private readonly int[] _table = new int[TableSize];
+    private readonly short[] _table = new short[TableSize];
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int GetIndex(int pieceIndex, Square to, int victimIndex) =>
@@ -71,8 +71,8 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = PieceToIndex(victim);
-        ref int val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
-        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
+        ref short val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
+        val = (short)(val + bonus - ((val * Math.Abs(bonus)) / MaxHistory));
     }
 
     /// <summary>
@@ -83,8 +83,8 @@ public sealed class CaptureHistory
     {
         int p = PieceToIndex(piece);
         int v = TypeToIndex(victimType);
-        ref int val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
-        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
+        ref short val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(p, to, v));
+        val = (short)(val + bonus - ((val * Math.Abs(bonus)) / MaxHistory));
     }
 
     /// <summary>

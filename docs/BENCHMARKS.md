@@ -68,6 +68,7 @@ This document tracks the estimated Elo rating progression of Anak releases and p
 | [**v1.1.13**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.13) | 2026-11-21 | **3143** | &plusmn;5 | Anak v1.1.12 (+4.43 logistic / +6.62 nElo in 8,000 games) | 4051 / 8000 (50.64%) | 2686 / 2584 / 2730 | 1+0.01 | [`anak_dev_vs_v1.1.12_20261121_083207.pgn`](tools/fastchess/results/anak_dev_vs_v1.1.12_20261121_083207.pgn) |
 | [**v1.1.14**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.14) | 2026-11-21 | **3166** | &plusmn;5 | Anak v1.1.13 (+22.79 logistic / +32.34 nElo in 8,000 games) | 4262 / 8000 (53.27%) | 2876 / 2352 / 2772 | 1+0.01 | [`anak_dev_vs_v1.1.13_20261121_093808.pgn`](tools/fastchess/results/anak_dev_vs_v1.1.13_20261121_093808.pgn) |
 | [**v1.1.15**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.15) | 2026-11-21 | **3166** | &plusmn;5 | Anak v1.1.14 (+1.3% bench 12 NPS, 100% node-equivalent) | — | — | bench 12 | — |
+| [**v1.1.16**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.16) | 2026-11-21 | **3166** | &plusmn;5 | Anak v1.1.15 (+0.5% to +1.1% bench 12 NPS, 100% node-equivalent) | — | — | bench 12 | — |
 
 ## ⚔️ Self-Benchmarking (Candidate vs Baseline)
 

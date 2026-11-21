@@ -25,15 +25,15 @@ public ref struct MoveList
     public Move this[int index]
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        get => _buffer[index];
+        get => Unsafe.Add(ref Unsafe.As<MoveBuffer, Move>(ref _buffer), index);
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        set => _buffer[index] = value;
+        set => Unsafe.Add(ref Unsafe.As<MoveBuffer, Move>(ref _buffer), index) = value;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Add(Move move)
     {
-        _buffer[_count++] = move;
+        Unsafe.Add(ref Unsafe.As<MoveBuffer, Move>(ref _buffer), _count++) = move;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

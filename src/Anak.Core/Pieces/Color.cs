@@ -1,3 +1,5 @@
+using System.Runtime.CompilerServices;
+
 namespace Anak.Core;
 
 public enum Color : byte
@@ -8,5 +10,6 @@ public enum Color : byte
 
 public static class ColorExtensions
 {
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static Color Opponent(this Color color) => (Color)((byte)color ^ 1);
 }

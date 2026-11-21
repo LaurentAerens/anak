@@ -14,7 +14,7 @@ public sealed class HistoryTable
 {
     public const int MaxHistory = 16384;
     private const int TableSize = 2 * 64 * 64;
-    private readonly int[] _table = new int[TableSize];
+    private readonly short[] _table = new short[TableSize];
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static int GetIndex(Color side, Square from, Square to) =>
@@ -45,8 +45,8 @@ public sealed class HistoryTable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Update(Color side, Square from, Square to, int bonus)
     {
-        ref int val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, from, to));
-        val += bonus - ((val * Math.Abs(bonus)) / MaxHistory);
+        ref short val = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, from, to));
+        val = (short)(val + bonus - ((val * Math.Abs(bonus)) / MaxHistory));
     }
 
     /// <summary>
