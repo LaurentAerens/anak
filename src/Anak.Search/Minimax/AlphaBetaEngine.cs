@@ -59,6 +59,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private int _seeQuietMargin = SearchHeuristics.TunedSeeQuietMargin;
     private readonly int[] _lmrTable = new int[MaxSearchDepth * 128];
     private NnueExpertType? _lastRootExpert;
+    private ulong _nodeLimit;
 
     public TranspositionTable TranspositionTable => _tt;
     public TimeManager TimeManager => _timeManager;
@@ -408,8 +409,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
             _lastRootExpert = multiTier.ActiveRootExpert;
         }
 
-        // 3. Initialize time manager
+        // 3. Initialize time manager & node limit
         _timeManager.Init(in limits, board.SideToMove);
+        _nodeLimit = limits.HasNodeLimit ? limits.Nodes : 0UL;
         _stopped = false;
 
         // 4. Ensure workers array matches thread count
@@ -475,9 +477,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
         }
 
         // 7. Run main search on worker 0
+        Move mainBestMove = Move.Null;
         try
         {
-            return _workers[0].RunMainSearch(in board, in limits, infoCallback, cancellationToken);
+            mainBestMove = _workers[0].RunMainSearch(in board, in limits, infoCallback, cancellationToken);
         }
         finally
         {
@@ -497,17 +500,115 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
         }
+
+        return _threads > 1 ? SelectBestThread(mainBestMove) : mainBestMove;
+    }
+
+    private Move SelectBestThread(Move mainBestMove)
+    {
+        if (mainBestMove.IsNull) return mainBestMove;
+
+        int minScore = int.MaxValue;
+        int validCount = 0;
+        for (int i = 0; i < _workers.Length; i++)
+        {
+            if (_workers[i].CompletedDepth > 0 && !_workers[i].CompletedBestMove.IsNull)
+            {
+                validCount++;
+                if (_workers[i].CompletedBestScore < minScore)
+                {
+                    minScore = _workers[i].CompletedBestScore;
+                }
+            }
+        }
+
+        if (validCount <= 1) return mainBestMove;
+
+        // Check for proven mate scores first (prefer shortest mate win)
+        int bestIdx = 0;
+        int bestMateScore = _workers[0].CompletedDepth > 0 ? _workers[0].CompletedBestScore : -Value.InfiniteValue;
+        for (int i = 1; i < _workers.Length; i++)
+        {
+            if (_workers[i].CompletedDepth > 0 && !_workers[i].CompletedBestMove.IsNull &&
+                _workers[i].CompletedBestScore >= TTEntry.MateBound &&
+                _workers[i].CompletedBestScore > bestMateScore)
+            {
+                bestMateScore = _workers[i].CompletedBestScore;
+                bestIdx = i;
+            }
+        }
+        if (bestMateScore >= TTEntry.MateBound)
+        {
+            return _workers[bestIdx].CompletedBestMove;
+        }
+
+        // Stockfish-style weighted voting across all completed workers
+        Span<Move> uniqueMoves = stackalloc Move[validCount];
+        Span<long> moveVotes = stackalloc long[validCount];
+        int uniqueCount = 0;
+
+        for (int i = 0; i < _workers.Length; i++)
+        {
+            int depth = _workers[i].CompletedDepth;
+            Move m = _workers[i].CompletedBestMove;
+            if (depth <= 0 || m.IsNull) continue;
+
+            long weight = (long)(_workers[i].CompletedBestScore - minScore + 14) * depth;
+            int found = -1;
+            for (int u = 0; u < uniqueCount; u++)
+            {
+                if (uniqueMoves[u] == m)
+                {
+                    found = u;
+                    break;
+                }
+            }
+            if (found >= 0)
+            {
+                moveVotes[found] += weight;
+            }
+            else
+            {
+                uniqueMoves[uniqueCount] = m;
+                moveVotes[uniqueCount] = weight;
+                uniqueCount++;
+            }
+        }
+
+        int winner = 0;
+        for (int u = 1; u < uniqueCount; u++)
+        {
+            if (moveVotes[u] > moveVotes[winner])
+            {
+                winner = u;
+            }
+        }
+
+        return uniqueCount > 0 ? uniqueMoves[winner] : mainBestMove;
     }
 
     /// <summary>
-    /// Gets the aggregate nodes searched across all workers.
+    /// Gets the aggregate nodes (main + QS) searched across all workers.
     /// </summary>
     public ulong GetTotalNodes()
     {
         ulong total = 0;
         for (int i = 0; i < _workers.Length; i++)
         {
-            total += _workers[i].Nodes;
+            total += _workers[i].Nodes + _workers[i]._qsearch.Nodes;
+        }
+        return total;
+    }
+
+    /// <summary>
+    /// Gets the aggregate tablebase hits across all workers.
+    /// </summary>
+    public ulong GetTotalTbHits()
+    {
+        ulong total = 0;
+        for (int i = 0; i < _workers.Length; i++)
+        {
+            total += _workers[i].TbHits;
         }
         return total;
     }
@@ -527,7 +628,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private byte _activeExpertId;
 
         public ulong Nodes;
+        public ulong TbHits;
         public int SelDepth;
+        public int CompletedDepth;
+        public Move CompletedBestMove;
+        public int CompletedBestScore;
         public ulong BetaCutoffs;
         public ulong FirstMoveCutoffs;
 
@@ -584,8 +689,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
         {
             _activeExpertId = expertId;
             _qsearch.ActiveExpertId = expertId;
+            _qsearch.Nodes = 0;
             Nodes = 0;
+            TbHits = 0;
             SelDepth = 0;
+            CompletedDepth = 0;
+            CompletedBestMove = Move.Null;
+            CompletedBestScore = -Value.InfiniteValue;
             BetaCutoffs = 0;
             FirstMoveCutoffs = 0;
             _rootCandidates.Clear();
@@ -751,6 +861,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
                 bestScore = score;
                 completedDepth = currentDepth;
+                CompletedDepth = currentDepth;
+                CompletedBestMove = bestMove;
+                CompletedBestScore = bestScore;
                 _engine._timeManager.UpdateMoveStability(bestMove, currentDepth);
                 _engine._timeManager.HandleScoreDrop(score, prevScore, currentDepth);
                 prevScore = score;
@@ -778,6 +891,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     Pv = pv,
                     HashfullPermille = _tt.HashfullPermille(),
                     BetaCutoffEfficiency = cutoffEff,
+                    TbHits = _engine.GetTotalTbHits(),
                 };
 
                 if (score >= TTEntry.MateBound)
@@ -887,19 +1001,91 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Board board = rootBoard;
             int maxDepth = limits.HasDepthLimit ? Math.Min(limits.Depth, MaxSearchDepth) : MaxSearchDepth;
 
-            // Offset helper start depth slightly to increase branch coverage diversity
-            int startDepth = 1 + (Id % 2);
+            // Offset helper start depth and apply Stockfish-style depth-skip diversity
+            int startDepth = 1 + (Id & 1);
+            int prevScore = 0;
             _incEval?.InitSearch(in board);
 
             for (int currentDepth = startDepth; currentDepth <= maxDepth; currentDepth++)
             {
+                // Skip selected depths on helper threads >= 4 depth to spread threads across the tree
+                if (currentDepth >= 4 && ((currentDepth + Id) & 3) == 0)
+                {
+                    continue;
+                }
+
                 _rootDepth = currentDepth;
                 if (_engine._stopped || cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
 
-                SearchRoot(ref board, currentDepth, -Value.InfiniteValue, Value.InfiniteValue, out _, cancellationToken);
+                int score;
+                Move iterBestMove = Move.Null;
+
+                if (currentDepth >= 6)
+                {
+                    int delta = _engine.AspirationDelta + ((Id % 3) * 5);
+                    int alpha = Math.Max(-Value.InfiniteValue, prevScore - delta);
+                    int beta = Math.Min(Value.InfiniteValue, prevScore + delta);
+                    int failHighCount = 0;
+
+                    while (true)
+                    {
+                        int searchDepth = Math.Max(1, currentDepth - failHighCount);
+                        score = SearchRoot(ref board, searchDepth, alpha, beta, out iterBestMove, cancellationToken);
+
+                        if (_engine._stopped || cancellationToken.IsCancellationRequested)
+                        {
+                            break;
+                        }
+
+                        if (score <= alpha)
+                        {
+                            alpha = Math.Max(-Value.InfiniteValue, alpha - delta);
+                            failHighCount = 0;
+                            delta += delta + (delta / 2);
+                        }
+                        else if (score >= beta)
+                        {
+                            if (!iterBestMove.IsNull)
+                            {
+                                CompletedBestMove = iterBestMove;
+                            }
+                            beta = Math.Min(Value.InfiniteValue, beta + delta);
+                            failHighCount++;
+                            delta += delta + (delta / 2);
+                        }
+                        else
+                        {
+                            break;
+                        }
+
+                        if (delta > 500)
+                        {
+                            alpha = -Value.InfiniteValue;
+                            beta = Value.InfiniteValue;
+                            failHighCount = 0;
+                        }
+                    }
+                }
+                else
+                {
+                    score = SearchRoot(ref board, currentDepth, -Value.InfiniteValue, Value.InfiniteValue, out iterBestMove, cancellationToken);
+                }
+
+                if (_engine._stopped || cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                if (!iterBestMove.IsNull)
+                {
+                    CompletedDepth = currentDepth;
+                    CompletedBestMove = iterBestMove;
+                    CompletedBestScore = score;
+                }
+                prevScore = score;
             }
         }
 
@@ -1145,7 +1331,15 @@ public sealed class AlphaBetaEngine : ISearchEngine
             // Must run before Quiescence Search so leaf moves (depth == 0) that repeat are scored as 0.
             if (ply > 0 && board.HalfmoveClock >= 4)
             {
-                if (board.IsFiftyMoveRule() || board.IsRepetition(ply))
+                if (board.IsFiftyMoveRule())
+                {
+                    if (!board.IsInCheck() || board.GenerateLegalMoves().Count > 0)
+                    {
+                        return 0;
+                    }
+                    return -Value.MateValue + ply;
+                }
+                if (board.IsRepetition(ply))
                 {
                     return 0;
                 }
@@ -1179,12 +1373,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 _stack[ply + 1].Killer1 = Move.Null;
             }
 
-            // Periodic time management & cancellation check (dynamically masked for low-time safety)
+            // Periodic time management, node limit & cancellation check (dynamically masked for low-time safety)
             if ((Nodes & _engine._timeManager.CheckMask) == 0)
             {
                 if (_engine._stopped ||
                     cancellationToken.IsCancellationRequested ||
-                    _engine._timeManager.IsHardTimeUp())
+                    _engine._timeManager.IsHardTimeUp() ||
+                    (_engine._nodeLimit > 0 && _engine.GetTotalNodes() >= _engine._nodeLimit))
                 {
                     _engine._stopped = true;
                     return 0;
@@ -1220,13 +1415,14 @@ public sealed class AlphaBetaEngine : ISearchEngine
             {
                 if (_engine.Tablebase.TryProbeWdl(in board, out int wdl))
                 {
+                    TbHits++;
                     int tbScore = wdl switch
                     {
-                        2 => Value.MateValue - 100 - ply,
+                        2 => 20000 - ply,
                         1 => 100, // Cursed win
                         0 => 0,   // Draw
                         -1 => -100, // Blessed loss
-                        -2 => -(Value.MateValue - 100 - ply),
+                        -2 => -(20000 - ply),
                         _ => 0
                     };
 

@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.20` (Estimated Rating: **3174 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.21` (Estimated Rating: **3174 Elo (1T) / +10.33 Elo (4T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,15 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.21` (2026-11-21) — Lazy SMP Overhaul + Node Limit, 50-Move Mate Precedence & Syzygy Fixes
+- **Category:** Multi-Threading (SMP) & Correctness (Patch Release)
+- **Estimated Elo:** **3174 &plusmn; 5** (1T) / **`+10.33 ± 7.51` logistic Elo (`+14.40 ± 10.46` nElo) at `Threads=4`** over `v1.1.20` in 4,240 games at `1+0.01`: `1376W / 1250L / 1614D`, `51.49%`, `99.65% LOS`
+- **Highlights:**
+  - **Lazy SMP Overhaul (`AlphaBetaEngine.cs`) — `+10.33 ± 7.51` logistic Elo (`Threads=4`, 4,240 games):** Added Stockfish-style helper depth-skip diversity (`(currentDepth + Id) & 3 == 0` at `depth >= 4`), per-helper aspiration windows, and `SelectBestThread` weighted voting across all completed workers (preferring shortest mate scores).
+  - **Mid-Search Node Limit & QS Node Accounting (`AlphaBetaEngine.cs`, `QuiescenceSearch.cs`) — Bundled Fix:** Enforced `_nodeLimit` inside the periodic `CheckMask` check and included QS nodes in `GetTotalNodes()`.
+  - **50-Move Mate Precedence & `_gamePly` Balance (`AlphaBetaEngine.cs`, `Board.cs`) — Bundled Fix:** Verified at least one legal move before declaring a 50-move draw when in check, kept `_gamePly` balanced past 1024 plies, and started repetition scans at `_gamePly - 5`.
+  - **Syzygy `tbScore` & `TbHits` (`AlphaBetaEngine.cs`) — Bundled Fix:** Lowered Syzygy WDL win/loss score to `±(20000 - ply)` (below `TTEntry.MateBound`) and tracked `TbHits` in `SearchStatistics`.
 
 ### `v1.1.20` (2026-11-21) — Bitboard Bulk Pawn Move Generation & `ExpertRouting` Fast-Path
 - **Category:** Move Generation & Topology Throughput (Patch Release)

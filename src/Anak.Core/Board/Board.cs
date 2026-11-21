@@ -421,10 +421,11 @@ public struct Board : IEquatable<Board>
         // 8. Update history (strip EpFile from repetition history if no enemy pawn can capture en passant)
         if (_gamePly < 1024)
         {
-            _history[_gamePly++] = (type == MoveType.DoublePawnPush && !epCanBeCaptured)
+            _history[_gamePly] = (type == MoveType.DoublePawnPush && !epCanBeCaptured)
                 ? (ZobristKey ^ epKey)
                 : ZobristKey;
         }
+        _gamePly++;
 
         return true;
     }
@@ -515,8 +516,9 @@ public struct Board : IEquatable<Board>
 
         if (_gamePly < 1024)
         {
-            _history[_gamePly++] = ZobristKey;
+            _history[_gamePly] = ZobristKey;
         }
+        _gamePly++;
 
         return true;
     }
@@ -544,7 +546,12 @@ public struct Board : IEquatable<Board>
         if (HalfmoveClock < 4) return 0;
         int count = 0;
         int start = Math.Max(0, (_gamePly - 1) - HalfmoveClock);
-        for (int i = _gamePly - 3; i >= start; i -= 2)
+        int firstCheck = _gamePly - 5;
+        if (firstCheck >= 1024)
+        {
+            firstCheck -= ((firstCheck - 1023 + 1) & ~1);
+        }
+        for (int i = firstCheck; i >= start; i -= 2)
         {
             if (_history[i] == ZobristKey)
             {
@@ -574,8 +581,13 @@ public struct Board : IEquatable<Board>
         int count = 0;
         int start = Math.Max(0, (_gamePly - 1) - HalfmoveClock);
         int rootIndex = (_gamePly - 1) - searchPly;
+        int firstCheck = _gamePly - 5;
+        if (firstCheck >= 1024)
+        {
+            firstCheck -= ((firstCheck - 1023 + 1) & ~1);
+        }
 
-        for (int i = _gamePly - 3; i >= start; i -= 2)
+        for (int i = firstCheck; i >= start; i -= 2)
         {
             if (_history[i] == ZobristKey)
             {

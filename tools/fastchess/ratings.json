@@ -1107,6 +1107,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.19_20261121_130523.pgn",
       "notes": "Bitboard bulk pawn move generation in MoveGenerator and ExpertRouting.IsDefaultOrder fast-path in PawnTopology"
+    },
+    "v1.1.21": {
+      "version": "v1.1.21",
+      "date": "2026-11-21",
+      "estimated_elo": 3174,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.20 (+10.33 logistic / +14.40 nElo at Threads=4 in 4,240 games, 99.65% LOS)",
+      "score": "2183.0 / 4240",
+      "wins": 1376,
+      "losses": 1250,
+      "draws": 1614,
+      "perf_percent": 51.49,
+      "tc": "1+0.01 (4T)",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.20_20261121_142410.pgn",
+      "notes": "Lazy SMP overhaul (helper depth-skip, aspiration windows, SelectBestThread voting) + bundled #12 (limits.Nodes & QS nodes), #13 (50-move mate precedence & _gamePly balance), #14 (Syzygy tbScore < MateBound & TbHits)"
     }
   }
 }

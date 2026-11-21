@@ -85,19 +85,19 @@
 - **Fix:** Use `if (move.Type != (isCaptureDest ? MoveType.Capture : MoveType.Quiet)) return false;` for non-pawns and add `|| !move.IsCapture` to capture-promotion checks.
 - **Result (vs `v1.1.7`, `1+0.01`, 5,978 games):** **0.00 ± 5.76 Elo** (`1957W / 1957L / 2064D`, `50.00%`, `50.00% LOS`) — kept as a zero-regression correctness fix, bundled into `v1.1.8`.
 
-### 12. Fix Mid-Search `limits.Nodes` Enforcement & Include QS Nodes in `SearchWorker.Nodes`
+### 12. [x] Fix Mid-Search `limits.Nodes` Enforcement & Include QS Nodes in `SearchWorker.Nodes`
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L645-L647), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1141-L1150), [`QuiescenceSearch.cs`](../src/Anak.Search/Minimax/QuiescenceSearch.cs#L24-L57)
 - **Bug:** `limits.Nodes` is only checked between iterative deepening iterations (overshooting `--nodes 50000` to 250k+), and `_qsNodes` is never added to `SearchWorker.Nodes`.
 - **Fix:** Check `Nodes >= nodeLimit` inside the periodic `CheckMask` check and count QS nodes in `SearchWorker.Nodes`.
 - **Est. Impact:** Accurate fixed-node benchmarking (`AGENTS.md` Â§4) & honest UCI `nodes`/`nps` reporting | **Complexity:** Low.
 
-### 13. Fix 50-Move Draw Precedence Before Checkmate & `_gamePly == 1024` Overflow Asymmetry
+### 13. [x] Fix 50-Move Draw Precedence Before Checkmate & `_gamePly == 1024` Overflow Asymmetry
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1104-L1119), [`Board.cs`](../src/Anak.Core/Board/Board.cs#L389-L411), [`Board.cs`](../src/Anak.Core/Board/Board.cs#L508-L539)
 - **Bug:** (a) `board.IsFiftyMoveRule()` returns `0` before verifying checkmate (under FIDE rules, mate on move 50 wins). (b) `MakeMove`/`MakeNullMove` cap `_gamePly` at `1024` while `UnmakeMove`/`UnmakeNullMove` unconditionally decrement `_gamePly`, causing drift on >1024-ply games. (c) `RepetitionCount`/`IsRepetition` start at `_gamePly - 3` (2 plies ago, impossible to repeat) instead of `_gamePly - 5`.
 - **Fix:** Verify at least one legal move when `IsFiftyMoveRule() && IsInCheck()`; keep `_gamePly` balanced while guarding `_history` writes at `< 1024`; start repetition scan at `_gamePly - 5`.
 - **Est. Impact:** Endgame correctness + tiny NPS win | **Complexity:** Trivial | **Test:** `RepetitionRuleTests` + `AlphaBetaTests`.
 
-### 14. Fix Syzygy `tbScore` Colliding with `TTEntry.MateBound` & Migrate to Root-Only DTZ/Blunder Filtering
+### 14. [x] Fix Syzygy `tbScore` Colliding with `TTEntry.MateBound` & Migrate to Root-Only DTZ/Blunder Filtering
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L758-L764), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1171-L1199), [`SearchStatistics.cs`](../src/Anak.Search/SearchStatistics.cs#L58)
 - **Bug:** `tbScore = Value.MateValue - 100 - ply` (`29900 - ply`) exceeds `TTEntry.MateBound` (`29000`), falsely reporting forced `MateIn` to UCI and corrupting mate-distance TT logic; `TbHits` is never incremented.
 - **Fix:** Use a TB win score below `MateBound` (`20000 - ply`), increment `TbHits`, and restrict Syzygy probing to root DTZ / root-move blunder filtering per [`FAILED_IDEAS.md`](FAILED_IDEAS.md#L59-L61).
@@ -169,7 +169,7 @@
 - **Improvement:** (a) Store upper 32 bits of the Zobrist key (`uint`) to shrink `TTEntry` from 20 bytes (3/cacheline, 15.6% wasted) to **16 bytes (4/cacheline, +33% capacity)**. (b) Use a local struct + XOR key trick (`key ^ data`) to prevent Lazy SMP torn reads/writes. (c) Replace power-of-two `key & _mask` with `Math.BigMul(key, _clusterCount, out _)` to utilize 100% of requested `Hash` MB instead of wasting up to 49%.
 - **Est. Impact:** **+5 to +12 Elo** + SMP safety | **Complexity:** Medium | **Test:** `TranspositionTableTests` + Tier 1 -> Tier 2 SPRT.
 
-### 26. Lazy SMP Overhaul: Helper Depth-Skip Diversity, Aspiration Windows, Best-Thread Voting & Persistent Threads
+### 26. [x] Lazy SMP Overhaul: Helper Depth-Skip Diversity, Aspiration Windows, Best-Thread Voting & Persistent Threads
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L456-L494), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L860-L878)
 - **Improvement:** Give helper threads Stockfish-style depth-skip schedules and aspiration windows instead of full `[-inf, +inf]` windows with trivial `Id % 2`; implement best-thread voting across all workers at search end (instead of always taking Worker 0); replace per-move `Task.Run`/`Task.WaitAll` with persistent worker threads woken via `ManualResetEventSlim`.
 - **Est. Impact:** **+15 to +30 Elo** at `Threads >= 4` | **Complexity:** Medium | **Test:** Multi-threaded SPRT (`--threads 4`).

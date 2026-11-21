@@ -21,7 +21,8 @@ public sealed class QuiescenceSearch
     private readonly CorrectionHistory? _correctionHistory;
     private readonly IIncrementalEvaluator? _incEval;
     private readonly Func<bool>? _isTimeUp;
-    private int _qsNodes;
+    private ulong _qsNodes;
+    public ulong Nodes { get => _qsNodes; set => _qsNodes = value; }
     public SearchTraceWriter? SearchTrace { get; set; }
 
     public const int MaxQsDepth = 128;
