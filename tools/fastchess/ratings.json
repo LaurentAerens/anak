@@ -1002,6 +1002,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.12_20261121_083207.pgn",
       "notes": "Cap soft/hard time budget to 5ms/10ms when only 1 legal move exists in timed searches"
+    },
+    "v1.1.14": {
+      "version": "v1.1.14",
+      "date": "2026-11-21",
+      "estimated_elo": 3166,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.13 (+22.79 logistic / +32.34 nElo in 8,000 games, 100.00% LOS)",
+      "score": "4262 / 8000",
+      "wins": 2876,
+      "losses": 2352,
+      "draws": 2772,
+      "perf_percent": 53.27,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.13_20261121_093808.pgn",
+      "notes": "Smooth best-move node-fraction soft-limit time scaling ((1.5 - bestMoveFraction) * 1.35, clamped [0.55, 1.65])"
     }
   }
 }

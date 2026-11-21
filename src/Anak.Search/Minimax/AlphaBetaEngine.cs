@@ -538,6 +538,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly CorrectionHistory _correctionHistory;
         private readonly Move[] _counterMoves;
         private readonly List<RootMoveCandidate> _rootCandidates = [];
+        private readonly ulong[] _rootMoveNodes = new ulong[4096];
+        private ulong _totalRootNodesThisSearch;
         private ulong _lastPawnKey;
         private float _lastOpenness = -1.0f;
         private int _rootDepth;
@@ -640,6 +642,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
             IMultiTierEvaluator? multiTier = _evaluator as IMultiTierEvaluator;
             int expectedDepth = _engine._timeManager.EstimateTargetDepth();
             int completedDepth = 0;
+            Array.Clear(_rootMoveNodes);
+            _totalRootNodesThisSearch = 0;
 
             // --- Iterative Deepening ---
             for (int currentDepth = 1; currentDepth <= maxDepth; currentDepth++)
@@ -659,6 +663,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 if (currentDepth > 1 && _engine._timeManager.HasTimeLimit)
                 {
                     long targetTime = GetTargetSearchTime(bestScore, _engine._timeManager.SoftLimitMs, currentDepth, expectedDepth);
+                    if (currentDepth >= 6 && _totalRootNodesThisSearch > 0 && !bestMove.IsNull)
+                    {
+                        double bestMoveFraction = (double)_rootMoveNodes[((int)bestMove.From << 6) | (int)bestMove.To] / _totalRootNodesThisSearch;
+                        double nodeScale = Math.Clamp((1.5 - bestMoveFraction) * 1.35, 0.55, 1.65);
+                        targetTime = Math.Min(Math.Max(1, _engine._timeManager.HardLimitMs - 1), (long)(targetTime * nodeScale));
+                    }
                     if (currentElapsed >= targetTime || currentElapsed + (iterDuration * 2) >= _engine._timeManager.HardLimitMs)
                     {
                         break;
@@ -967,6 +977,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
             while (picker.Next(out Move move))
             {
+                ulong nodesBefore = Nodes;
                 Piece movedPiece = board.GetPieceAt(move.From);
                 board.MakeMove(move, out BoardState state, movedPiece);
                 _engine._searchTrace?.WriteEdge(key, board.ZobristKey, move);
@@ -1016,6 +1027,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
                 board.UnmakeMove(move, in state, movedPiece);
                 _incEval?.RollbackTo(0);
+
+                if (Id == 0)
+                {
+                    ulong moveNodes = Nodes - nodesBefore;
+                    _rootMoveNodes[((int)move.From << 6) | (int)move.To] += moveNodes;
+                    _totalRootNodesThisSearch += moveNodes;
+                }
 
                 if (Id == 0)
                 {

@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.13` (Estimated Rating: **3143 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.14` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.14` (2026-11-21) — Smooth Best-Move Node-Fraction Soft-Limit Time Scaling
+- **Category:** Time Management (Patch Release)
+- **Estimated Elo:** **3166 &plusmn; 5** (`+22.79 ± 5.38` logistic Elo / `+32.34 ± 7.61` fastchess nElo over `v1.1.13` in 8,000 games at `1+0.01`: `2876W / 2352L / 2772D`, `53.27%`, `100.00% LOS`)
+- **Highlights:**
+  - **Best-Move Node-Fraction Time Scaling (`AlphaBetaEngine.cs`) — `+22.79 ± 5.38` logistic Elo (8,000 games):** Tracks `_rootMoveNodes` per root move and smoothly scales `targetTime` at `depth >= 6` by `Math.Clamp((1.5 - bestMoveFraction) * 1.35, 0.55, 1.65)` (clamped below `HardLimitMs - 1`).
 
 ### `v1.1.13` (2026-11-21) — Fast Single-Legal-Move Time Cap
 - **Category:** Time Management (Patch Release)

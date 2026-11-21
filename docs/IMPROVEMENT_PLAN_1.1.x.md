@@ -179,10 +179,10 @@
 - **Improvement:** When `legalMoves.Count == 1 && _timeManager.HasTimeLimit && !limits.Infinite && !limits.HasDepthLimit && !limits.HasNodeLimit`, caps time budget to `5 ms` soft / `10 ms` hard via `TimeManager.CapForSingleMove`, banking clock time for real decisions.
 - **Result (`v1.1.13` vs `v1.1.12`, `1+0.01`, 8,000 games):** **+4.43 ± 5.09 logistic Elo** (`+6.62 ± 7.61` fastchess nElo, `2686W / 2584L / 2730D`, `50.64%`, `95.59% LOS`).
 
-### 28. Smooth Best-Move Node-Fraction Continuous Soft-Limit Time Scaling
-- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L652-L659), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L951-L1063), [`TimeManager.cs`](../src/Anak.Search/Time/TimeManager.cs)
-- **Improvement:** Track `rootMoveNodes` per root move and continuously modulate `SoftLimitMs` by `(1.5 - bestMoveFraction) * 1.35` (clamped `[0.55, 1.65]`) so contested positions get more time and easy positions spend less â€” *without* the hard early-breakout at `>= 85%` that failed in `FAILED_IDEAS.md` #10.
-- **Est. Impact:** **+8 to +15 Elo** | **Complexity:** Low | **Test:** Tier 1 -> Tier 2 SPRT.
+### 28. [x] Smooth Best-Move Node-Fraction Continuous Soft-Limit Time Scaling — **Released in `v1.1.14`**
+- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L540-L542), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L661-L670), [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L978-L1035)
+- **Improvement:** Tracks `_rootMoveNodes` per root move in `SearchRoot` and continuously modulates `targetTime` at `currentDepth >= 6` by `Math.Clamp((1.5 - bestMoveFraction) * 1.35, 0.55, 1.65)` (clamped below `HardLimitMs - 1`) so contested positions get more time and easy positions spend less.
+- **Result (`v1.1.14` vs `v1.1.13`, `1+0.01`, 8,000 games):** **+22.79 ± 5.38 logistic Elo** (`+32.34 ± 7.61` fastchess nElo, `2876W / 2352L / 2772D`, `53.27%`, `100.00% LOS`).
 
 ---
 
