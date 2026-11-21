@@ -1062,6 +1062,21 @@
       "tc": "bench 12",
       "pgn": "",
       "notes": "Sparse NNZ transposed (inputDim/4, l1Dim, 4) L1 matmul in NnueWeights and NnueInference (AVX-512BW / AVX-VNNI / AVX2)"
+    },
+    "v1.1.18": {
+      "version": "v1.1.18",
+      "date": "2026-11-21",
+      "estimated_elo": 3166,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.17 (AVX-512BW/NEON, native aligned stack, zero-copy null move, 100% bit-exact)",
+      "score": "N/A",
+      "wins": 0,
+      "losses": 0,
+      "draws": 0,
+      "perf_percent": 50.0,
+      "tc": "bench 12",
+      "pgn": "",
+      "notes": "Avx512BW and Vector128 SIMD paths, 64-byte aligned NativeMemory accumulator stack, and _stackSlot zero-copy PushNullMove"
     }
   }
 }

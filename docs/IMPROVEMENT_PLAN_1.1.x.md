@@ -256,12 +256,12 @@
 - **Improvement:** Post-SCReLU `pAct` (`byte[1024]`) is 55â€“70% zeros, yet `ComputeHiddenAndOutputLayers` executes dense dot products over all 1024 bytes. Transpose `hiddenWeights` at load time to `(inputDim / 4, l1Dim, 4)` (no `.nnue` format change), collect non-zero 4-byte `uint` chunk indices via SIMD `MoveMask`, and accumulate only non-zero chunks across all 64 output accumulators.
 - **Est. Impact:** **+12% to +25% NPS** (100% bit-exact) | **Complexity:** Medium | **Test:** `NnueInferenceTests` + `bench 12`.
 
-### 41. Fix SIMD Dispatch Precedence (`AvxVnni` Shadows `Avx512BW`) & Add Missing `Avx512BW` / `Vector128` (ARM64 NEON) Paths
+### 41. [x] Fix SIMD Dispatch Precedence (`AvxVnni` Shadows `Avx512BW`) & Add Missing `Avx512BW` / `Vector128` (ARM64 NEON) Paths
 - **Location:** [`NnueInference.cs`](../src/Anak.Data/Nnue/NnueInference.cs#L131-L246), [`NnueAccumulator.cs`](../src/Anak.Data/Nnue/NnueAccumulator.cs#L206-L290), [`MultiTierNnueEvaluator.cs`](../src/Anak.Data/Nnue/MultiTierNnueEvaluator.cs#L430-L458)
 - **Improvement:** `AvxVnni.IsSupported` (256-bit) is checked *before* `Avx512BW.IsSupported` (512-bit), downgrading Zen 4/5 and Sapphire Rapids CPUs; `ActivateFeatures`, `SubAddFeature`, `SubSubAddFeature`, `SubSubAddAddFeature`, and `CopyAccumulator` lack `Avx512BW` and `Vector128` (ARM64 NEON falls back to scalar). Reorder dispatch: 512-bit VNNI -> `Avx512BW` -> `AvxVnni` -> `Avx2` -> `Vector128` -> scalar.
 - **Est. Impact:** **+8% to +15% NPS** on AVX-512; **3Ã—â€“5Ã— NPS** on ARM64 (100% bit-exact) | **Complexity:** Low-Medium.
 
-### 42. Replace Hardcoded Managed `short[256 * 512]` Stacks with 64-Byte Aligned Native Accumulator Buffers
+### 42. [x] Replace Hardcoded Managed `short[256 * 512]` Stacks with 64-Byte Aligned Native Accumulator Buffers
 - **Location:** [`MultiTierNnueEvaluator.cs`](../src/Anak.Data/Nnue/MultiTierNnueEvaluator.cs#L33-L35), [`MultiTierNnueEvaluator.cs`](../src/Anak.Data/Nnue/MultiTierNnueEvaluator.cs#L361-L615)
 - **Improvement:** Replace hardcoded managed `short[256 * 512]` arrays (which overflow heap memory if `HiddenDim > 512`, pin two arrays on every `PushMove`/`Evaluate`, and lack 64-byte alignment) with `NativeMemory.AlignedAlloc((nuint)(256 * maxHiddenDim * sizeof(short)), 64)` freed in `Dispose`.
 - **Est. Impact:** **+2% to +5% NPS** + removes latent buffer overflow (100% bit-exact) | **Complexity:** Low.

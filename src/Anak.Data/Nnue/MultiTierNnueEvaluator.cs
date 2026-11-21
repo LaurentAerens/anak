@@ -1,5 +1,6 @@
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.X86;
 using Anak.Core;
@@ -30,12 +31,28 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     private NnueWeights? _attackWeights;
     private NnueWeights? _activeFullWeights;
     private readonly DefaultEvaluator _fallbackEvaluator;
-    private readonly short[] _stackWhite = new short[256 * 512];
-    private readonly short[] _stackBlack = new short[256 * 512];
+    private short* _stackWhite;
+    private short* _stackBlack;
+    private int _stackCapacityDim;
     private readonly ulong[] _stackKeys = new ulong[256];
+    private readonly int[] _stackSlot = new int[256];
     private int _stackDepth = -1;
     private bool _disposed;
     private readonly bool _ownsWeights = true;
+
+    private void EnsureStackCapacity(int minDim)
+    {
+        int targetDim = Math.Max(512, minDim);
+        if (_stackWhite != null && _stackCapacityDim >= targetDim) return;
+
+        if (_stackWhite != null) NativeMemory.AlignedFree(_stackWhite);
+        if (_stackBlack != null) NativeMemory.AlignedFree(_stackBlack);
+
+        nuint bytes = (nuint)(256 * targetDim * sizeof(short));
+        _stackWhite = (short*)NativeMemory.AlignedAlloc(bytes, 64);
+        _stackBlack = (short*)NativeMemory.AlignedAlloc(bytes, 64);
+        _stackCapacityDim = targetDim;
+    }
 
     /// <summary>
     /// Creates a lightweight worker instance sharing all pre-loaded neural network weights,
@@ -63,6 +80,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         Tablebase = parent.Tablebase;
         ActiveRootExpert = parent.ActiveRootExpert;
         Routing = parent.Routing;
+        EnsureStackCapacity(parent.ActiveWeights?.HiddenDim ?? 512);
     }
 
 
@@ -105,6 +123,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         _fallbackEvaluator = new DefaultEvaluator();
         string dirToLoad = !string.IsNullOrWhiteSpace(networkDir) ? networkDir : NnueDirectory;
         LoadFromDirectory(dirToLoad);
+        EnsureStackCapacity(ActiveWeights?.HiddenDim ?? 512);
     }
 
     /// <summary>
@@ -358,11 +377,10 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         if (weights != null)
         {
             int dim = weights.HiddenDim;
-            fixed (short* wPtr = _stackWhite, bPtr = _stackBlack)
-            {
-                NnueAccumulator.ComputeFull(in rootBoard, weights, wPtr, bPtr);
-            }
+            EnsureStackCapacity(dim);
+            NnueAccumulator.ComputeFull(in rootBoard, weights, _stackWhite, _stackBlack);
             _stackKeys[0] = rootBoard.ZobristKey;
+            _stackSlot[0] = 0;
             _stackDepth = 0;
         }
         else
@@ -381,21 +399,21 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         if (weights == null) return;
 
         int dim = weights.HiddenDim;
-        int curOffset = _stackDepth * dim;
-        int nextOffset = (_stackDepth + 1) * dim;
+        int curSlot = _stackSlot[_stackDepth];
+        int nextDepth = _stackDepth + 1;
+        int curOffset = curSlot * dim;
+        int nextOffset = nextDepth * dim;
 
-        fixed (short* wPtr = _stackWhite, bPtr = _stackBlack)
-        {
-            short* curW = wPtr + curOffset;
-            short* curB = bPtr + curOffset;
-            short* nextW = wPtr + nextOffset;
-            short* nextB = bPtr + nextOffset;
+        short* curW = _stackWhite + curOffset;
+        short* curB = _stackBlack + curOffset;
+        short* nextW = _stackWhite + nextOffset;
+        short* nextB = _stackBlack + nextOffset;
 
-            NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, curW, curB, nextW, nextB, in boardAfter);
-        }
+        NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, curW, curB, nextW, nextB, in boardAfter);
 
-        _stackDepth++;
-        _stackKeys[_stackDepth] = boardAfter.ZobristKey;
+        _stackSlot[nextDepth] = nextDepth;
+        _stackDepth = nextDepth;
+        _stackKeys[nextDepth] = boardAfter.ZobristKey;
     }
 
     /// <summary>
@@ -404,26 +422,12 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     public void PushNullMove(in Board boardAfter)
     {
         if (_stackDepth < 0 || _stackDepth >= 254) return;
-        NnueWeights? weights = _activeFullWeights;
-        if (weights == null) return;
+        if (_activeFullWeights == null) return;
 
-        int dim = weights.HiddenDim;
-        int curOffset = _stackDepth * dim;
-        int nextOffset = (_stackDepth + 1) * dim;
-
-        fixed (short* wPtr = _stackWhite, bPtr = _stackBlack)
-        {
-            short* curW = wPtr + curOffset;
-            short* curB = bPtr + curOffset;
-            short* nextW = wPtr + nextOffset;
-            short* nextB = bPtr + nextOffset;
-
-            CopyAccumulator(curW, nextW, dim);
-            CopyAccumulator(curB, nextB, dim);
-        }
-
-        _stackDepth++;
-        _stackKeys[_stackDepth] = boardAfter.ZobristKey;
+        int nextDepth = _stackDepth + 1;
+        _stackSlot[nextDepth] = _stackSlot[_stackDepth];
+        _stackDepth = nextDepth;
+        _stackKeys[nextDepth] = boardAfter.ZobristKey;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -521,16 +525,13 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         {
             NnueWeights weights = _activeFullWeights;
             int dim = weights.HiddenDim;
-            int offset = _stackDepth * dim;
-            fixed (short* wPtr = _stackWhite, bPtr = _stackBlack)
-            {
-                short* wAcc = wPtr + offset;
-                short* bAcc = bPtr + offset;
-                int scoreCp = ReferenceEquals(weights, _moeWeights)
-                    ? EvaluateMoEForBoard(wAcc, bAcc, weights, in board)
-                    : NnueInference.Evaluate(wAcc, bAcc, weights, board.SideToMove);
-                return new Value(scoreCp);
-            }
+            int offset = _stackSlot[_stackDepth] * dim;
+            short* wAcc = _stackWhite + offset;
+            short* bAcc = _stackBlack + offset;
+            int scoreCp = ReferenceEquals(weights, _moeWeights)
+                ? EvaluateMoEForBoard(wAcc, bAcc, weights, in board)
+                : NnueInference.Evaluate(wAcc, bAcc, weights, board.SideToMove);
+            return new Value(scoreCp);
         }
 
         // Unified Shared-FT MoE full-eval fallback (outside active search or after stack miss)
@@ -597,6 +598,16 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     {
         if (!_disposed)
         {
+            if (_stackWhite != null)
+            {
+                NativeMemory.AlignedFree(_stackWhite);
+                _stackWhite = null;
+            }
+            if (_stackBlack != null)
+            {
+                NativeMemory.AlignedFree(_stackBlack);
+                _stackBlack = null;
+            }
             if (_ownsWeights)
             {
                 _moeWeights?.Dispose();

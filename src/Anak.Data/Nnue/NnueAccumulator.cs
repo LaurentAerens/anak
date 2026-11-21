@@ -159,7 +159,18 @@ public static unsafe class NnueAccumulator
         sbyte* wPtr = weights + (featureIdx * dim);
 
         int i = 0;
-        if (Avx2.IsSupported && dim >= 32)
+        if (Avx512BW.IsSupported && dim >= 64)
+        {
+            for (; i <= dim - 64; i += 64)
+            {
+                Vector512<short> w0 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wPtr + i));
+                Vector512<short> w1 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wPtr + i + 32));
+
+                (Vector512.Load(acc + i) + w0).Store(acc + i);
+                (Vector512.Load(acc + i + 32) + w1).Store(acc + i + 32);
+            }
+        }
+        else if (Avx2.IsSupported && dim >= 32)
         {
             for (; i <= dim - 32; i += 32)
             {
@@ -203,7 +214,20 @@ public static unsafe class NnueAccumulator
         sbyte* wAdd = weights + (addIdx * dim);
 
         int i = 0;
-        if (Avx2.IsSupported && dim >= 32)
+        if (Avx512BW.IsSupported && dim >= 64)
+        {
+            for (; i <= dim - 64; i += 64)
+            {
+                Vector512<short> s0 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub + i));
+                Vector512<short> s1 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub + i + 32));
+                Vector512<short> a0 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd + i));
+                Vector512<short> a1 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd + i + 32));
+
+                (Vector512.Load(srcAcc + i) - s0 + a0).Store(dstAcc + i);
+                (Vector512.Load(srcAcc + i + 32) - s1 + a1).Store(dstAcc + i + 32);
+            }
+        }
+        else if (Avx2.IsSupported && dim >= 32)
         {
             for (; i <= dim - 32; i += 32)
             {
@@ -235,7 +259,22 @@ public static unsafe class NnueAccumulator
         sbyte* wAdd = weights + (addIdx * dim);
 
         int i = 0;
-        if (Avx2.IsSupported && dim >= 32)
+        if (Avx512BW.IsSupported && dim >= 64)
+        {
+            for (; i <= dim - 64; i += 64)
+            {
+                Vector512<short> s10 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub1 + i));
+                Vector512<short> s11 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub1 + i + 32));
+                Vector512<short> s20 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub2 + i));
+                Vector512<short> s21 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub2 + i + 32));
+                Vector512<short> a0 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd + i));
+                Vector512<short> a1 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd + i + 32));
+
+                (Vector512.Load(srcAcc + i) - s10 - s20 + a0).Store(dstAcc + i);
+                (Vector512.Load(srcAcc + i + 32) - s11 - s21 + a1).Store(dstAcc + i + 32);
+            }
+        }
+        else if (Avx2.IsSupported && dim >= 32)
         {
             for (; i <= dim - 32; i += 32)
             {
@@ -270,7 +309,24 @@ public static unsafe class NnueAccumulator
         sbyte* wAdd2 = weights + (add2Idx * dim);
 
         int i = 0;
-        if (Avx2.IsSupported && dim >= 32)
+        if (Avx512BW.IsSupported && dim >= 64)
+        {
+            for (; i <= dim - 64; i += 64)
+            {
+                Vector512<short> s10 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub1 + i));
+                Vector512<short> s11 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub1 + i + 32));
+                Vector512<short> s20 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub2 + i));
+                Vector512<short> s21 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wSub2 + i + 32));
+                Vector512<short> a10 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd1 + i));
+                Vector512<short> a11 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd1 + i + 32));
+                Vector512<short> a20 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd2 + i));
+                Vector512<short> a21 = Avx512BW.ConvertToVector512Int16(Vector256.Load(wAdd2 + i + 32));
+
+                (Vector512.Load(srcAcc + i) - s10 - s20 + a10 + a20).Store(dstAcc + i);
+                (Vector512.Load(srcAcc + i + 32) - s11 - s21 + a11 + a21).Store(dstAcc + i + 32);
+            }
+        }
+        else if (Avx2.IsSupported && dim >= 32)
         {
             for (; i <= dim - 32; i += 32)
             {

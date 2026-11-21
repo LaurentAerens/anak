@@ -70,6 +70,7 @@ This document tracks the estimated Elo rating progression of Anak releases and p
 | [**v1.1.15**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.15) | 2026-11-21 | **3166** | &plusmn;5 | Anak v1.1.14 (+1.3% bench 12 NPS, 100% node-equivalent) | — | — | bench 12 | — |
 | [**v1.1.16**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.16) | 2026-11-21 | **3166** | &plusmn;5 | Anak v1.1.15 (+0.5% to +1.1% bench 12 NPS, 100% node-equivalent) | — | — | bench 12 | — |
 | [**v1.1.17**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.17) | 2026-11-21 | **3166** | &plusmn;5 | Anak v1.1.16 (+4.1% bench 12 NPS, 100% bit-exact) | — | — | bench 12 | — |
+| [**v1.1.18**](https://github.com/LaurentAerens/anak/releases/tag/v1.1.18) | 2026-11-21 | **3166** | &plusmn;5 | Anak v1.1.17 (AVX-512BW/NEON, native aligned stack, zero-copy null move, 100% bit-exact) | — | — | bench 12 | — |
 
 ## ⚔️ Self-Benchmarking (Candidate vs Baseline)
 

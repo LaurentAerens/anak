@@ -129,7 +129,18 @@ public static unsafe class NnueInference
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void ActivateFeatures(short* ourAcc, short* theirAcc, byte* pAct, int halfDim)
     {
-        if (Avx2.IsSupported)
+        if (Avx512BW.IsSupported && (halfDim & 63) == 0)
+        {
+            Vector512<short> vZero = Vector512<short>.Zero;
+            Vector512<short> vMax = Vector512.Create((short)NnueConstants.ClippedReluMax);
+
+            for (int i = 0; i < halfDim; i += 64)
+            {
+                ActivatePerspective64(ourAcc + i, pAct + i, vZero, vMax);
+                ActivatePerspective64(theirAcc + i, pAct + halfDim + i, vZero, vMax);
+            }
+        }
+        else if (Avx2.IsSupported)
         {
             Vector256<short> vZero = Vector256<short>.Zero;
             Vector256<short> vMax = Vector256.Create((short)NnueConstants.ClippedReluMax);
@@ -138,6 +149,17 @@ public static unsafe class NnueInference
             {
                 ActivatePerspective32(ourAcc + i, pAct + i, vZero, vMax);
                 ActivatePerspective32(theirAcc + i, pAct + halfDim + i, vZero, vMax);
+            }
+        }
+        else if (Vector128.IsHardwareAccelerated && (halfDim & 15) == 0)
+        {
+            Vector128<short> vZero = Vector128<short>.Zero;
+            Vector128<short> vMax = Vector128.Create((short)NnueConstants.ClippedReluMax);
+
+            for (int i = 0; i < halfDim; i += 16)
+            {
+                ActivatePerspective16(ourAcc + i, pAct + i, vZero, vMax);
+                ActivatePerspective16(theirAcc + i, pAct + halfDim + i, vZero, vMax);
             }
         }
         else
@@ -154,6 +176,18 @@ public static unsafe class NnueInference
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ActivatePerspective64(short* src, byte* dst, Vector512<short> vZero, Vector512<short> vMax)
+    {
+        Vector512<short> v0 = Vector512.Min(Vector512.Max(Vector512.Load(src), vZero), vMax);
+        Vector512<short> v1 = Vector512.Min(Vector512.Max(Vector512.Load(src + 32), vZero), vMax);
+        Vector512<short> v0Act = Avx512BW.ShiftRightLogical(Avx512BW.MultiplyLow(v0, v0), 6);
+        Vector512<short> v1Act = Avx512BW.ShiftRightLogical(Avx512BW.MultiplyLow(v1, v1), 6);
+        Avx512BW.PermuteVar8x64(
+            Avx512BW.PackUnsignedSaturate(v0Act, v1Act).AsUInt64(),
+            Vector512.Create(0UL, 2UL, 4UL, 6UL, 1UL, 3UL, 5UL, 7UL)).AsByte().Store(dst);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void ActivatePerspective32(short* src, byte* dst, Vector256<short> vZero, Vector256<short> vMax)
     {
         Vector256<short> v0 = Vector256.Min(Vector256.Max(Vector256.Load(src), vZero), vMax);
@@ -161,6 +195,16 @@ public static unsafe class NnueInference
         Vector256<short> v0Act = Avx2.ShiftRightLogical(Avx2.MultiplyLow(v0, v0), 6);
         Vector256<short> v1Act = Avx2.ShiftRightLogical(Avx2.MultiplyLow(v1, v1), 6);
         Vector256.AsByte(Vector256.Narrow(v0Act, v1Act)).Store(dst);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void ActivatePerspective16(short* src, byte* dst, Vector128<short> vZero, Vector128<short> vMax)
+    {
+        Vector128<short> v0 = Vector128.Min(Vector128.Max(Vector128.Load(src), vZero), vMax);
+        Vector128<short> v1 = Vector128.Min(Vector128.Max(Vector128.Load(src + 8), vZero), vMax);
+        Vector128<short> v0Act = Vector128.ShiftRightLogical(v0 * v0, 6);
+        Vector128<short> v1Act = Vector128.ShiftRightLogical(v1 * v1, 6);
+        Vector128.Narrow(v0Act.AsUInt16(), v1Act.AsUInt16()).Store(dst);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]

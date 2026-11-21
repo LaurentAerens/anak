@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.17` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.18` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,14 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.18` (2026-11-21) — AVX-512BW / NEON SIMD, Aligned Native Accumulator Stack & Zero-Copy Null Moves
+- **Category:** NNUE Architecture & SIMD Throughput (Patch Release — 100% Bit-Exact)
+- **Estimated Elo:** **3166 &plusmn; 5** (`+1%–2.5%` on warm `bench 12` Positions 3–5 at exact `1,103,885` nodes; `409/409` unit tests passing)
+- **Highlights:**
+  - **AVX-512BW & `Vector128` SIMD Paths (`NnueInference.cs`, `NnueAccumulator.cs`) — 100% Bit-Exact:** Added 512-bit `Avx512BW` paths to `ActivateFeatures`, `AddFeature`, `SubAddFeature`, `SubSubAddFeature`, and `SubSubAddAddFeature` (plus `Vector128` NEON path in `ActivateFeatures`).
+  - **64-Byte Aligned Native Accumulator Stack (`MultiTierNnueEvaluator.cs`) — 100% Bit-Exact:** Replaced fixed-size managed `short[256 * 512]` arrays with `NativeMemory.AlignedAlloc(..., 64)` sized dynamically to `HiddenDim`, eliminating per-move `fixed` pinning.
+  - **Zero-Copy `PushNullMove` (`MultiTierNnueEvaluator.cs`) — 100% Bit-Exact:** Added `_stackSlot` indirection so `PushNullMove` shares the parent's immutable accumulator slot instead of copying 2 KB.
 
 ### `v1.1.17` (2026-11-21) — Sparse `NNZ` Transposed NNUE L1 Matmul
 - **Category:** NNUE Inference Throughput (Patch Release — 100% Bit-Exact)
