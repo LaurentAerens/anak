@@ -531,7 +531,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             int scoreCp = ReferenceEquals(weights, _moeWeights)
                 ? EvaluateMoEForBoard(wAcc, bAcc, weights, in board)
                 : NnueInference.Evaluate(wAcc, bAcc, weights, board.SideToMove);
-            return new Value(scoreCp);
+            return new Value(ScaleByHalfmoveClock(scoreCp, board.HalfmoveClock));
         }
 
         // Unified Shared-FT MoE full-eval fallback (outside active search or after stack miss)
@@ -541,14 +541,14 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             short* whiteAcc = stackalloc short[dim];
             short* blackAcc = stackalloc short[dim];
             NnueAccumulator.ComputeFull(in board, _moeWeights, whiteAcc, blackAcc);
-            return new Value(EvaluateMoEForBoard(whiteAcc, blackAcc, _moeWeights, in board));
+            return new Value(ScaleByHalfmoveClock(EvaluateMoEForBoard(whiteAcc, blackAcc, _moeWeights, in board), board.HalfmoveClock));
         }
 
         // Legacy Root Expert Consistency: always evaluate with _activeFullWeights if non-null
         if (_activeFullWeights != null)
         {
             int cp = EvaluateWithWeights(in board, _activeFullWeights);
-            return new Value(cp);
+            return new Value(ScaleByHalfmoveClock(cp, board.HalfmoveClock));
         }
 
         NnueExpertType leafExpert = PawnTopology.ClassifyExpert(in board, _routing);
@@ -579,13 +579,17 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
                 int openCp = EvaluateWithWeights(in board, _openWeights);
                 float alpha = (openness - blendLow) / 0.16f;
                 int blendedCp = (int)MathF.Round(((1.0f - alpha) * closedCp) + (alpha * openCp));
-                return new Value(blendedCp);
+                return new Value(ScaleByHalfmoveClock(blendedCp, board.HalfmoveClock));
             }
         }
 
         int fullCp = EvaluateWithWeights(in board, selectedWeights);
-        return new Value(fullCp);
+        return new Value(ScaleByHalfmoveClock(fullCp, board.HalfmoveClock));
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int ScaleByHalfmoveClock(int scoreCp, int halfmoveClock) =>
+        halfmoveClock > 0 ? (scoreCp * Math.Max(0, 200 - halfmoveClock)) / 200 : scoreCp;
 
     /// <summary>
     /// Evaluates the board position using dynamic multi-expert routing and smooth Open/Closed boundary interpolation.

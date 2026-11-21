@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.18` (Estimated Rating: **3166 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.19` (Estimated Rating: **3171 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.19` (2026-11-21) — 50-Move Rule (`HalfmoveClock`) Drawishness Scaling
+- **Category:** Evaluation (Patch Release)
+- **Estimated Elo:** **3171 &plusmn; 5** (`+4.52 ± 5.77` logistic Elo / `+5.96 ± 7.61` fastchess nElo over `v1.1.18` in 8,000 games at `1+0.01`: `2613W / 2509L / 2878D`, `50.65%`, `93.75% LOS`)
+- **Highlights:**
+  - **50-Move Drawishness Scaling (`MultiTierNnueEvaluator.cs`, `ZanakNnueEvaluator.cs`) — `+4.52 ± 5.77` logistic Elo (8,000 games):** Scaled leaf NNUE scores linearly by `(200 - HalfmoveClock) / 200` (clamped at 0) to dampen fortress shuffling and avoidable 50-move draws.
 
 ### `v1.1.18` (2026-11-21) — AVX-512BW / NEON SIMD, Aligned Native Accumulator Stack & Zero-Copy Null Moves
 - **Category:** NNUE Architecture & SIMD Throughput (Patch Release — 100% Bit-Exact)

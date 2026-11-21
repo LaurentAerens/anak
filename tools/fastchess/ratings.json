@@ -1077,6 +1077,21 @@
       "tc": "bench 12",
       "pgn": "",
       "notes": "Avx512BW and Vector128 SIMD paths, 64-byte aligned NativeMemory accumulator stack, and _stackSlot zero-copy PushNullMove"
+    },
+    "v1.1.19": {
+      "version": "v1.1.19",
+      "date": "2026-11-21",
+      "estimated_elo": 3171,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.18 (+4.52 logistic / +5.96 nElo in 8,000 games, 93.75% LOS)",
+      "score": "4052.0 / 8000",
+      "wins": 2613,
+      "losses": 2509,
+      "draws": 2878,
+      "perf_percent": 50.65,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.18_20261121_111848.pgn",
+      "notes": "Scale leaf NNUE evaluation by (200 - HalfmoveClock) / 200 to dampen 50-move fortress shuffling"
     }
   }
 }

@@ -237,7 +237,7 @@
 - **Improvement:** The `0.25 * SmoothL1` centipawn term overweights already-decided `Â±6..Â±15` pawn positions at the expense of the decisive `[-2.5, +2.5]` pawn band, and `eta_min = 0.05 * lr` stops LR decay too high. Switch to Stockfish/Bullet-style WDL power loss `mean(|sigmoid(pred / K) - target_prob|^2.6)` (`K ~ 1.60â€“2.00` pawns) and decay LR to `0.005 * lr`.
 - **Est. Impact:** **+10 to +25 Elo** after retrain | **Complexity:** Low.
 
-### 38. Add 50-Move Rule (`HalfmoveClock`) Drawishness Scaling in `MultiTierNnueEvaluator.Evaluate`
+### 38. [x] Add 50-Move Rule (`HalfmoveClock`) Drawishness Scaling in `MultiTierNnueEvaluator.Evaluate`
 - **Location:** [`MultiTierNnueEvaluator.cs`](../src/Anak.Data/Nnue/MultiTierNnueEvaluator.cs#L512-L587)
 - **Improvement:** Apply linear 50-move damping to NNUE leaf scores: `scoreCp = (scoreCp * (200 - board.HalfmoveClock)) / 200` (SPSA-tunable divisor `180..240`), preventing fortress shuffling and avoidable 50-move draws in closed/endgame positions. *(Works immediately with zero retraining.)*
 - **Est. Impact:** **+5 to +15 Elo** | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.

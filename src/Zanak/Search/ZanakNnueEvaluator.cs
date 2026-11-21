@@ -161,6 +161,7 @@ public sealed unsafe class ZanakNnueEvaluator : IMultiTierEvaluator, IIncrementa
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int EvaluateAccumulators(short* whiteAcc, short* blackAcc, NnueWeights weights, in Board board)
     {
+        int scoreCp;
         if (weights.IsMoE)
         {
             ExpertRouting routing = _networks.Routing;
@@ -174,7 +175,7 @@ public sealed unsafe class ZanakNnueEvaluator : IMultiTierEvaluator, IIncrementa
                 if (opennessPct > low && opennessPct < high)
                 {
                     int alpha256 = ((opennessPct - low) * 256) / 16;
-                    return NnueInference.EvaluateMoEBlended(
+                    scoreCp = NnueInference.EvaluateMoEBlended(
                         whiteAcc,
                         blackAcc,
                         weights,
@@ -182,13 +183,18 @@ public sealed unsafe class ZanakNnueEvaluator : IMultiTierEvaluator, IIncrementa
                         (int)NnueExpertType.Closed,
                         (int)NnueExpertType.Open,
                         alpha256);
+                    return board.HalfmoveClock > 0 ? (scoreCp * Math.Max(0, 200 - board.HalfmoveClock)) / 200 : scoreCp;
                 }
             }
 
-            return NnueInference.EvaluateMoE(whiteAcc, blackAcc, weights, board.SideToMove, (int)leafExpert);
+            scoreCp = NnueInference.EvaluateMoE(whiteAcc, blackAcc, weights, board.SideToMove, (int)leafExpert);
+        }
+        else
+        {
+            scoreCp = NnueInference.Evaluate(whiteAcc, blackAcc, weights, board.SideToMove);
         }
 
-        return NnueInference.Evaluate(whiteAcc, blackAcc, weights, board.SideToMove);
+        return board.HalfmoveClock > 0 ? (scoreCp * Math.Max(0, 200 - board.HalfmoveClock)) / 200 : scoreCp;
     }
 
     public Value Evaluate(in Board board)
