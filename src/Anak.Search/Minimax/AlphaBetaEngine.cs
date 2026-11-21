@@ -1529,7 +1529,13 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
                     if (score > alpha && searchDepth < nextDepth)
                     {
-                        score = -AlphaBeta(ref board, nextDepth, -alpha - 1, -alpha, ply + 1, isPv: false, cancellationToken);
+                        bool doDeeperSearch = score > bestScore + 50 + 2 * nextDepth;
+                        bool doShallowerSearch = score < bestScore + nextDepth;
+                        int reSearchDepth = Math.Max(0, nextDepth + (doDeeperSearch ? 1 : 0) - (doShallowerSearch ? 1 : 0));
+                        if (reSearchDepth > searchDepth)
+                        {
+                            score = -AlphaBeta(ref board, reSearchDepth, -alpha - 1, -alpha, ply + 1, isPv: false, cancellationToken);
+                        }
                     }
 
                     if (isPv && score > alpha)

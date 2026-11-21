@@ -942,6 +942,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.8_20261120_231622.pgn",
       "notes": "Continuous history-scaled LMR (r -= (hist + conthist1 + conthist2) / 8192) replacing binary +/-1 thresholds"
+    },
+    "v1.1.10": {
+      "version": "v1.1.10",
+      "date": "2026-11-21",
+      "estimated_elo": 3097,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.1.9 (+2.87 logistic / +3.66 nElo in 8,000 games, 82.71% LOS)",
+      "score": "4033 / 8000",
+      "wins": 2689,
+      "losses": 2623,
+      "draws": 2688,
+      "perf_percent": 50.41,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.9_20261121_015437.pgn",
+      "notes": "Deeper/shallower LMR re-search (doDeeperSearch / doShallowerSearch) on LMR fail-high"
     }
   }
 }

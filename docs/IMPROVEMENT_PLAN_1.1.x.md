@@ -122,10 +122,10 @@
 - **Improvement:** Track `bool ttCapture = !ttMove.IsNull && ttMove.IsCapture;`. When the TT move is a capture, later quiet moves are far less likely to be best â€” add `if (ttCapture) r++;` to quiet LMR reductions.
 - **Est. Impact:** **+4 to +8 Elo** | **Complexity:** Trivial | **Test:** Tier 1 -> Tier 2 SPRT.
 
-### 18. Deeper / Shallower LMR Re-Search (`doDeeperSearch` / `doShallowerSearch`)
-- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1515-L1525)
-- **Improvement:** When a reduced LMR search fails high (`score > alpha && searchDepth < nextDepth`), instead of always re-searching at `nextDepth`, apply Stockfish's `doDeeperSearch = score > bestScore + 50 + 2 * nextDepth` (`reSearchDepth++`) and `doShallowerSearch = score < bestScore + nextDepth` (`reSearchDepth--`).
-- **Est. Impact:** **+5 to +10 Elo** | **Complexity:** Low | **Test:** Tier 1 -> Tier 2 SPRT.
+### 18. [x] Deeper / Shallower LMR Re-Search (`doDeeperSearch` / `doShallowerSearch`) — **Released in `v1.1.10`**
+- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1530-L1539)
+- **Improvement:** When a reduced LMR search fails high (`score > alpha && searchDepth < nextDepth`), applied `doDeeperSearch = score > bestScore + 50 + 2 * nextDepth` (`reSearchDepth++`) and `doShallowerSearch = score < bestScore + nextDepth` (`reSearchDepth--`).
+- **Result (`v1.1.10` vs `v1.1.9`, `1+0.01`, 8,000 games):** **+2.87 ± 5.96 logistic Elo** (`+3.66 ± 7.61` nElo, `2689W / 2623L / 2688D`, `50.41%`, `82.71% LOS`).
 
 ### 19. Null Move Pruning Verification Search at High Depth & Mate-Beta Guard
 - **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1289-L1319)

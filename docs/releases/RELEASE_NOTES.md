@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.9` (Estimated Rating: **3094 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.10` (Estimated Rating: **3097 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.10` (2026-11-21) — Deeper / Shallower LMR Re-Search (`doDeeperSearch` / `doShallowerSearch`)
+- **Category:** Search / Late Move Reductions (Patch Release)
+- **Estimated Elo:** **3097 &plusmn; 6** (`+2.87 ± 5.96` logistic Elo / `+3.66 ± 7.61` nElo over `v1.1.9` in 8,000 games at `1+0.01`: `2689W / 2623L / 2688D`, `50.41%`, `82.71% LOS`)
+- **Highlights:**
+  - **Deeper / Shallower LMR Re-Search (`AlphaBetaEngine.cs`) — `+2.87 ± 5.96` logistic Elo (8,000 games):** On LMR fail-high, adjusts `reSearchDepth` by `+1` when `score > bestScore + 50 + 2 * nextDepth` and `-1` when `score < bestScore + nextDepth`.
 
 ### `v1.1.9` (2026-11-21) — Continuous History-Scaled LMR
 - **Category:** Search / Late Move Reductions (Patch Release)
