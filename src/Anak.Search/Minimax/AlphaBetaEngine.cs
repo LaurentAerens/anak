@@ -1230,6 +1230,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 if (entry.Flags == TTFlags.UpperBound && ttScore <= alpha) return ttScore;
             }
 
+            Piece prev1Piece = ply >= 1 ? _stack[ply - 1].MovedPiece : Piece.None;
+            Square prev1To = ply >= 1 && !_stack[ply - 1].CurrentMove.IsNull ? _stack[ply - 1].CurrentMove.To : Square.None;
+
             // 5. Static Evaluation
             int staticEval = -Value.InfiniteValue;
             int rawEval = -Value.InfiniteValue;
@@ -1244,7 +1247,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 {
                     rawEval = _evaluator.Evaluate(in board).Raw;
                 }
-                staticEval = _correctionHistory.GetAdjustedEval(board.SideToMove, board.PawnKey, rawEval);
+                staticEval = _correctionHistory.GetAdjustedEval(in board, prev1Piece, prev1To, rawEval);
                 eval = staticEval;
 
                 if (ttExpertMatch)
@@ -1363,8 +1366,6 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
 
             // 11. Move Ordering with staged MovePicker
-            Piece prev1Piece = ply >= 1 ? _stack[ply - 1].MovedPiece : Piece.None;
-            Square prev1To = ply >= 1 && !_stack[ply - 1].CurrentMove.IsNull ? _stack[ply - 1].CurrentMove.To : Square.None;
             Piece prev2Piece = ply >= 2 ? _stack[ply - 2].MovedPiece : Piece.None;
             Square prev2To = ply >= 2 && !_stack[ply - 2].CurrentMove.IsNull ? _stack[ply - 2].CurrentMove.To : Square.None;
 
@@ -1605,10 +1606,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                                 _stack[ply].AddKiller(move);
                             }
 
-                            // Correction history update on cutoff (LowerBound: score exceeds staticEval)
-                            if (!inCheck && rawEval != -Value.InfiniteValue && score > staticEval && Math.Abs(score) < Value.MateValue - 100)
+                            // Correction history update on cutoff (LowerBound: score exceeds staticEval; skip tactical cutoffs)
+                            if (!inCheck && !move.IsCapture && !move.IsPromotion &&
+                                rawEval != -Value.InfiniteValue && score > staticEval && Math.Abs(score) < TTEntry.MateBound)
                             {
-                                _correctionHistory.Update(board.SideToMove, board.PawnKey, depth, score, rawEval);
+                                _correctionHistory.Update(in board, prev1Piece, prev1To, depth, score, rawEval);
                             }
 
                             // Transposition Table LowerBound store
@@ -1635,13 +1637,14 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 return inCheck ? -(Value.MateValue - ply) : 0;
             }
 
-            // Correction history update on non-cutoff nodes
+            // Correction history update on non-cutoff nodes (skip tactical best moves)
             // Exact nodes: update in either direction; UpperBound: only update if bestScore < staticEval
-            if (!inCheck && rawEval != -Value.InfiniteValue && Math.Abs(bestScore) < Value.MateValue - 100)
+            if (!inCheck && (bestMove.IsNull || (!bestMove.IsCapture && !bestMove.IsPromotion)) &&
+                rawEval != -Value.InfiniteValue && Math.Abs(bestScore) < TTEntry.MateBound)
             {
                 if (bestScore > alphaOrig || bestScore < staticEval)
                 {
-                    _correctionHistory.Update(board.SideToMove, board.PawnKey, depth, bestScore, rawEval);
+                    _correctionHistory.Update(in board, prev1Piece, prev1To, depth, bestScore, rawEval);
                 }
             }
 

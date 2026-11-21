@@ -96,6 +96,24 @@ public static class Zobrist
 
         return key;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong ComputeNonPawnKey(in Board board, Color color)
+    {
+        ulong key = 0UL;
+        ulong bb = (color == Color.White ? board.White : board.Black) & ~board.Pawns;
+        while (bb != 0)
+        {
+            Square sq = Bitboard.PopLsb(ref bb);
+            Piece piece = board.GetPieceAt(sq);
+            if (piece != Piece.None)
+            {
+                key ^= PieceSquare[(int)piece, (int)sq];
+            }
+        }
+
+        return key;
+    }
 }
 
 /// <summary>

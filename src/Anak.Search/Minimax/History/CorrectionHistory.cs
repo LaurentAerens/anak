@@ -19,6 +19,13 @@ public sealed class CorrectionHistory
     public static int WeightDivisor { get; set; } = SearchHeuristics.TunedCorrHistDivisor;
 
     private readonly short[] _table = new short[TotalTableSize];
+    private readonly short[] _whiteNonPawnTable = new short[TotalTableSize];
+    private readonly short[] _blackNonPawnTable = new short[TotalTableSize];
+    private readonly short[] _contTable = new short[2 * 16 * 64];
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int GetContIndex(Color side, Piece prev1Piece, Square prev1To) =>
+        ((int)side << 10) | ((int)prev1Piece << 6) | (int)prev1To;
 
     /// <summary>
     /// Computes the dense table index from the side to move and 64-bit pawn hash key.
@@ -77,6 +84,32 @@ public sealed class CorrectionHistory
     }
 
     /// <summary>
+    /// Gets the blended evaluation correction from pawn, non-pawn (white/black), and continuation correction histories.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetCorrection(in Board board, Piece prev1Piece, Square prev1To)
+    {
+        Color side = board.SideToMove;
+        int pawnCorr = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, board.PawnKey));
+        int whiteNpCorr = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_whiteNonPawnTable), GetIndex(side, board.WhiteNonPawnKey));
+        int blackNpCorr = Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_blackNonPawnTable), GetIndex(side, board.BlackNonPawnKey));
+        int contCorr = (prev1Piece != Piece.None && prev1To != Square.None)
+            ? Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_contTable), GetContIndex(side, prev1Piece, prev1To))
+            : 0;
+
+        return (pawnCorr + whiteNpCorr + blackNpCorr + contCorr) / (ScaleFactor * 2);
+    }
+
+    /// <summary>
+    /// Gets the adjusted static evaluation offset by blended pawn, non-pawn, and continuation correction history.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public int GetAdjustedEval(in Board board, Piece prev1Piece, Square prev1To, int staticEval)
+    {
+        return staticEval + GetCorrection(in board, prev1Piece, prev1To);
+    }
+
+    /// <summary>
     /// Gets the adjusted static evaluation offset by pawn correction history.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -101,6 +134,34 @@ public sealed class CorrectionHistory
     public int GetAdjustedEval(ulong pawnKey, int staticEval)
     {
         return staticEval + GetCorrection(Color.White, pawnKey);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void UpdateEntry(ref short entry, int target, int weight)
+    {
+        int current = entry;
+        entry = (short)(current + (target - current) * weight / WeightDivisor);
+    }
+
+    /// <summary>
+    /// Updates pawn, white/black non-pawn, and continuation correction histories weighted by search depth.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public void Update(in Board board, Piece prev1Piece, Square prev1To, int depth, int searchScore, int rawEval)
+    {
+        int diff = Math.Clamp(searchScore - rawEval, -MaxCorrection, MaxCorrection);
+        int target = diff * ScaleFactor;
+        int weight = Math.Min(depth * 32, 512);
+        Color side = board.SideToMove;
+
+        UpdateEntry(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_table), GetIndex(side, board.PawnKey)), target, weight);
+        UpdateEntry(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_whiteNonPawnTable), GetIndex(side, board.WhiteNonPawnKey)), target, weight);
+        UpdateEntry(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_blackNonPawnTable), GetIndex(side, board.BlackNonPawnKey)), target, weight);
+
+        if (prev1Piece != Piece.None && prev1To != Square.None)
+        {
+            UpdateEntry(ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_contTable), GetContIndex(side, prev1Piece, prev1To)), target, weight);
+        }
     }
 
     /// <summary>
@@ -171,5 +232,8 @@ public sealed class CorrectionHistory
     public void Clear()
     {
         Array.Clear(_table);
+        Array.Clear(_whiteNonPawnTable);
+        Array.Clear(_blackNonPawnTable);
+        Array.Clear(_contTable);
     }
 }

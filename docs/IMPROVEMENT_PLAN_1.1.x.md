@@ -151,10 +151,10 @@
 - **Improvement:** `GetMvvLva` spans `9,100..90,000` while `_captureHistory / 16` is bounded to `[-1024, +1024]`, drowning out capture history. Scale MVV-LVA to Stockfish proportions (`victimVal * 7 + captureHistory`) and index victim by `PieceType` (0..6) instead of `Piece` (0..12), cutting table size in half and eliminating the `Piece`/`PieceType` indexing hazard.
 - **Est. Impact:** **+5 to +10 Elo** | **Complexity:** Low | **Test:** Tier 1 -> Tier 2 SPRT.
 
-### 23. Filter Tactical BestMoves Out of `CorrectionHistory` + Add Continuation & Non-Pawn Correction History
-- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1582-L1619), [`CorrectionHistory.cs`](../src/Anak.Search/Minimax/History/CorrectionHistory.cs#L12-L121)
-- **Improvement:** (a) Skip `CorrectionHistory.Update` when `bestMove` is a capture or promotion (tactical spikes pollute pawn-structure bias). (b) Add **Continuation Correction History** (`[prev1Piece, prev1To]`, zero board hashing cost) and **Non-Pawn Correction History** (white/black non-pawn Zobrist hashes) blended into `GetAdjustedEval`.
-- **Est. Impact:** **+15 to +25 Elo** | **Complexity:** Medium | **Test:** Category B -> Tier 2 SPRT / Tier 3 MTC.
+### 23. [x] Filter Tactical BestMoves Out of `CorrectionHistory` + Add Continuation & Non-Pawn Correction History — **Released in `v1.1.12`**
+- **Location:** [`AlphaBetaEngine.cs`](../src/Anak.Search/Minimax/AlphaBetaEngine.cs#L1609-L1650), [`CorrectionHistory.cs`](../src/Anak.Search/Minimax/History/CorrectionHistory.cs), [`Board.cs`](../src/Anak.Core/Board/Board.cs), [`Zobrist.cs`](../src/Anak.Core/Zobrist/Zobrist.cs)
+- **Improvement:** (a) Skips `CorrectionHistory.Update` when the cutoff/best move is a capture or promotion. (b) Added **Continuation Correction History** (`[2, 16, 64]` keyed by `[side, prev1Piece, prev1To]`) and **White/Black Non-Pawn Correction History** (incrementally maintained `WhiteNonPawnKey`/`BlackNonPawnKey` in `Board`) blended into `GetAdjustedEval`.
+- **Result (`v1.1.12` vs `v1.1.11`, `1+0.01`, 8,000 games):** **+38.81 ± 6.02 logistic Elo** (`+49.54 ± 7.61` fastchess nElo, `3084W / 2194L / 2722D`, `55.56%`, `100.00% LOS`).
 
 ### 24. Order `BadCaptures` by Descending SEE in `MovePicker` (CPW 4.3)
 - **Location:** [`MovePicker.cs`](../src/Anak.Search/Minimax/MovePicker.cs#L325-L345), [`CPW_TECHNIQUES_TRACKER.md`](CPW_TECHNIQUES_TRACKER.md#L221-L227)

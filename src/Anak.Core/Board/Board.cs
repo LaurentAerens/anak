@@ -38,6 +38,8 @@ public struct Board : IEquatable<Board>
     public ushort FullmoveNumber;
     public ulong ZobristKey;
     public ulong PawnKey;
+    public ulong WhiteNonPawnKey;
+    public ulong BlackNonPawnKey;
 
     private static ReadOnlySpan<byte> CastlingMask =>
     [
@@ -287,7 +289,7 @@ public struct Board : IEquatable<Board>
             capturedPiece = GetPieceAt(to);
         }
 
-        state = new BoardState(Castling, EpSquare, HalfmoveClock, capturedPiece, ZobristKey, PawnKey);
+        state = new BoardState(Castling, EpSquare, HalfmoveClock, capturedPiece, ZobristKey, PawnKey, WhiteNonPawnKey, BlackNonPawnKey);
 
         // 1. Remove captured piece if any
         if (capturedPiece != Piece.None)
@@ -299,6 +301,14 @@ public struct Board : IEquatable<Board>
             if (capType == PieceType.Pawn)
             {
                 PawnKey ^= capZobrist;
+            }
+            else if (them == Color.White)
+            {
+                WhiteNonPawnKey ^= capZobrist;
+            }
+            else
+            {
+                BlackNonPawnKey ^= capZobrist;
             }
         }
 
@@ -313,7 +323,10 @@ public struct Board : IEquatable<Board>
             PieceType promoType = move.PromotionPieceType;
             AddPiece(to, us, promoType);
             Piece promoPiece = PieceExtensions.Create(us, promoType);
-            ZobristKey ^= Zobrist.PieceSquare[(int)promoPiece, (int)to];
+            ulong promoZobrist = Zobrist.PieceSquare[(int)promoPiece, (int)to];
+            ZobristKey ^= promoZobrist;
+            if (us == Color.White) WhiteNonPawnKey ^= promoZobrist;
+            else BlackNonPawnKey ^= promoZobrist;
         }
         else
         {
@@ -323,6 +336,14 @@ public struct Board : IEquatable<Board>
             if (movedType == PieceType.Pawn)
             {
                 PawnKey ^= moveZobrist;
+            }
+            else if (us == Color.White)
+            {
+                WhiteNonPawnKey ^= moveZobrist;
+            }
+            else
+            {
+                BlackNonPawnKey ^= moveZobrist;
             }
         }
 
@@ -335,8 +356,10 @@ public struct Board : IEquatable<Board>
             Square rTo = (Square)(rankBase + (kingCastle ? 5 : 3));
             Piece rookPiece = us == Color.White ? Piece.WhiteRook : Piece.BlackRook;
             MovePiece(rFrom, rTo, us, PieceType.Rook);
-            ZobristKey ^= Zobrist.PieceSquare[(int)rookPiece, (int)rFrom];
-            ZobristKey ^= Zobrist.PieceSquare[(int)rookPiece, (int)rTo];
+            ulong rookZobrist = Zobrist.PieceSquare[(int)rookPiece, (int)rFrom] ^ Zobrist.PieceSquare[(int)rookPiece, (int)rTo];
+            ZobristKey ^= rookZobrist;
+            if (us == Color.White) WhiteNonPawnKey ^= rookZobrist;
+            else BlackNonPawnKey ^= rookZobrist;
         }
 
         // 4. Update castling rights branchlessly via 64-square mask table
@@ -460,11 +483,15 @@ public struct Board : IEquatable<Board>
         HalfmoveClock = state.HalfmoveClock;
         ZobristKey = state.ZobristKey;
         PawnKey = state.PawnKey;
+        WhiteNonPawnKey = state.WhiteNonPawnKey;
+        BlackNonPawnKey = state.BlackNonPawnKey;
+        WhiteNonPawnKey = state.WhiteNonPawnKey;
+        BlackNonPawnKey = state.BlackNonPawnKey;
     }
 
     public bool MakeNullMove(out BoardState state)
     {
-        state = new BoardState(Castling, EpSquare, HalfmoveClock, Piece.None, ZobristKey, PawnKey);
+        state = new BoardState(Castling, EpSquare, HalfmoveClock, Piece.None, ZobristKey, PawnKey, WhiteNonPawnKey, BlackNonPawnKey);
 
         if (EpSquare != Square.None)
         {
@@ -497,6 +524,8 @@ public struct Board : IEquatable<Board>
         HalfmoveClock = state.HalfmoveClock;
         ZobristKey = state.ZobristKey;
         PawnKey = state.PawnKey;
+        WhiteNonPawnKey = state.WhiteNonPawnKey;
+        BlackNonPawnKey = state.BlackNonPawnKey;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

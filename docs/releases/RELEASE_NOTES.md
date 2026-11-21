@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.11` (Estimated Rating: **3100 Elo — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.12` (Estimated Rating: **3139 Elo — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.12` (2026-11-21) — Multi-Component `CorrectionHistory` & Tactical Filtering
+- **Category:** Evaluation / Correction History (Patch Release)
+- **Estimated Elo:** **3139 &plusmn; 6** (`+38.81 ± 6.02` logistic Elo / `+49.54 ± 7.61` fastchess nElo over `v1.1.11` in 8,000 games at `1+0.01`: `3084W / 2194L / 2722D`, `55.56%`, `100.00% LOS`)
+- **Highlights:**
+  - **Tactical Filtering & Multi-Table `CorrectionHistory` (`CorrectionHistory.cs`, `AlphaBetaEngine.cs`, `Board.cs`, `Zobrist.cs`) — `+38.81 ± 6.02` logistic Elo (8,000 games):** Skipped `CorrectionHistory.Update` on capture/promotion cutoff and best moves, and added incrementally maintained White/Black Non-Pawn Correction History plus 1-ply Continuation Correction History (`[side, prev1Piece, prev1To]`) blended into `GetAdjustedEval`.
 
 ### `v1.1.11` (2026-11-21) — Aspiration Fail-High Move Preservation & Delta Optimization
 - **Category:** Search / Aspiration Windows (Patch Release)

@@ -134,6 +134,8 @@ public static class Fen
 
         board.ZobristKey = Zobrist.ComputeKey(in board);
         board.PawnKey = Zobrist.ComputePawnKey(in board);
+        board.WhiteNonPawnKey = Zobrist.ComputeNonPawnKey(in board, Color.White);
+        board.BlackNonPawnKey = Zobrist.ComputeNonPawnKey(in board, Color.Black);
         board.PushHistory(board.ZobristKey);
 
         return board;

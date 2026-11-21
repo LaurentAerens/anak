@@ -11,8 +11,10 @@ public readonly struct BoardState
     public readonly Piece CapturedPiece;
     public readonly ulong ZobristKey;
     public readonly ulong PawnKey;
+    public readonly ulong WhiteNonPawnKey;
+    public readonly ulong BlackNonPawnKey;
 
-    public BoardState(CastlingRights castling, Square epSquare, ushort halfmoveClock, Piece capturedPiece, ulong zobristKey, ulong pawnKey = 0)
+    public BoardState(CastlingRights castling, Square epSquare, ushort halfmoveClock, Piece capturedPiece, ulong zobristKey, ulong pawnKey = 0, ulong whiteNonPawnKey = 0, ulong blackNonPawnKey = 0)
     {
         Castling = castling;
         EpSquare = epSquare;
@@ -20,5 +22,7 @@ public readonly struct BoardState
         CapturedPiece = capturedPiece;
         ZobristKey = zobristKey;
         PawnKey = pawnKey;
+        WhiteNonPawnKey = whiteNonPawnKey;
+        BlackNonPawnKey = blackNonPawnKey;
     }
 }

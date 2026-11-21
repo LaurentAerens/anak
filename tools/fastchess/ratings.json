@@ -972,6 +972,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.10_20261121_040516.pgn",
       "notes": "Preserve iterBestMove on aspiration fail-high timeout, widen to InfiniteValue at delta > 500, and reduce searchDepth by failHighCount"
+    },
+    "v1.1.12": {
+      "version": "v1.1.12",
+      "date": "2026-11-21",
+      "estimated_elo": 3139,
+      "elo_margin": 6,
+      "baseline_opponent": "Anak v1.1.11 (+38.81 logistic / +49.54 nElo in 8,000 games, 100.00% LOS)",
+      "score": "4445 / 8000",
+      "wins": 3084,
+      "losses": 2194,
+      "draws": 2722,
+      "perf_percent": 55.56,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.11_20261121_061810.pgn",
+      "notes": "Filter tactical best/cutoff moves out of CorrectionHistory and add White/Black Non-Pawn + Continuation Correction History"
     }
   }
 }
