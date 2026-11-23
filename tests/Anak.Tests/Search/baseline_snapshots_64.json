@@ -141,7 +141,7 @@
     "SeeAndLegalityChecksum": 14285718455838144056,
     "BestMoveUci": "h2h4",
     "SearchScoreCp": 66,
-    "SearchNodes": 12880
+    "SearchNodes": 12837
   },
   {
     "Fen": "r1bq1rk1/pp2nppp/2n1p3/2ppP3/3P2Q1/P1P2N2/2P2PPP/R1B1KB1R w KQ - 5 9",
@@ -333,7 +333,7 @@
     "SeeAndLegalityChecksum": 4599346521806831543,
     "BestMoveUci": "b2b3",
     "SearchScoreCp": 61,
-    "SearchNodes": 12795
+    "SearchNodes": 12794
   },
   {
     "Fen": "r1b1k1nr/pp1pqpbp/2p3p1/8/2BpP3/2P2Q2/PP1P1PPP/RNB2RK1 w kq - 3 9",
@@ -357,7 +357,7 @@
     "SeeAndLegalityChecksum": 6644729759160722602,
     "BestMoveUci": "c1g5",
     "SearchScoreCp": 31,
-    "SearchNodes": 7276
+    "SearchNodes": 7268
   },
   {
     "Fen": "rn1qkb1r/pp1n1ppp/2p5/4p2b/P1NP4/2N2P2/1P2P1PP/R1BQKB1R w KQkq e6 0 9",
@@ -465,7 +465,7 @@
     "SeeAndLegalityChecksum": 5396932364963074298,
     "BestMoveUci": "d2d3",
     "SearchScoreCp": -7,
-    "SearchNodes": 6110
+    "SearchNodes": 6082
   },
   {
     "Fen": "r3k2r/pppq1ppp/2npbn2/2b1p3/2B1P3/2NPBN2/PPPQ1PPP/R3K2R b KQkq - 6 6",
@@ -489,7 +489,7 @@
     "SeeAndLegalityChecksum": 7472715828150644538,
     "BestMoveUci": "f3e5",
     "SearchScoreCp": -5,
-    "SearchNodes": 26516
+    "SearchNodes": 26506
   },
   {
     "Fen": "2kr1b1r/ppp2ppp/2n1bn2/3p4/3P4/2N1BN2/PPP2PPP/R4RK1 b - - 0 1",
@@ -633,7 +633,7 @@
     "SeeAndLegalityChecksum": 11437902733335003456,
     "BestMoveUci": "a8a7",
     "SearchScoreCp": 12,
-    "SearchNodes": 3445
+    "SearchNodes": 3692
   },
   {
     "Fen": "r1bq1rk1/ppp2ppp/2nb1n2/3pp3/8/2PP1NP1/PP2PPBP/RNBQ1RK1 b - - 0 6",
@@ -693,7 +693,7 @@
     "SeeAndLegalityChecksum": 15067858705876616417,
     "BestMoveUci": "f7f6",
     "SearchScoreCp": -317,
-    "SearchNodes": 20817
+    "SearchNodes": 20791
   },
   {
     "Fen": "4k3/8/4r3/8/4N3/8/4K3/8 w - - 0 1",
@@ -729,7 +729,7 @@
     "SeeAndLegalityChecksum": 6949792506506233534,
     "BestMoveUci": "e2e3",
     "SearchScoreCp": -19,
-    "SearchNodes": 10039
+    "SearchNodes": 8851
   },
   {
     "Fen": "4k2b/8/8/4B3/8/8/4K3/8 w - - 0 1",

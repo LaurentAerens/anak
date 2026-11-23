@@ -1122,6 +1122,21 @@
       "tc": "1+0.01 (4T)",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.20_20261121_142410.pgn",
       "notes": "Lazy SMP overhaul (helper depth-skip, aspiration windows, SelectBestThread voting) + bundled #12 (limits.Nodes & QS nodes), #13 (50-move mate precedence & _gamePly balance), #14 (Syzygy tbScore < MateBound & TbHits)"
+    },
+    "v1.1.22": {
+      "version": "v1.1.22",
+      "date": "2026-11-23",
+      "estimated_elo": 3176,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.1.21 (+1.48 logistic / +2.09 nElo in 8,000 games, 70.43% LOS)",
+      "score": "4017.0 / 8000",
+      "wins": 2600,
+      "losses": 2566,
+      "draws": 2834,
+      "perf_percent": 50.21,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.21_20261123_155157.pgn",
+      "notes": "ProbCut pruning at depth >= 5 (beta + 180, SEE-filtered legal captures verified by QSearch and depth - 4 search)"
     }
   }
 }

@@ -1559,6 +1559,59 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
             }
 
+            // 9. ProbCut: if a shallow tactical search beats beta + margin, prune early
+            int probCutBeta = beta + 180;
+            if (!isPv && !inCheck && depth >= 5 && _stack[ply].ExcludedMove.IsNull &&
+                Math.Abs(beta) < TTEntry.MateBound &&
+                (!ttHit || entry.Depth < depth - 3 || ttScore >= probCutBeta))
+            {
+                int probCutDepth = depth - 4;
+                int seeThreshold = probCutBeta - eval;
+
+                Unsafe.SkipInit(out MoveList pcMoves);
+                pcMoves.Clear();
+                MoveGenerator.GenerateLegalCaptures(in board, ref pcMoves);
+
+                for (int i = 0; i < pcMoves.Count; i++)
+                {
+                    Move pcMove = pcMoves[i];
+                    if (!StaticExchangeEvaluator.HasPositiveOrEqualSee(in board, pcMove, seeThreshold))
+                    {
+                        continue;
+                    }
+
+                    Piece pcMovedPiece = board.GetPieceAt(pcMove.From);
+                    board.MakeMove(pcMove, out BoardState pcState, pcMovedPiece);
+                    _engine._searchTrace?.WriteEdge(key, board.ZobristKey, pcMove);
+                    _tt.Prefetch(board.ZobristKey);
+                    Nodes++;
+                    _incEval?.PushMove(pcMove, pcMovedPiece, pcState.CapturedPiece, in board);
+
+                    _stack[ply].CurrentMove = pcMove;
+                    _stack[ply].MovedPiece = pcMovedPiece;
+
+                    int pcScore = -_qsearch.Search(ref board, -probCutBeta, -probCutBeta + 1, ply + 1);
+                    if (pcScore >= probCutBeta && probCutDepth > 0 && !_engine._stopped && !cancellationToken.IsCancellationRequested)
+                    {
+                        pcScore = -AlphaBeta(ref board, probCutDepth, -probCutBeta, -probCutBeta + 1, ply + 1, isPv: false, cancellationToken);
+                    }
+
+                    board.UnmakeMove(pcMove, in pcState, pcMovedPiece);
+                    _incEval?.RollbackTo(ply);
+
+                    if (_engine._stopped || cancellationToken.IsCancellationRequested)
+                    {
+                        return 0;
+                    }
+
+                    if (pcScore >= probCutBeta)
+                    {
+                        _tt.Store(key, pcMove, (byte)Math.Clamp(probCutDepth, 0, 255), TTEntry.ScoreToTt(pcScore, ply), _tt.CurrentAge, TTFlags.LowerBound, _activeExpertId);
+                        return pcScore;
+                    }
+                }
+            }
+
             // 10. Singular Extensions (requires matching expert score)
             int singularExtension = 0;
             if (depth >= 6 && ply > 0 && ply < 2 * _rootDepth && depth < MaxSearchDepth - 2 &&

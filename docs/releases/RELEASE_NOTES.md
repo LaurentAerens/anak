@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.21` (Estimated Rating: **3174 Elo (1T) / +10.33 Elo (4T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.1.22` (Estimated Rating: **3176 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.1.22` (2026-11-23) — ProbCut Tactical Pruning
+- **Category:** Search Pruning (Patch Release)
+- **Estimated Elo:** **3176 &plusmn; 5** (`+1.48 ± 5.39` logistic Elo / `+2.09 ± 7.61` fastchess nElo over `v1.1.21` in 8,000 games at `1+0.01`: `2600W / 2566L / 2834D`, `50.21%`, `70.43% LOS`; 500-game MTC check at `3+0.03`: `242.5/500`, `48.50%`, `+6.78 ± 21.55` nElo / `-10.43 ± 21.76` logistic Elo)
+- **Highlights:**
+  - **ProbCut (`AlphaBetaEngine.cs`):** At non-PV, non-check nodes with `depth >= 5`, tests SEE-filtered legal captures/promotions against `probCutBeta = beta + 180` via QSearch followed by a `depth - 4` verification search, storing a lower-bound TT entry and pruning early on fail-high.
 
 ### `v1.1.21` (2026-11-21) — Lazy SMP Overhaul + Node Limit, 50-Move Mate Precedence & Syzygy Fixes
 - **Category:** Multi-Threading (SMP) & Correctness (Patch Release)
