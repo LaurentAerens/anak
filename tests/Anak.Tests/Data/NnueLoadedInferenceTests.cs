@@ -16,7 +16,7 @@ public sealed class NnueLoadedInferenceTests
         for (int i = 0; i < 6; i++)
         {
             string candidate = Path.Combine(current, "networks");
-            if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "open.nnue")))
+            if (Directory.Exists(candidate) && File.Exists(Path.Combine(candidate, "anak.nnue")))
             {
                 return candidate;
             }
@@ -31,9 +31,9 @@ public sealed class NnueLoadedInferenceTests
     public void LoadedMultiTierEvaluator_EvaluatesWithZeroAllocations()
     {
         string netDir = GetNetworksDirectory();
-        if (!Directory.Exists(netDir) || !File.Exists(Path.Combine(netDir, "open.nnue")))
+        if (!Directory.Exists(netDir) || !File.Exists(Path.Combine(netDir, "anak.nnue")))
         {
-            return; // Skip if networks not generated
+            return; // Skip if network not present
         }
 
         using var evaluator = new MultiTierNnueEvaluator(netDir);

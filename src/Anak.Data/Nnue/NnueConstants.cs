@@ -1,73 +1,48 @@
 namespace Anak.Data.Nnue;
 
 /// <summary>
-/// Architecture constants and binary serialization definitions for Anak NNUE networks.
+/// Architecture constants and binary serialization definitions for Anak v1.2+ NNUE networks.
+/// Architecture: (KingBuckets x 768 -> HL)x2 [INT16 QA=255, True Horizontal Mirroring]
+///            -> OutputBuckets x (HL -> 1 Pairwise-Mul or 2*HL -> 1 SCReLU) [INT16 QB=64].
 /// </summary>
 public static class NnueConstants
 {
-    /// <summary>
-    /// Magic header identifier: "ANAK" (0x4B414E41).
-    /// </summary>
+    /// <summary>Magic header identifier: "ANAK" (0x4B414E41).</summary>
     public const uint MagicHeader = 0x4B414E41;
 
-    /// <summary>
-    /// Supported network format version.
-    /// </summary>
+    /// <summary>Supported network format version.</summary>
     public const uint FormatVersion = 1;
 
-    /// <summary>
-    /// Standard King-Bucketed NNUE architecture ID: 12,288 -> 512x2 -> 64 -> 1 with SCReLU.
-    /// </summary>
-    public const ushort ArchStandard = 0x0001;
+    /// <summary>Perspective V2 Wide INT16 Single-Layer NNUE architecture ID.</summary>
+    public const ushort ArchV2 = 0x0004;
 
-    /// <summary>
-    /// Shared Feature-Transformer Multi-Expert Head NNUE architecture ID:
-    /// 12,288 -> 512x2 (shared) -> 6 x (64 -> 1) expert heads with SCReLU.
-    /// </summary>
-    public const ushort ArchMoE = 0x0003;
-
-    /// <summary>
-    /// Number of specialized expert heads in ArchMoE (Open, Closed, Endgame, Queenless, Imbalance, Attack).
-    /// </summary>
-    public const int ExpertCount = 6;
-
-    /// <summary>
-    /// Number of king safety zone buckets with horizontal symmetry (ranks 0-1, 2-3, 4-5, 6-7 x files A-D).
-    /// </summary>
+    /// <summary>Number of king safety zone buckets with true horizontal symmetry (4 rank pairs x 4 files).</summary>
     public const int KingBuckets = 16;
 
-    /// <summary>
-    /// Number of raw HalfKP piece-square input features (6 piece types * 2 colors * 64 squares).
-    /// </summary>
+    /// <summary>Number of raw HalfKP piece-square input features (6 piece types * 2 colors * 64 squares).</summary>
     public const int RawFeatureCount = 768;
 
-    /// <summary>
-    /// Total number of bucketed HalfKP piece-square input features (16 buckets * 768 features = 12,288).
-    /// </summary>
+    /// <summary>Total bucketed HalfKP input features (16 buckets * 768 = 12,288).</summary>
     public const int FeatureCount = KingBuckets * RawFeatureCount;
 
-    /// <summary>
-    /// Hidden dimension for Standard/MoE NNUE feature transformer (per perspective).
-    /// </summary>
-    public const int StandardHiddenDim = 512;
+    /// <summary>Default hidden dimension per perspective.</summary>
+    public const int V2DefaultHiddenDim = 1024;
 
-    /// <summary>
-    /// Hidden layer 1 dimension for Standard/MoE NNUE (1024 -> 64).
-    /// </summary>
-    public const int StandardL1Dim = 64;
+    /// <summary>Default number of material-phase output buckets: (pieceCount - 2) / 4.</summary>
+    public const int V2DefaultOutputBuckets = 8;
 
-    /// <summary>
-    /// Upper clamp limit for ClippedReLU activations (1.0 * WeightScale = 64).
-    /// </summary>
-    public const short ClippedReluMax = 64;
+    /// <summary>Feature-transformer quantization scale (INT16 accumulator, clamp [0..255]).</summary>
+    public const short V2QA = 255;
 
-    /// <summary>
-    /// Weight scaling divisor used during INT8 quantization.
-    /// </summary>
-    public const int WeightScale = 64;
+    /// <summary>Output-layer quantization scale (INT16 weights clamped to [-127..127]).</summary>
+    public const int V2QB = 64;
 
-    /// <summary>
-    /// Output score scaling factor mapping network pawn output to centipawns (1.0 pawn = 100 cp).
-    /// </summary>
-    public const int OutputScale = 100;
+    /// <summary>Activation flag for Squared Clipped ReLU (SCReLU).</summary>
+    public const int V2ActScrelu = 0;
+
+    /// <summary>Activation flag for Pairwise Clipped ReLU multiplication (a[i] * b[i]).</summary>
+    public const int V2ActPairwise = 1;
+
+    /// <summary>Centipawn output scale calibrated to Anak's 100 cp = 1 pawn search margins.</summary>
+    public const int V2OutputScale = 200;
 }

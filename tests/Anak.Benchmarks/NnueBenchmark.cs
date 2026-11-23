@@ -7,9 +7,9 @@ namespace Anak.Benchmarks;
 [MemoryDiagnoser]
 public unsafe class NnueBenchmark
 {
-    private NnueWeights _standardWeights = null!;
-    private short[] _whiteAccStd = null!;
-    private short[] _blackAccStd = null!;
+    private NnueWeights _weights = null!;
+    private short[] _whiteAcc = null!;
+    private short[] _blackAcc = null!;
 
     [GlobalSetup]
     public void Setup()
@@ -21,48 +21,30 @@ public unsafe class NnueBenchmark
         }
 
         string anakPath = Path.Combine(networksDir, "anak.nnue");
-        string openPath = Path.Combine(networksDir, "open.nnue");
-        string loadPath = System.IO.File.Exists(anakPath) ? anakPath : openPath;
+        _weights = NnueWeights.LoadFromFile(anakPath) ?? throw new FileNotFoundException(anakPath);
 
-        _standardWeights = NnueWeights.LoadFromFile(loadPath) ?? throw new FileNotFoundException(loadPath);
-
-        int stdDim = _standardWeights.HiddenDim;
-        _whiteAccStd = new short[stdDim];
-        _blackAccStd = new short[stdDim];
+        int dim = _weights.HiddenDim;
+        _whiteAcc = new short[dim];
+        _blackAcc = new short[dim];
 
         var rng = new Random(42);
-        for (int i = 0; i < stdDim; i++)
+        for (int i = 0; i < dim; i++)
         {
-            _whiteAccStd[i] = (short)rng.Next(0, 150);
-            _blackAccStd[i] = (short)rng.Next(0, 150);
+            _whiteAcc[i] = (short)rng.Next(0, 255);
+            _blackAcc[i] = (short)rng.Next(0, 255);
         }
     }
 
     [GlobalCleanup]
-    public void Cleanup()
-    {
-        _standardWeights?.Dispose();
-    }
+    public void Cleanup() => _weights?.Dispose();
 
     [Benchmark]
-    public int BenchmarkEvaluateStandard()
+    public int BenchmarkEvaluateV2()
     {
-        fixed (short* w = _whiteAccStd)
-        fixed (short* b = _blackAccStd)
+        fixed (short* w = _whiteAcc)
+        fixed (short* b = _blackAcc)
         {
-            return NnueInference.EvaluateStandard(w, b, _standardWeights);
-        }
-    }
-
-    [Benchmark]
-    public int BenchmarkEvaluateMoEBlended()
-    {
-        fixed (short* w = _whiteAccStd)
-        fixed (short* b = _blackAccStd)
-        {
-            return _standardWeights.IsMoE
-                ? NnueInference.EvaluateMoEBlended(w, b, _standardWeights, Color.White, 1, 0, 128)
-                : NnueInference.EvaluateStandard(w, b, _standardWeights);
+            return NnueInference.EvaluateV2(w, b, _weights, Color.White, 7);
         }
     }
 }

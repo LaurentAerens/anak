@@ -142,26 +142,10 @@ public sealed class ZapSearch : IDisposable
             }
 
             string anakPath = Path.Combine(directory, "anak.nnue");
-            if (System.IO.File.Exists(anakPath))
+            using var weights = NnueWeights.LoadFromFile(anakPath);
+            if (weights == null || !weights.IsV2)
             {
-                using var weights = NnueWeights.LoadFromFile(anakPath);
-                if (weights == null || !weights.IsMoE)
-                {
-                    throw new InvalidDataException($"Explicit NnuePath has invalid unified MoE model: {anakPath}");
-                }
-            }
-            else
-            {
-                string[] experts = ["open", "closed", "endgame", "queenless", "imbalance", "attack"];
-                foreach (string expert in experts)
-                {
-                    string path = Path.Combine(directory, $"{expert}.nnue");
-                    using var weights = NnueWeights.LoadFromFile(path);
-                    if (weights == null || !weights.IsStandard)
-                    {
-                        throw new InvalidDataException($"Explicit NnuePath requires six valid full experts; cannot load {path}");
-                    }
-                }
+                throw new InvalidDataException($"Explicit NnuePath requires a valid ArchV2 anak.nnue model: {anakPath}");
             }
         }
 
