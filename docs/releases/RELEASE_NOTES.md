@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.1.22` (Estimated Rating: **3176 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.0` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,19 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.0` (2026-11-24) — Milestone Release (`ArchV2` Pairwise-1024 INT16 NNUE, Finny Tables & `v1.1.0` → `v1.2.0` Consolidation)
+- **Category:** Major Milestone Release (Full Notes: [`RELEASE_v1.2.0.md`](RELEASE_v1.2.0.md))
+- **Estimated Elo:** **3264 &plusmn; 18** (Ordo CCRL-anchored; **+87.6 Elo** over `v1.1.22`, **+299 Elo** cumulative chained gain since `v1.1.0`)
+- **Validation:**
+  - **ArchV2 NNUE + Finny Tables (`v1.2.0-candidate` vs `v1.1.22`, SPRT `[0.0, 3.0]` H1 accepted):** **`+81.69 ± 17.07` logistic Elo** (`+102.08 ± 19.05` fastchess nElo, `100.00% LOS`, `644W / 348L / 290D`, `61.54%`, `LLR = +2.95` in `1,282` games at `1+0.01`).
+  - **SPSA `--batch corr` Tuning (`v1.2.0` vs `v1.2.0-candidate`, 8,000 games at `1+0.01`):** **`+5.91 ± 5.72` logistic Elo** (`+7.86 ± 7.61` fastchess nElo, `97.85% LOS`, `2,663W / 2,527L / 2,810D`, `50.85%`).
+- **Highlights:**
+  - **ArchV2 (`0x0004`) Pairwise-1024 INT16 NNUE:** Single unified `(768 × 32 HM) -> 1024×2 -> Pairwise-Mul(1024) -> 8 Material-Phase Output Buckets` INT16 network (`QA=255`, `QB=64`, `V2OutputScale=200`), fixing horizontal mirroring, INT8 SCReLU dead-zoning, double-blended WDL loss, perspective antisymmetry clamping, and 6-expert MoE cliffs.
+  - **Finny Tables & Legacy v1 Removal:** Added per-worker `[2 × 32]` king-bucket accumulator cache (`NnueFinnyTable.cs`) and completely removed legacy v1/MoE code and 6 legacy `.nnue` files so `v1.2.0` cleanly supports only `ArchV2` (`anak.nnue`).
+  - **Native RTX 4090 CUDA Trainer & C++20 Binpack Pipeline:** Added `training/cuda_v2/train_v2.cu` (`2.34M pos/s`, Factorized FT folded at export, GPU EMA `0.999`) and `training/cpp_binpack/sf_binpack_to_v2.cpp` (`4.1M pos/s` round-robin binpack unpacker).
+  - **SPSA `CorrectionHistory` Retuning:** Tuned `TunedCorrHistDivisor` (`2028 -> 2031`) and `TunedCorrHistMax` (`110 -> 126`) for `ArchV2`'s cleaner eval scale (`+5.91 ± 5.72` logistic Elo over 8,000 games).
+  - **Consolidates 22 Patch Releases Since `v1.1.0` (`+211 Elo` before `v1.2.0` NNUE):** History bonus scaling (`+99.80 Elo`), multi-component `CorrectionHistory` (`+38.81 Elo`), node-fraction time scaling (`+22.79 Elo`), Lazy SMP overhaul (`+10.33 Elo` at 4T), root `StaticEval` & SEE/TT/singular/TimeManager fixes, AVX-512BW/NEON SIMD + sparse NNZ matmul + bulk pawn movegen, 50-move drawishness scaling, and ProbCut.
 
 ### `v1.1.22` (2026-11-23) — ProbCut Tactical Pruning
 - **Category:** Search Pruning (Patch Release)

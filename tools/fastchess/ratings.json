@@ -1137,6 +1137,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.21_20261123_155157.pgn",
       "notes": "ProbCut pruning at depth >= 5 (beta + 180, SEE-filtered legal captures verified by QSearch and depth - 4 search)"
+    },
+    "v1.2.0": {
+      "version": "v1.2.0",
+      "date": "2026-11-24",
+      "estimated_elo": 3264,
+      "elo_margin": 18,
+      "baseline_opponent": "Anak v1.1.22 (+81.69 NNUE/Finny in 1,282g SPRT + +5.91 SPSA corr in 8,000g = +87.6 Elo; +299 Elo since v1.1.0)",
+      "score": "789.0 / 1282 (+ 4068.0 / 8000 SPSA corr)",
+      "wins": 644,
+      "losses": 348,
+      "draws": 290,
+      "perf_percent": 61.54,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.22_20261123_224306.pgn",
+      "notes": "Milestone Release v1.2.0: ArchV2 (0x0004) Pairwise-1024 INT16 NNUE with true horizontal mirroring, 8 material-phase output buckets, Finny tables, removal of legacy v1/MoE code, native RTX 4090 CUDA trainer, SPSA-tuned CorrectionHistory (+5.91 Elo), and all v1.1.1-v1.1.22 cumulative gains (+299 Elo since v1.1.0)"
     }
   }
 }

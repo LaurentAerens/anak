@@ -32,8 +32,8 @@ public static class SearchHeuristics
     public const int TunedHistoryBonusScale = 16;       // default: 16 (1.0x factor: (depth * depth * scale) / 16)
     public const int TunedHistoryMaxBonus = 2000;       // default: 2000
     public const int TunedHistoryMaxMalus = 2000;       // default: 2000
-    public const int TunedCorrHistDivisor = 2028;       // default: 2048, SPSA-tuned: 2028
-    public const int TunedCorrHistMax = 110;           // default: 128, SPSA-tuned: 110
+    public const int TunedCorrHistDivisor = 2031;       // v1.1.x: 2028, v1.2.0 SPSA: 2031
+    public const int TunedCorrHistMax = 126;           // v1.1.x: 110, v1.2.0 SPSA: 126
     public const int TunedFutilityMarginD1D2 = 150;    // default: 150, SPSA-tuned: 150
     public const int TunedFutilityMarginD3 = 124;      // default: 120, SPSA-tuned: 124
     public const int TunedLmpBase = 4;                 // default: 3, SPSA-tuned: 4
