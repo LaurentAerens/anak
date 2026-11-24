@@ -11,10 +11,6 @@ public sealed class TimeManager
 {
     private const int FallbackSoftLimitMs = 1000;
     private const int FallbackHardLimitMs = 2000;
-    private const double LogBaseDepthOffset = 1.0;
-    private const double LogBaseDepthScale = 3.2;
-    private const double LogHorizonDeltaOffset = 1.5;
-    private const double LogHorizonDeltaScale = 1.5;
     private const double PanicSoftThresholdRatio = 0.85;
 
     private readonly TimeParams _params;
@@ -137,16 +133,20 @@ public sealed class TimeManager
         else if (infinite)
         {
             targetBaseDepth = _params.ClassicalMaxBaseDepth;
-            maxDepthHorizon = targetBaseDepth + _params.ClassicalHorizonOffset;
+            maxDepthHorizon = Math.Min(_params.ExtendedHorizonMaxPlies, targetBaseDepth + _params.ClassicalHorizonOffset);
         }
         else
         {
             double computeMs = Math.Max(1.0, (double)softMs * Math.Max(1, threads));
             double logComputeMs = Math.Log10(computeMs);
-            int scaledBase = (int)Math.Round(LogBaseDepthOffset + LogBaseDepthScale * logComputeMs);
+            // Smooth low-time boost for bullet/fast-blitz (ramps in above 5ms so 1ms emergency moves stay depth 1,
+            // then decays smoothly toward 0 as computeMs grows past LowTimePivotMs).
+            double ramp = Math.Clamp((computeMs - 5.0) / 25.0, 0.0, 1.0);
+            double lowTimeBoost = _params.LowTimeDepthBoost * ramp / (1.0 + (computeMs / Math.Max(1.0, _params.LowTimePivotMs)));
+            int scaledBase = (int)Math.Round(_params.LogBaseDepthOffset + _params.LogBaseDepthScale * logComputeMs + lowTimeBoost);
             targetBaseDepth = Math.Clamp(scaledBase, 1, _params.ClassicalMaxBaseDepth);
-            int horizonDelta = Math.Clamp((int)Math.Round(LogHorizonDeltaOffset + LogHorizonDeltaScale * logComputeMs), 2, _params.ClassicalHorizonOffset);
-            maxDepthHorizon = targetBaseDepth + horizonDelta;
+            int horizonDelta = Math.Clamp((int)Math.Round(_params.LogHorizonDeltaOffset + _params.LogHorizonDeltaScale * logComputeMs + (lowTimeBoost * 0.5)), 2, _params.ClassicalHorizonOffset);
+            maxDepthHorizon = Math.Min(_params.ExtendedHorizonMaxPlies, targetBaseDepth + horizonDelta);
         }
 
         return new SearchBudget(softMs, hardMs, targetBaseDepth, maxDepthHorizon, ExtendHorizonWithTime: depthLimit <= 0);

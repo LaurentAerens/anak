@@ -494,42 +494,59 @@ HISTORY_PRUNING_PARAMETERS: List[SpsaParam] = [
 
 # Zanak Time Management Parameters (Live TimeParams: clock division, dominance, panic, and ply-1 survivor scaling)
 ZANAK_TIME_PARAMETERS: List[SpsaParam] = [
-    SpsaParam("SuddenDeathDivisor", default=22.0, min_val=10.0, max_val=55.0, c=3.0, a=40.0),
-    SpsaParam("SuddenDeathIncFactor", default=72.0, min_val=25.0, max_val=95.0, c=5.0, a=60.0),
+    SpsaParam("SuddenDeathDivisor", default=24.0, min_val=10.0, max_val=55.0, c=3.0, a=40.0),
+    SpsaParam("SuddenDeathIncFactor", default=73.0, min_val=25.0, max_val=95.0, c=5.0, a=60.0),
     SpsaParam("HardLimitMultiplier", default=25.0, min_val=12.0, max_val=50.0, c=3.0, a=40.0),
-    SpsaParam("StableDominanceMinDepth", default=6.0, min_val=3.0, max_val=12.0, c=1.0, a=15.0),
-    SpsaParam("StableDominanceLeadCp", default=150.0, min_val=50.0, max_val=350.0, c=20.0, a=200.0),
-    SpsaParam("StableDominanceIters", default=3.0, min_val=1.0, max_val=6.0, c=1.0, a=10.0),
-    SpsaParam("StableDominanceMinSoftPct", default=30.0, min_val=8.0, max_val=60.0, c=4.0, a=50.0),
+    SpsaParam("StableDominanceMinDepth", default=5.0, min_val=3.0, max_val=12.0, c=1.0, a=15.0),
+    SpsaParam("StableDominanceLeadCp", default=149.0, min_val=50.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("StableDominanceIters", default=4.0, min_val=1.0, max_val=6.0, c=1.0, a=10.0),
+    SpsaParam("StableDominanceMinSoftPct", default=34.0, min_val=8.0, max_val=60.0, c=4.0, a=50.0),
     SpsaParam("PanicExtensionGapCp", default=10.0, min_val=0.0, max_val=45.0, c=3.0, a=30.0),
-    SpsaParam("PanicExtensionFactorPct", default=150.0, min_val=105.0, max_val=220.0, c=10.0, a=100.0),
+    SpsaParam("PanicExtensionFactorPct", default=151.0, min_val=105.0, max_val=220.0, c=10.0, a=100.0),
     SpsaParam("SurvivorSoftScale2Pct", default=35.0, min_val=12.0, max_val=85.0, c=5.0, a=60.0),
     SpsaParam("SurvivorSoftScale3Pct", default=50.0, min_val=20.0, max_val=90.0, c=5.0, a=60.0),
-    SpsaParam("SurvivorSoftScale4Pct", default=70.0, min_val=30.0, max_val=95.0, c=5.0, a=60.0),
-    SpsaParam("SmallSurvivorMinSoftPct", default=12.0, min_val=3.0, max_val=40.0, c=3.0, a=35.0),
-    SpsaParam("DominantLeaderLeadCp", default=150.0, min_val=50.0, max_val=350.0, c=20.0, a=200.0),
-    SpsaParam("SmallSurvivorVerifyCrosspoints", default=6.0, min_val=2.0, max_val=16.0, c=1.5, a=20.0),
-    SpsaParam("LeaderVerifyCrosspoints", default=14.0, min_val=5.0, max_val=30.0, c=2.0, a=30.0),
-    SpsaParam("ContenderQuickCheckPerRoot", default=3.0, min_val=1.0, max_val=8.0, c=1.0, a=12.0),
+    SpsaParam("SurvivorSoftScale4Pct", default=73.0, min_val=30.0, max_val=95.0, c=5.0, a=60.0),
+    SpsaParam("SmallSurvivorMinSoftPct", default=22.0, min_val=3.0, max_val=40.0, c=3.0, a=35.0),
+    SpsaParam("DominantLeaderLeadCp", default=153.0, min_val=50.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("SmallSurvivorVerifyCrosspoints", default=10.0, min_val=2.0, max_val=16.0, c=1.5, a=20.0),
+    SpsaParam("LeaderVerifyCrosspoints", default=13.0, min_val=5.0, max_val=30.0, c=2.0, a=30.0),
+    SpsaParam("ContenderQuickCheckPerRoot", default=4.0, min_val=1.0, max_val=8.0, c=1.0, a=12.0),
     SpsaParam("ClassicalMaxBaseDepth", default=18.0, min_val=8.0, max_val=22.0, c=1.5, a=18.0),
     SpsaParam("ClassicalHorizonOffset", default=8.0, min_val=2.0, max_val=14.0, c=1.5, a=18.0),
-    SpsaParam("ExtendedHorizonMaxPlies", default=32.0, min_val=12.0, max_val=38.0, c=2.5, a=30.0),
+    SpsaParam("LogBaseDepthOffsetPct", default=100.0, min_val=0.0, max_val=300.0, c=20.0, a=200.0),
+    SpsaParam("LogBaseDepthScalePct", default=320.0, min_val=120.0, max_val=550.0, c=25.0, a=250.0),
+    SpsaParam("LogHorizonDeltaOffsetPct", default=150.0, min_val=0.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("LogHorizonDeltaScalePct", default=150.0, min_val=0.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("ExtendedHorizonMaxPlies", default=32.0, min_val=10.0, max_val=38.0, c=2.5, a=30.0),
+]
+
+# Focused Zanak depth-curve & low-time modifier parameters (ideal for multi-TC tuning)
+ZANAK_CURVE_PARAMETERS: List[SpsaParam] = [
+    SpsaParam("ClassicalMaxBaseDepth", default=18.0, min_val=8.0, max_val=22.0, c=1.5, a=18.0),
+    SpsaParam("ClassicalHorizonOffset", default=8.0, min_val=2.0, max_val=14.0, c=1.5, a=18.0),
+    SpsaParam("LogBaseDepthOffsetPct", default=100.0, min_val=0.0, max_val=300.0, c=20.0, a=200.0),
+    SpsaParam("LogBaseDepthScalePct", default=320.0, min_val=120.0, max_val=550.0, c=25.0, a=250.0),
+    SpsaParam("LogHorizonDeltaOffsetPct", default=150.0, min_val=0.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("LogHorizonDeltaScalePct", default=150.0, min_val=0.0, max_val=350.0, c=20.0, a=200.0),
+    SpsaParam("LowTimeDepthBoostPct", default=0.0, min_val=-200.0, max_val=300.0, c=30.0, a=300.0),
+    SpsaParam("LowTimePivotMs", default=120.0, min_val=20.0, max_val=400.0, c=20.0, a=200.0),
+    SpsaParam("ExtendedHorizonMaxPlies", default=32.0, min_val=10.0, max_val=38.0, c=2.5, a=30.0),
 ]
 
 # Zanak Search Exploration & Crosspoint Parameters (Aggressive tuning steps and wider margins)
 ZANAK_SEARCH_PARAMETERS: List[SpsaParam] = [
     SpsaParam("ShockThreshold", default=75.0, min_val=20.0, max_val=250.0, c=10.0, a=150.0),
     SpsaParam("DeadStemMargin", default=250.0, min_val=80.0, max_val=600.0, c=30.0, a=350.0),
-    SpsaParam("HardAspirationMargin", default=100.0, min_val=25.0, max_val=350.0, c=15.0, a=180.0),
-    SpsaParam("ContenderPromotionMargin", default=50.0, min_val=10.0, max_val=200.0, c=10.0, a=120.0),
-    SpsaParam("WorkerPruneMargin", default=200.0, min_val=60.0, max_val=500.0, c=25.0, a=300.0),
-    SpsaParam("AdaptiveShockBase", default=50.0, min_val=15.0, max_val=150.0, c=8.0, a=100.0),
-    SpsaParam("AdaptiveShockSlope", default=12.0, min_val=1.0, max_val=40.0, c=3.0, a=30.0),
-    SpsaParam("RecaptureBonus", default=2500.0, min_val=400.0, max_val=8000.0, c=350.0, a=4000.0),
+    SpsaParam("HardAspirationMargin", default=101.0, min_val=25.0, max_val=350.0, c=15.0, a=180.0),
+    SpsaParam("ContenderPromotionMargin", default=51.0, min_val=10.0, max_val=200.0, c=10.0, a=120.0),
+    SpsaParam("WorkerPruneMargin", default=199.0, min_val=60.0, max_val=500.0, c=25.0, a=300.0),
+    SpsaParam("AdaptiveShockBase", default=51.0, min_val=15.0, max_val=150.0, c=8.0, a=100.0),
+    SpsaParam("AdaptiveShockSlope", default=11.0, min_val=1.0, max_val=40.0, c=3.0, a=30.0),
+    SpsaParam("RecaptureBonus", default=2498.0, min_val=400.0, max_val=8000.0, c=350.0, a=4000.0),
     SpsaParam("EnPriseThreatPenalty", default=4000.0, min_val=800.0, max_val=12000.0, c=500.0, a=6000.0),
-    SpsaParam("SpineAbandonThreshold", default=250.0, min_val=80.0, max_val=600.0, c=30.0, a=350.0),
-    SpsaParam("CrosspointRootBiasWeight", default=25.0, min_val=5.0, max_val=80.0, c=6.0, a=70.0),
-    SpsaParam("MaxSiblingExploration", default=8.0, min_val=2.0, max_val=20.0, c=2.0, a=20.0),
+    SpsaParam("SpineAbandonThreshold", default=251.0, min_val=80.0, max_val=600.0, c=30.0, a=350.0),
+    SpsaParam("CrosspointRootBiasWeight", default=26.0, min_val=5.0, max_val=80.0, c=6.0, a=70.0),
+    SpsaParam("MaxSiblingExploration", default=4.0, min_val=2.0, max_val=20.0, c=1.5, a=15.0),
 ]
 
 ZANAK_ALL_PARAMETERS: List[SpsaParam] = ZANAK_TIME_PARAMETERS + ZANAK_SEARCH_PARAMETERS
@@ -681,7 +698,10 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
     zanak_time_keys = ["HyperBulletBaseDepth", "HyperBulletMaxHorizon", "FastBulletBaseDepth", "FastBulletMaxHorizon",
                       "BulletBaseDepth", "BulletMaxHorizon", "BlitzBaseDepth", "BlitzMaxHorizon",
                       "RapidBaseDepth", "RapidMaxHorizon", "AbsoluteMinBaseDepth", "AbsoluteMinMaxHorizon",
-                      "SuddenDeathDivisor", "SuddenDeathIncFactor", "HardLimitMultiplier"]
+                      "SuddenDeathDivisor", "SuddenDeathIncFactor", "HardLimitMultiplier",
+                      "ClassicalMaxBaseDepth", "ClassicalHorizonOffset", "ExtendedHorizonMaxPlies",
+                      "LogBaseDepthOffsetPct", "LogBaseDepthScalePct", "LogHorizonDeltaOffsetPct", "LogHorizonDeltaScalePct",
+                      "LowTimeDepthBoostPct", "LowTimePivotMs"]
     has_zanak_time = any(k in params for k in zanak_time_keys)
     if has_zanak_time:
         lines.append("")
@@ -694,6 +714,11 @@ def generate_csharp_snippet(params: Dict[str, float]) -> str:
                     lines.append(f"public double {k} {{ get; set; }} = {params[k] / 100.0:.2f};")
                 elif k == "HardLimitMultiplier":
                     lines.append(f"public double {k} {{ get; set; }} = {params[k] / 10.0:.1f};")
+                elif k == "LowTimePivotMs":
+                    lines.append(f"public double {k} {{ get; set; }} = {params[k]:.1f};")
+                elif k.endswith("Pct"):
+                    prop = k[:-3]
+                    lines.append(f"public double {prop} {{ get; set; }} = {params[k] / 100.0:.2f};")
                 else:
                     lines.append(f"public int {k} {{ get; set; }} = {int(round(params[k]))};")
 
@@ -731,6 +756,7 @@ class SpsaTuner:
         self.max_steps = max_steps
         self.games_per_step = games_per_step
         self.tc = tc
+        self.tcs = [t.strip() for t in tc.split(",") if t.strip()] or ["2+0.02"]
         self.concurrency = concurrency
         self.hash_mb = hash_mb
         self.threads = threads
@@ -809,7 +835,8 @@ class SpsaTuner:
     def play_match(
         self,
         plus_options: Dict[str, int],
-        minus_options: Dict[str, int]
+        minus_options: Dict[str, int],
+        step_tc: Optional[str] = None
     ) -> Tuple[int, int, int]:
         """
         Executes match between Anak(+) and Anak(-).
@@ -817,6 +844,8 @@ class SpsaTuner:
         """
         if self.dry_run:
             return self._simulate_mock_match(plus_options, minus_options)
+
+        active_tc = step_tc or self.tcs[0]
 
         # Ensure fastchess exists
         if not self.fastchess_path or not self.fastchess_path.is_file():
@@ -859,7 +888,7 @@ class SpsaTuner:
             "name=Anak-Minus",
         ] + minus_opt_args + [
             "-each",
-            f"tc={self.tc}",
+            f"tc={active_tc}",
             "-openings",
             f"file={str(self.openings_path)}",
             "format=epd",
@@ -998,7 +1027,8 @@ class SpsaTuner:
             uci_minus[name] = um
 
         # Play match between Plus and Minus configurations
-        wins, losses, draws = self.play_match(uci_plus, uci_minus)
+        step_tc = self.tcs[k % len(self.tcs)]
+        wins, losses, draws = self.play_match(uci_plus, uci_minus, step_tc=step_tc)
         total_games = wins + losses + draws
         score_plus = (wins + (0.5 * draws)) / max(1, total_games)
 
@@ -1136,8 +1166,8 @@ def parse_args():
     parser.add_argument("--engine", type=str, choices=["anak", "zanak"], default="anak",
                         help="Engine to tune: 'anak' (default) or 'zanak'")
     parser.add_argument("--zanak", type=str, default=None, help="Path to Zanak binary")
-    parser.add_argument("--batch", type=str, choices=["core", "pruning", "b", "corr", "time", "search", "bcd", "all", "weakness", "history_pruning", "zanak_time", "zanak_search", "zanak_all"], default="core",
-                        help="Parameter batch to tune ('core', 'pruning', 'b', 'corr', 'time', 'search', 'bcd', 'all', 'weakness', 'history_pruning', 'zanak_time', 'zanak_search', 'zanak_all')")
+    parser.add_argument("--batch", type=str, choices=["core", "pruning", "b", "corr", "time", "search", "bcd", "all", "weakness", "history_pruning", "zanak_time", "zanak_curve", "zanak_search", "zanak_all"], default="core",
+                        help="Parameter batch to tune ('core', 'pruning', 'b', 'corr', 'time', 'search', 'bcd', 'all', 'weakness', 'history_pruning', 'zanak_time', 'zanak_curve', 'zanak_search', 'zanak_all')")
     parser.add_argument("--param", type=str, default=None, help="Tune a single parameter by name (e.g. --param HistoryPruningThreshold)")
     parser.add_argument("--openings", type=str, default=None, help="Path to openings.epd suite")
     parser.add_argument("--early-stop", action="store_true", default=False, help="Enable early stopping when parameters converge/plateau")
@@ -1171,6 +1201,8 @@ def main():
         param_set = [matched[0]]
     elif args.batch == "zanak_time":
         param_set = ZANAK_TIME_PARAMETERS
+    elif args.batch == "zanak_curve":
+        param_set = ZANAK_CURVE_PARAMETERS
     elif args.batch == "zanak_search":
         param_set = ZANAK_SEARCH_PARAMETERS
     elif args.batch == "zanak_all":

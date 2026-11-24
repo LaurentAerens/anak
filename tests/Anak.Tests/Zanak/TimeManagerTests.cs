@@ -112,4 +112,44 @@ public sealed class TimeManagerTests
         Assert.True(eightThreads.TargetBaseDepth > oneThread.TargetBaseDepth);
         Assert.True(eightThreads.MaxDepthHorizon > oneThread.MaxDepthHorizon);
     }
+
+    [Fact]
+    public void AllocateBudget_RespectsExtendedHorizonCap_UnlessDepthLimitOverrides()
+    {
+        var tp = new TimeParams { ExtendedHorizonMaxPlies = 12 };
+        var tm = new TimeManager(tp);
+
+        SearchBudget clock = tm.AllocateBudget(remainingTimeMs: 300_000, incrementMs: 2_000, threads: 8);
+        Assert.True(clock.MaxDepthHorizon <= 12);
+
+        SearchBudget infinite = tm.AllocateBudget(remainingTimeMs: 0, infinite: true, threads: 8);
+        Assert.True(infinite.MaxDepthHorizon <= 12);
+
+        // Explicit UCI "go depth N" still overrides the clock cap
+        SearchBudget explicitDepth = tm.AllocateBudget(remainingTimeMs: 300_000, depthLimit: 16, threads: 8);
+        Assert.Equal(16, explicitDepth.TargetBaseDepth);
+        Assert.Equal(16, explicitDepth.MaxDepthHorizon);
+        Assert.False(explicitDepth.ExtendHorizonWithTime);
+    }
+
+    [Fact]
+    public void AllocateBudget_LowTimeModifier_BoostsBulletWithoutAffectingEmergencyOrLongClock()
+    {
+        var noBoostTm = new TimeManager(new TimeParams { LowTimeDepthBoost = 0.0 });
+        var boostedTm = new TimeManager(new TimeParams { LowTimeDepthBoost = 3.0, LowTimePivotMs = 120.0 });
+
+        // 1ms emergency stays depth 1
+        Assert.Equal(1, boostedTm.AllocateBudget(remainingTimeMs: 20, incrementMs: 0).TargetBaseDepth);
+
+        // Bullet (1+0.01) receives a meaningful boost
+        SearchBudget bulletBase = noBoostTm.AllocateBudget(remainingTimeMs: 1_000, incrementMs: 10);
+        SearchBudget bulletBoosted = boostedTm.AllocateBudget(remainingTimeMs: 1_000, incrementMs: 10);
+        Assert.True(bulletBoosted.TargetBaseDepth > bulletBase.TargetBaseDepth);
+        Assert.True(bulletBoosted.MaxDepthHorizon > bulletBase.MaxDepthHorizon);
+
+        // Long clock (e.g. 60+1) decays back to the normal curve
+        SearchBudget longBase = noBoostTm.AllocateBudget(remainingTimeMs: 60_000, incrementMs: 1_000);
+        SearchBudget longBoosted = boostedTm.AllocateBudget(remainingTimeMs: 60_000, incrementMs: 1_000);
+        Assert.Equal(longBase.TargetBaseDepth, longBoosted.TargetBaseDepth);
+    }
 }

@@ -328,7 +328,6 @@ public sealed class ZapSearch : IDisposable
         SeedingMs = 0;
         SeededRoots = 0;
         _sharedState.ResetSpliceDiagnostics();
-        _tt.Clear();
 
         // 1. Root move generation
         MoveList legalMoves = default;
@@ -671,12 +670,7 @@ public sealed class ZapSearch : IDisposable
         // Iterative deepening & monitoring loop. With a clock budget the horizon keeps growing while time
         // remains; deeper spines re-open their crosspoints with longer agent horizons.
         int currentIterDepth = baseDepth + 1;
-        int threadScaledCap = Math.Min(
-            _timeManager.Parameters.ExtendedHorizonMaxPlies,
-            18 + Math.Min(14, Math.Max(1, _params.DefaultThreads) * 3));
-        int depthCap = effectiveBudget.ExtendHorizonWithTime
-            ? Math.Max(effectiveBudget.MaxDepthHorizon, threadScaledCap)
-            : effectiveBudget.MaxDepthHorizon;
+        int depthCap = effectiveBudget.MaxDepthHorizon;
         int prevLeaderIdx = _sharedState.BestCandidateIndex;
         int leaderBaseCrosspoints = _sharedState.GetRootCompletedCrosspoints(prevLeaderIdx);
         bool forceDeepen = false;

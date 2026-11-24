@@ -36,6 +36,13 @@ public sealed class TimeParams
     public double ClassicalLogScale { get; set; } = 3.0;
     public int ClassicalMaxBaseDepth { get; set; } = 18;
     public int ClassicalHorizonOffset { get; set; } = 8;
+    // Log10(computeMs) depth curve: BaseDepth = Offset + Scale * log10(ms * threads) + low-time boost
+    public double LogBaseDepthOffset { get; set; } = 1.0;
+    public double LogBaseDepthScale { get; set; } = 3.2;
+    public double LogHorizonDeltaOffset { get; set; } = 1.5;
+    public double LogHorizonDeltaScale { get; set; } = 1.5;
+    public double LowTimeDepthBoost { get; set; } = 0.0;
+    public double LowTimePivotMs { get; set; } = 120.0;
 
     public int AbsoluteMinBaseDepth { get; set; } = 1;
     public int AbsoluteMinMaxHorizon { get; set; } = 3;

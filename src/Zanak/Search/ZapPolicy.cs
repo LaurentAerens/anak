@@ -160,8 +160,21 @@ public sealed class ZapPolicy
         // 23.5) Simplifying equal trade (Queen/Rook/Minor) when materially ahead (>= +200 cp)
         if (TryGetSimplifyingTrade(in board, out move)) return true;
 
-        // 24) Safe pawn push (closest pawn to promotion rank first)
-        if (TryGetSafePawnPush(in board, out move)) return true;
+        // 24) Safe pawn push (ranks 6-7 first, then safe passed pawns)
+        bool isEndgame = board.Queens == 0;
+        if (TryGetSafePawnPush(in board, isEndgame, out move)) return true;
+
+        // 24.5) Phase-aware bitboard quiet rules (zero move-gen)
+        if (!isEndgame)
+        {
+            if (TryGetSafeCastling(in board, out move)) return true;
+            if (TryGetSafeMinorDevelopment(in board, out move)) return true;
+            if (TryGetSafeCentralPawnPush(in board, out move)) return true;
+        }
+        else
+        {
+            if (TryGetSafeEndgameKingMove(in board, out move)) return true;
+        }
 
         // 25) Fallback
         return TryGetFallbackMove(in board, out move);
@@ -712,7 +725,7 @@ public sealed class ZapPolicy
             }
         }
 
-        // 5. If undefended against an equal/higher piece, try defending safely with a pawn push
+        // 5. If undefended against an equal/higher piece, try defending safely with a pawn push or piece move
         if (!board.IsSquareAttacked(fromSq, us))
         {
             bool attackedByCheaper = false;
@@ -740,6 +753,114 @@ public sealed class ZapPolicy
                     {
                         return true;
                     }
+                }
+
+                if (TryGetSafePieceDefense(in board, fromSq, pieceValue, out move))
+                {
+                    return true;
+                }
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Attempts to defend an undefended threatened piece at <paramref name="protectedSq"/> by moving a
+    /// friendly Knight, Bishop, Rook, or King to an empty square from which it guards <paramref name="protectedSq"/>.
+    /// Pure bitboard lookup; zero move-list generation.
+    /// </summary>
+    private static bool TryGetSafePieceDefense(
+        in Board board,
+        Square protectedSq,
+        int protectedVal,
+        out Move move)
+    {
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+        ulong friendly = us == Color.White ? board.White : board.Black;
+        ulong occ = board.Occupied;
+        ulong empty = ~occ;
+        ulong excludeProtected = ~(1UL << (byte)protectedSq);
+
+        // 1. Knight defense
+        ulong ourKnights = board.Knights & friendly & excludeProtected;
+        if (ourKnights != 0)
+        {
+            ulong knightDefSquares = Bitboard.KnightAttacks[(byte)protectedSq] & empty;
+            while (knightDefSquares != 0)
+            {
+                Square defSq = Bitboard.PopLsb(ref knightDefSquares);
+                ulong candidates = Bitboard.KnightAttacks[(byte)defSq] & ourKnights;
+                while (candidates != 0)
+                {
+                    Move m = new Move(Bitboard.PopLsb(ref candidates), defSq, MoveType.Quiet);
+                    if (IsSafeDefenseOrInterposition(in board, m, protectedSq, protectedVal, them, us))
+                    {
+                        move = m;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 2. Bishop defense
+        ulong ourBishops = board.Bishops & friendly & excludeProtected;
+        if (ourBishops != 0)
+        {
+            ulong bishopDefSquares = MagicBitboards.GetBishopAttacks(protectedSq, occ) & empty;
+            while (bishopDefSquares != 0)
+            {
+                Square defSq = Bitboard.PopLsb(ref bishopDefSquares);
+                ulong candidates = MagicBitboards.GetBishopAttacks(defSq, occ) & ourBishops;
+                while (candidates != 0)
+                {
+                    Move m = new Move(Bitboard.PopLsb(ref candidates), defSq, MoveType.Quiet);
+                    if (IsSafeDefenseOrInterposition(in board, m, protectedSq, protectedVal, them, us))
+                    {
+                        move = m;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 3. Rook defense
+        ulong ourRooks = board.Rooks & friendly & excludeProtected;
+        if (ourRooks != 0)
+        {
+            ulong rookDefSquares = MagicBitboards.GetRookAttacks(protectedSq, occ) & empty;
+            while (rookDefSquares != 0)
+            {
+                Square defSq = Bitboard.PopLsb(ref rookDefSquares);
+                ulong candidates = MagicBitboards.GetRookAttacks(defSq, occ) & ourRooks;
+                while (candidates != 0)
+                {
+                    Move m = new Move(Bitboard.PopLsb(ref candidates), defSq, MoveType.Quiet);
+                    if (IsSafeDefenseOrInterposition(in board, m, protectedSq, protectedVal, them, us))
+                    {
+                        move = m;
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 4. King defense (especially valuable in endgames)
+        ulong ourKingBb = board.Kings & friendly;
+        if (ourKingBb != 0)
+        {
+            Square kingSq = Bitboard.Lsb(ourKingBb);
+            ulong kingDefSquares = Bitboard.KingAttacks[(byte)protectedSq] & Bitboard.KingAttacks[(byte)kingSq] & empty;
+            while (kingDefSquares != 0)
+            {
+                Square defSq = Bitboard.PopLsb(ref kingDefSquares);
+                Move m = new Move(kingSq, defSq, MoveType.Quiet);
+                if (IsSafeDefenseOrInterposition(in board, m, protectedSq, protectedVal, them, us))
+                {
+                    move = m;
+                    return true;
                 }
             }
         }
@@ -863,8 +984,6 @@ public sealed class ZapPolicy
     {
         if (!board.IsLegal(in m)) return false;
         if (!HasNonLosingDestination(in board, m)) return false;
-        if (AllowsMateIn1(in board, m)) return false;
-        if (IntroducesHigherPieceLoss(in board, m, protectedVal)) return false;
 
         Board after = board;
         return after.MakeMove(m, out _) && !IsThreatenedByCheaper(in after, protectedSq, protectedVal, them, us);
@@ -1235,16 +1354,20 @@ public sealed class ZapPolicy
         return evasions.Count == 0;
     }
 
+    private const ulong CenterDevelopmentMask = 0x00003C3C3C3C0000UL; // c3..f6
+
     /// <summary>
-    /// Step 24: Safe pawn push scanning advanced friendly pawns on the last two pre-promotion ranks
-    /// (White: Rank 7 down to Rank 6; Black: Rank 2 up to Rank 3).
+    /// Step 24: Safe pawn push scanning advanced friendly pawns on ranks 6–7 first,
+    /// then safe passed pawns (ranks 4–5 in middlegame, ranks 2–5 in endgame).
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static bool TryGetSafePawnPush(in Board board, out Move move)
+    private static bool TryGetSafePawnPush(in Board board, bool isEndgame, out Move move)
     {
         Color us = board.SideToMove;
+        Color them = us.Opponent();
         ulong occ = board.Occupied;
         ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong theirPieces = them == Color.White ? board.White : board.Black;
         ulong pawns = board.Pawns & ourPieces;
         if (pawns == 0)
         {
@@ -1275,6 +1398,286 @@ public sealed class ZapPolicy
                     return true;
                 }
             }
+        }
+
+        // Safe passed pawn pushes (furthest advanced first)
+        ulong enemyPawns = board.Pawns & theirPieces;
+        int minPassedRank = isEndgame ? 1 : 3;
+        for (int relRank = 4; relRank >= minPassedRank; relRank--)
+        {
+            ulong rankPawns = pawns & ZapTables.GetRelativeRankMask(us, relRank);
+            while (rankPawns != 0)
+            {
+                Square from = Bitboard.PopLsb(ref rankPawns);
+                if ((enemyPawns & ZapTables.GetPawnForwardSpanMask(us, from)) != 0) continue;
+
+                Square to = (Square)((int)from + pushDelta);
+                if ((occ & (1UL << (byte)to)) != 0) continue;
+
+                if (relRank == 1)
+                {
+                    Square toDouble = (Square)((int)from + (pushDelta * 2));
+                    if ((occ & (1UL << (byte)toDouble)) == 0)
+                    {
+                        Move dbl = new Move(from, toDouble, MoveType.DoublePawnPush);
+                        if (board.IsLegal(in dbl) &&
+                            HasNonLosingDestination(in board, dbl))
+                        {
+                            move = dbl;
+                            return true;
+                        }
+                    }
+                }
+
+                Move m = new Move(from, to, MoveType.Quiet);
+                if (board.IsLegal(in m) &&
+                    HasNonLosingDestination(in board, m))
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Step 24.5a (Opening/Middlegame): Safe castling (kingside first, then queenside). O(1) zero move-gen.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryGetSafeCastling(in Board board, out Move move)
+    {
+        Color us = board.SideToMove;
+        CastlingRights rights = board.Castling;
+        if (us == Color.White)
+        {
+            if ((rights & CastlingRights.WhiteKingside) != 0)
+            {
+                Move ks = new Move(Square.E1, Square.G1, MoveType.KingCastle);
+                if (board.IsLegal(in ks))
+                {
+                    move = ks;
+                    return true;
+                }
+            }
+            if ((rights & CastlingRights.WhiteQueenside) != 0)
+            {
+                Move qs = new Move(Square.E1, Square.C1, MoveType.QueenCastle);
+                if (board.IsLegal(in qs))
+                {
+                    move = qs;
+                    return true;
+                }
+            }
+        }
+        else
+        {
+            if ((rights & CastlingRights.BlackKingside) != 0)
+            {
+                Move ks = new Move(Square.E8, Square.G8, MoveType.KingCastle);
+                if (board.IsLegal(in ks))
+                {
+                    move = ks;
+                    return true;
+                }
+            }
+            if ((rights & CastlingRights.BlackQueenside) != 0)
+            {
+                Move qs = new Move(Square.E8, Square.C8, MoveType.QueenCastle);
+                if (board.IsLegal(in qs))
+                {
+                    move = qs;
+                    return true;
+                }
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Step 24.5b (Opening/Middlegame): Develop an undeveloped Knight or Bishop off the home rank
+    /// onto a safe central/active square (c3..f6). Pure bitboard lookup; zero move-gen.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryGetSafeMinorDevelopment(in Board board, out Move move)
+    {
+        Color us = board.SideToMove;
+        ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong homeRank = ZapTables.GetRelativeRankMask(us, 0);
+        ulong occ = board.Occupied;
+        ulong emptyCenter = ~occ & CenterDevelopmentMask;
+
+        ulong homeKnights = board.Knights & ourPieces & homeRank;
+        while (homeKnights != 0)
+        {
+            Square from = Bitboard.PopLsb(ref homeKnights);
+            ulong targets = Bitboard.KnightAttacks[(byte)from] & emptyCenter;
+            while (targets != 0)
+            {
+                Square to = Bitboard.PopLsb(ref targets);
+                Move m = new Move(from, to, MoveType.Quiet);
+                if (board.IsLegal(in m) &&
+                    IsDestinationSafe(in board, m, maxAllowedEnemySee: -1))
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        ulong homeBishops = board.Bishops & ourPieces & homeRank;
+        while (homeBishops != 0)
+        {
+            Square from = Bitboard.PopLsb(ref homeBishops);
+            ulong targets = MagicBitboards.GetBishopAttacks(from, occ) & emptyCenter;
+            while (targets != 0)
+            {
+                Square to = Bitboard.PopLsb(ref targets);
+                Move m = new Move(from, to, MoveType.Quiet);
+                if (board.IsLegal(in m) &&
+                    IsDestinationSafe(in board, m, maxAllowedEnemySee: -1))
+                {
+                    move = m;
+                    return true;
+                }
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Step 24.5c (Opening/Middlegame): Safe central pawn advance (d/e files from home or third rank).
+    /// Pure bitboard lookup; zero move-gen.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryGetSafeCentralPawnPush(in Board board, out Move move)
+    {
+        Color us = board.SideToMove;
+        ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong occ = board.Occupied;
+        ulong centerFiles = ZapTables.FileMasks[3] | ZapTables.FileMasks[4];
+        int pushDelta = us == Color.White ? 8 : -8;
+
+        ulong homeCenterPawns = board.Pawns & ourPieces & centerFiles & ZapTables.GetRelativeRankMask(us, 1);
+        while (homeCenterPawns != 0)
+        {
+            Square from = Bitboard.PopLsb(ref homeCenterPawns);
+            Square mid = (Square)((int)from + pushDelta);
+            if ((occ & (1UL << (byte)mid)) != 0) continue;
+
+            Square dblTo = (Square)((int)from + (pushDelta * 2));
+            if ((occ & (1UL << (byte)dblTo)) == 0)
+            {
+                Move dbl = new Move(from, dblTo, MoveType.DoublePawnPush);
+                if (board.IsLegal(in dbl) &&
+                    IsDestinationSafe(in board, dbl, maxAllowedEnemySee: -1))
+                {
+                    move = dbl;
+                    return true;
+                }
+            }
+
+            Move single = new Move(from, mid, MoveType.Quiet);
+            if (board.IsLegal(in single) &&
+                IsDestinationSafe(in board, single, maxAllowedEnemySee: -1))
+            {
+                move = single;
+                return true;
+            }
+        }
+
+        ulong thirdRankCenterPawns = board.Pawns & ourPieces & centerFiles & ZapTables.GetRelativeRankMask(us, 2);
+        while (thirdRankCenterPawns != 0)
+        {
+            Square from = Bitboard.PopLsb(ref thirdRankCenterPawns);
+            Square to = (Square)((int)from + pushDelta);
+            if ((occ & (1UL << (byte)to)) != 0) continue;
+
+            Move single = new Move(from, to, MoveType.Quiet);
+            if (board.IsLegal(in single) &&
+                IsDestinationSafe(in board, single, maxAllowedEnemySee: -1))
+            {
+                move = single;
+                return true;
+            }
+        }
+
+        move = Move.Null;
+        return false;
+    }
+
+    /// <summary>
+    /// Step 24.5 (Endgame): Activate the King toward the center or nearest pawn when queens are off.
+    /// Pure bitboard lookup; zero move-gen.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static bool TryGetSafeEndgameKingMove(in Board board, out Move move)
+    {
+        Color us = board.SideToMove;
+        Color them = us.Opponent();
+        ulong ourPieces = us == Color.White ? board.White : board.Black;
+        ulong theirPieces = them == Color.White ? board.White : board.Black;
+        ulong ourKingBb = board.Kings & ourPieces;
+        if (ourKingBb == 0)
+        {
+            move = Move.Null;
+            return false;
+        }
+
+        Square kingSq = Bitboard.Lsb(ourKingBb);
+        ulong kingTargets = Bitboard.KingAttacks[(byte)kingSq] & ~board.Occupied;
+        if (kingTargets == 0)
+        {
+            move = Move.Null;
+            return false;
+        }
+
+        // Optional pawn target: nearest enemy pawn, else nearest friendly pawn
+        Square targetPawn = Square.None;
+        int bestPawnDist = int.MaxValue;
+        ulong scanPawns = (board.Pawns & theirPieces) != 0 ? (board.Pawns & theirPieces) : (board.Pawns & ourPieces);
+        while (scanPawns != 0)
+        {
+            Square pSq = Bitboard.PopLsb(ref scanPawns);
+            int d = ZapTables.GetChebyshevDistance(kingSq, pSq);
+            if (d < bestPawnDist)
+            {
+                bestPawnDist = d;
+                targetPawn = pSq;
+            }
+        }
+
+        int currentScore = _centerScoreTable[(byte)kingSq] * 4
+            + (targetPawn != Square.None ? (7 - bestPawnDist) * 3 : 0);
+
+        Move bestMove = Move.Null;
+        int bestScore = currentScore;
+
+        while (kingTargets != 0)
+        {
+            Square to = Bitboard.PopLsb(ref kingTargets);
+            int score = _centerScoreTable[(byte)to] * 4
+                + (targetPawn != Square.None ? (7 - ZapTables.GetChebyshevDistance(to, targetPawn)) * 3 : 0);
+            if (score <= bestScore) continue;
+
+            Move m = new Move(kingSq, to, MoveType.Quiet);
+            if (board.IsLegal(in m))
+            {
+                bestScore = score;
+                bestMove = m;
+            }
+        }
+
+        if (!bestMove.IsNull)
+        {
+            move = bestMove;
+            return true;
         }
 
         move = Move.Null;

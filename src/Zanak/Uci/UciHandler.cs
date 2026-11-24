@@ -136,7 +136,7 @@ public sealed class UciHandler : IDisposable
 
     private void HandleUci()
     {
-        SendLine("id name Zanak 1.1.1");
+        SendLine("id name Zanak 1.2.0");
         SendLine("id author Anak Team");
         SendLine($"option name Threads type spin default {_params.DefaultThreads} min 1 max 128");
         SendLine("option name Hash type spin default 64 min 1 max 65536");
@@ -190,6 +190,12 @@ public sealed class UciHandler : IDisposable
         SendLine($"option name ContenderQuickCheckPerRoot type spin default {_timeParams.ContenderQuickCheckPerRoot} min 1 max 10");
         SendLine($"option name ClassicalMaxBaseDepth type spin default {_timeParams.ClassicalMaxBaseDepth} min 6 max 24");
         SendLine($"option name ClassicalHorizonOffset type spin default {_timeParams.ClassicalHorizonOffset} min 2 max 16");
+        SendLine($"option name LogBaseDepthOffsetPct type spin default {(int)Math.Round(_timeParams.LogBaseDepthOffset * 100)} min 0 max 400");
+        SendLine($"option name LogBaseDepthScalePct type spin default {(int)Math.Round(_timeParams.LogBaseDepthScale * 100)} min 100 max 600");
+        SendLine($"option name LogHorizonDeltaOffsetPct type spin default {(int)Math.Round(_timeParams.LogHorizonDeltaOffset * 100)} min 0 max 400");
+        SendLine($"option name LogHorizonDeltaScalePct type spin default {(int)Math.Round(_timeParams.LogHorizonDeltaScale * 100)} min 0 max 400");
+        SendLine($"option name LowTimeDepthBoostPct type spin default {(int)Math.Round(_timeParams.LowTimeDepthBoost * 100)} min -200 max 600");
+        SendLine($"option name LowTimePivotMs type spin default {(int)Math.Round(_timeParams.LowTimePivotMs)} min 20 max 500");
         SendLine($"option name ExtendedHorizonMaxPlies type spin default {_timeParams.ExtendedHorizonMaxPlies} min 10 max 40");
 
         string syzygyPath = _search.Tablebase is Anak.Data.Syzygy.SyzygyTablebase stb ? stb.SyzygyPath : "<empty>";
@@ -302,6 +308,12 @@ public sealed class UciHandler : IDisposable
             ["ContenderQuickCheckPerRoot"] = ClampedIntOpt(x => _timeParams.ContenderQuickCheckPerRoot = x, 1, 10),
             ["ClassicalMaxBaseDepth"] = ClampedIntOpt(x => _timeParams.ClassicalMaxBaseDepth = x, 6, 24),
             ["ClassicalHorizonOffset"] = ClampedIntOpt(x => _timeParams.ClassicalHorizonOffset = x, 2, 16),
+            ["LogBaseDepthOffsetPct"] = ClampedPctOpt(x => _timeParams.LogBaseDepthOffset = x, 0, 400),
+            ["LogBaseDepthScalePct"] = ClampedPctOpt(x => _timeParams.LogBaseDepthScale = x, 100, 600),
+            ["LogHorizonDeltaOffsetPct"] = ClampedPctOpt(x => _timeParams.LogHorizonDeltaOffset = x, 0, 400),
+            ["LogHorizonDeltaScalePct"] = ClampedPctOpt(x => _timeParams.LogHorizonDeltaScale = x, 0, 400),
+            ["LowTimeDepthBoostPct"] = ClampedPctOpt(x => _timeParams.LowTimeDepthBoost = x, -200, 600),
+            ["LowTimePivotMs"] = DoubleOpt(x => _timeParams.LowTimePivotMs = Math.Clamp(x, 20.0, 500.0)),
             ["ExtendedHorizonMaxPlies"] = ClampedIntOpt(x => _timeParams.ExtendedHorizonMaxPlies = x, 10, 40),
             ["SyzygyPath"] = v =>
             {

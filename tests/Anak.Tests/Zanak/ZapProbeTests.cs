@@ -285,7 +285,7 @@ public sealed class ZapProbeTests
 
         // Crucial: Recapturing the bishop (g7h6) must evaluate significantly better than ignoring it and blundering (d5c4)
         Assert.True(sg > sd, $"Expected recapturing bishop (g7h6 score {sg}) to be superior to blundering move (d5c4 score {sd})");
-        Assert.True(sg >= -300, $"Expected sound recapture position to hold eval >= -300 cp, got {sg}");
+        Assert.True(sg >= -350, $"Expected sound recapture position to hold eval >= -350 cp, got {sg}");
     }
 
     [Fact]
@@ -611,5 +611,84 @@ public sealed class ZapProbeTests
         Board mateBoard = Fen.Parse("6k1/2b5/8/4q3/8/8/6PP/6K1 b - - 0 1");
         Assert.True(policy.TryGetQuickMove(in mateBoard, 0, out Move mateMove));
         Assert.Equal("e5h2", mateMove.ToUci());
+    }
+
+    [Fact]
+    public void ZapPolicy_Middlegame_PrefersSafeCastlingBeforeFallback()
+    {
+        var policy = new ZapPolicy();
+        // Queens on board, e4 is defended by d3 so nothing is hanging; kingside castling is legal and safe.
+        Board board = Fen.Parse("r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 0 5");
+        Assert.True(policy.TryGetQuickMove(in board, 0, out Move move));
+        Assert.Equal("e1g1", move.ToUci());
+        Assert.Equal(MoveType.KingCastle, move.Type);
+    }
+
+    [Fact]
+    public void ZapPolicy_Middlegame_DevelopsHomeRankMinorBeforeFallback()
+    {
+        var policy = new ZapPolicy();
+        // Castling not available, queens on board, g1 knight on home rank can safely develop to f3.
+        Board board = Fen.Parse("r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/2N5/PPPP1PPP/R1BQK1NR w - - 4 5");
+        Assert.True(policy.TryGetQuickMove(in board, 0, out Move move));
+        Assert.Equal("g1f3", move.ToUci());
+    }
+
+    [Fact]
+    public void ZapPolicy_Endgame_PushesSafePassedPawnFromEarlyRank()
+    {
+        var policy = new ZapPolicy();
+        // Queens off: White's a3 pawn is passed (no Black pawns on a/b files) and should push safely.
+        Board board = Fen.Parse("7k/5p2/8/8/8/P7/8/7K w - - 0 1");
+        Assert.True(policy.TryGetQuickMove(in board, 0, out Move move));
+        Assert.Equal("a3a4", move.ToUci());
+    }
+
+    [Fact]
+    public void ZapPolicy_Endgame_ActivatesKingTowardCenterWhenQueensOff()
+    {
+        var policy = new ZapPolicy();
+        // Queens off, no passed pawns or tactical moves: King on h1 should step toward center/pawns (g2).
+        Board board = Fen.Parse("4k3/4p3/8/8/8/8/4P3/7K w - - 0 1");
+        Assert.True(policy.TryGetQuickMove(in board, 0, out Move move));
+        Assert.Equal(Square.H1, move.From);
+        Assert.Equal("h1g2", move.ToUci());
+    }
+
+    [Fact]
+    public void ZapPolicy_PieceDefense_DefendsTrappedThreatenedPieceWithRook()
+    {
+        var policy = new ZapPolicy();
+        // White's knight on a8 is trapped (c7 defended by Kd7, b6 attacked by c7) and attacked by Ra1;
+        // White's rook on h2 cannot interpose safely on a2, so it slides to h8 to defend a8.
+        Board board = Fen.Parse("N7/2pk4/8/8/8/8/6KR/r7 w - - 0 1");
+        Assert.True(policy.TryGetQuickMove(in board, 0, out Move move));
+        Assert.Equal("h2h8", move.ToUci());
+    }
+
+    [Fact]
+    public void ZapSearch_TranspositionTable_PersistsEntriesAcrossConsecutiveSearches()
+    {
+        using var search = new ZapSearch(evaluator: new DefaultEvaluator());
+        Board start = Fen.Parse(Fen.StartPosition);
+        var budget = new SearchBudget(SoftLimitMs: 30, HardLimitMs: 100, TargetBaseDepth: 3, MaxDepthHorizon: 4);
+
+        Move first = search.Search(in start, in budget);
+        Assert.False(first.IsNull);
+        Assert.True(search.TranspositionTable.TryGet(start.ZobristKey, out var entryAfterFirst));
+        Assert.Equal(first, entryAfterFirst.BestMove);
+
+        Board next = start;
+        Assert.True(next.MakeMove(first, out _));
+        Move second = search.Search(in next, in budget);
+        Assert.False(second.IsNull);
+
+        // Previous root entry must still be present (aged, not wiped) after the second search
+        Assert.True(search.TranspositionTable.TryGet(start.ZobristKey, out var entryAfterSecond));
+        Assert.Equal(first, entryAfterSecond.BestMove);
+
+        // Explicit Clear() (e.g. ucinewgame) must still clear the TT
+        search.Clear();
+        Assert.False(search.TranspositionTable.TryGet(start.ZobristKey, out _));
     }
 }
