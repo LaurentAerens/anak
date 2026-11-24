@@ -1314,9 +1314,10 @@ public sealed class AlphaBetaEngine : ISearchEngine
             int beta,
             int ply,
             bool isPv,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            int knownInCheck = -1)
         {
-            if (_engine._stopped || cancellationToken.IsCancellationRequested)
+            if (_engine._stopped)
             {
                 return 0;
             }
@@ -1346,7 +1347,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
             }
 
             // Check detection & check extension
-            bool inCheck = board.IsInCheck();
+            bool inCheck = knownInCheck >= 0 ? knownInCheck != 0 : board.IsInCheck();
             _stack[ply].InCheck = inCheck;
 
             if (inCheck && depth < MaxSearchDepth)
@@ -1543,7 +1544,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 _stack[ply].CurrentMove = Move.Null;
                 _stack[ply].MovedPiece = Piece.None;
 
-                int nullScore = -AlphaBeta(ref board, nullDepth, -beta, -beta + 1, ply + 1, isPv: false, cancellationToken);
+                int nullScore = -AlphaBeta(ref board, nullDepth, -beta, -beta + 1, ply + 1, isPv: false, cancellationToken, knownInCheck: 0);
                 _incEval?.RollbackTo(ply);
                 board.UnmakeNullMove(in nullState);
 
@@ -1646,6 +1647,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 ? _counterMoves[(ContinuationHistory.PieceToIndex(prev1Piece) << 6) | (int)prev1To]
                 : Move.Null;
 
+            int contBase1 = ContinuationHistory.GetBaseOffset(prev1Piece, prev1To);
+            int contBase2 = ContinuationHistory.GetBaseOffset(prev2Piece, prev2To);
+
             var picker = new MovePicker(
                 in board,
                 ttMove,
@@ -1655,10 +1659,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 _history,
                 _captureHistory,
                 _continuationHistory,
-                prev1Piece,
-                prev1To,
-                prev2Piece,
-                prev2To,
+                contBase1,
+                contBase2,
                 inCheck);
 
             int bestScore = -Value.InfiniteValue;
@@ -1672,9 +1674,6 @@ public sealed class AlphaBetaEngine : ISearchEngine
             Span<Piece> capturesSearchedPiece = stackalloc Piece[32];
             Span<Piece> capturesSearchedVictim = stackalloc Piece[32];
             int capturesCount = 0;
-            int contBase1 = ContinuationHistory.GetBaseOffset(prev1Piece, prev1To);
-            int contBase2 = ContinuationHistory.GetBaseOffset(prev2Piece, prev2To);
-            bool hasPrev2 = prev2Piece != Piece.None;
 
             while (picker.Next(out Move move))
             {
@@ -1685,12 +1684,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 }
 
                 bool isQuiet = !move.IsCapture && !move.IsPromotion;
+                int givesCheckState = -1;
 
                 // Pre-move pruning (exempt checking moves and positions where a mate threat was seen)
                 if (!isPv && !inCheck && bestScore > -TTEntry.MateBound)
                 {
-                    int givesCheckState = -1;
-
                     // Bad Captures Pruning at shallow depth
                     if (depth <= 2 && picker.Stage == MovePickerStage.BadCaptures && !GivesCheckCached(in board, move, ref givesCheckState))
                     {
@@ -1765,7 +1763,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 if (movesSearched == 0)
                 {
                     // PV move searched with full window
-                    score = -AlphaBeta(ref board, nextDepth, -beta, -alpha, ply + 1, isPv, cancellationToken);
+                    score = -AlphaBeta(ref board, nextDepth, -beta, -alpha, ply + 1, isPv, cancellationToken, givesCheckState);
                 }
                 else
                 {
@@ -1808,7 +1806,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                     }
 
                     int searchDepth = Math.Max(0, nextDepth - r);
-                    score = -AlphaBeta(ref board, searchDepth, -alpha - 1, -alpha, ply + 1, isPv: false, cancellationToken);
+                    score = -AlphaBeta(ref board, searchDepth, -alpha - 1, -alpha, ply + 1, isPv: false, cancellationToken, givesCheckState);
 
                     if (score > alpha && searchDepth < nextDepth)
                     {
@@ -1817,14 +1815,14 @@ public sealed class AlphaBetaEngine : ISearchEngine
                         int reSearchDepth = Math.Max(0, nextDepth + (doDeeperSearch ? 1 : 0) - (doShallowerSearch ? 1 : 0));
                         if (reSearchDepth > searchDepth)
                         {
-                            score = -AlphaBeta(ref board, reSearchDepth, -alpha - 1, -alpha, ply + 1, isPv: false, cancellationToken);
+                            score = -AlphaBeta(ref board, reSearchDepth, -alpha - 1, -alpha, ply + 1, isPv: false, cancellationToken, givesCheckState);
                         }
                     }
 
                     if (isPv && score > alpha)
                     {
                         // PVS re-search with full window on fail-high
-                        score = -AlphaBeta(ref board, nextDepth, -beta, -alpha, ply + 1, isPv: true, cancellationToken);
+                        score = -AlphaBeta(ref board, nextDepth, -beta, -alpha, ply + 1, isPv: true, cancellationToken, givesCheckState);
                     }
                 }
 

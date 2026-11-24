@@ -172,6 +172,38 @@ public sealed class QuiescenceSearch
         Unsafe.SkipInit(out ScoreBuffer candidateScores);
         int candidateCount = 0;
 
+        // Precompute direct-check target masks and discovered-check blocker mask once for QS root quiet-check filtering
+        ulong checkPawn = 0UL, checkKnight = 0UL, checkBishop = 0UL, checkRook = 0UL, dcCandidateMask = 0UL;
+        bool checkMasksReady = false;
+        if (!inCheck && EnableQsChecks && qsDepth == 0)
+        {
+            Color us = board.SideToMove;
+            Color them = us.Opponent();
+            ulong enemyKingBb = board.Kings & (them == Color.White ? board.White : board.Black);
+            if (enemyKingBb != 0)
+            {
+                Square ekSq = Bitboard.Lsb(enemyKingBb);
+                int ek = (byte)ekSq;
+                ulong occ = board.Occupied;
+                ulong usPieces = us == Color.White ? board.White : board.Black;
+
+                checkPawn = us == Color.White ? Bitboard.BlackPawnAttacks[ek] : Bitboard.WhitePawnAttacks[ek];
+                checkKnight = Bitboard.KnightAttacks[ek];
+                checkBishop = MagicBitboards.GetBishopAttacks(ekSq, occ);
+                checkRook = MagicBitboards.GetRookAttacks(ekSq, occ);
+
+                if ((usPieces & (board.Bishops | board.Queens) & Bitboard.GetBishopRays(ekSq)) != 0)
+                {
+                    dcCandidateMask |= checkBishop;
+                }
+                if ((usPieces & (board.Rooks | board.Queens) & Bitboard.GetRookRays(ekSq)) != 0)
+                {
+                    dcCandidateMask |= checkRook;
+                }
+                checkMasksReady = true;
+            }
+        }
+
         for (int i = 0; i < moves.Count; i++)
         {
             Move m = moves[i];
@@ -184,7 +216,31 @@ public sealed class QuiescenceSearch
                     // Checks in Quiescence Search: only at QS root (qsDepth == 0) with non-negative SEE
                     if (!EnableQsChecks || qsDepth > 0) continue;
 
-                    if (!GivesCheck(ref board, m)) continue;
+                    if (checkMasksReady && !m.IsCastling)
+                    {
+                        ulong toBit = 1UL << (byte)m.To;
+                        PieceType pt = board.GetPieceAt(m.From).Type();
+                        bool directCheck = pt switch
+                        {
+                            PieceType.Pawn => (checkPawn & toBit) != 0,
+                            PieceType.Knight => (checkKnight & toBit) != 0,
+                            PieceType.Bishop => (checkBishop & toBit) != 0,
+                            PieceType.Rook => (checkRook & toBit) != 0,
+                            PieceType.Queen => ((checkBishop | checkRook) & toBit) != 0,
+                            _ => false
+                        };
+                        if (!directCheck)
+                        {
+                            if ((dcCandidateMask & (1UL << (byte)m.From)) == 0 || !GivesCheck(ref board, m))
+                            {
+                                continue;
+                            }
+                        }
+                    }
+                    else if (!GivesCheck(ref board, m))
+                    {
+                        continue;
+                    }
 
                     int see = StaticExchangeEvaluator.Evaluate(in board, m);
                     if (see < 0) continue;

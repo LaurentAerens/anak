@@ -79,10 +79,6 @@ public ref struct MovePicker
     private readonly HistoryTable? _history;
     private readonly CaptureHistory? _captureHistory;
     private readonly ContinuationHistory? _continuationHistory;
-    private readonly Piece _prev1Piece;
-    private readonly Square _prev1To;
-    private readonly Piece _prev2Piece;
-    private readonly Square _prev2To;
     private readonly int _prev1Offset;
     private readonly int _prev2Offset;
     private readonly bool _inCheck;
@@ -144,13 +140,58 @@ public ref struct MovePicker
         _history = history;
         _captureHistory = captureHistory;
         _continuationHistory = continuationHistory;
-        _prev1Piece = prev1Piece;
-        _prev1To = prev1To;
-        _prev2Piece = prev2Piece;
-        _prev2To = prev2To;
         _prev1Offset = ContinuationHistory.GetBaseOffset(prev1Piece, prev1To);
         _prev2Offset = ContinuationHistory.GetBaseOffset(prev2Piece, prev2To);
         _inCheck = inCheck ?? board.IsInCheck();
+
+        Unsafe.SkipInit(out _legalMoves);
+        _legalMoves.Clear();
+        _capturesGenerated = false;
+        _allMovesGenerated = false;
+        _ttMovePicked = false;
+
+        Unsafe.SkipInit(out _scores);
+        Unsafe.SkipInit(out _seeScores);
+        Unsafe.SkipInit(out _goodCaptureIndices);
+        _goodCaptureCount = 0;
+        Unsafe.SkipInit(out _badCaptureMoves);
+        Unsafe.SkipInit(out _badCaptureSee);
+        _badCaptureCount = 0;
+        Unsafe.SkipInit(out _quietIndices);
+        _quietCount = 0;
+        _stage = MovePickerStage.TtMove;
+        _capturesScored = false;
+        _contScored = false;
+        _quietsScored = false;
+        _picked = default;
+        CurrentStage = MovePickerStage.TtMove;
+        CurrentSee = int.MinValue;
+    }
+
+    public MovePicker(
+        in Board board,
+        Move ttMove,
+        Move killer0,
+        Move killer1,
+        Move counterMove,
+        HistoryTable? history,
+        CaptureHistory? captureHistory,
+        ContinuationHistory? continuationHistory,
+        int prev1Offset,
+        int prev2Offset,
+        bool inCheck)
+    {
+        _board = ref board;
+        _ttMove = ttMove;
+        _killer0 = killer0;
+        _killer1 = killer1;
+        _counterMove = counterMove;
+        _history = history;
+        _captureHistory = captureHistory;
+        _continuationHistory = continuationHistory;
+        _prev1Offset = prev1Offset;
+        _prev2Offset = prev2Offset;
+        _inCheck = inCheck;
 
         Unsafe.SkipInit(out _legalMoves);
         _legalMoves.Clear();
@@ -521,7 +562,7 @@ public ref struct MovePicker
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private int PickBestContinuationMove()
     {
-        if (_continuationHistory == null || (_prev1Piece == Piece.None && _prev2Piece == Piece.None))
+        if (_continuationHistory == null || (_prev1Offset < 0 && _prev2Offset < 0))
         {
             return -1;
         }

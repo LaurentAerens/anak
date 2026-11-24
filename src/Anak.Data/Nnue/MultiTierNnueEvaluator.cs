@@ -20,12 +20,14 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 {
     private readonly MultiTierNnueEvaluator? _parent;
     private volatile NnueWeights? _weights;
+    private NnueWeights? _searchWeights;
     private readonly DefaultEvaluator _fallbackEvaluator;
     private short* _stackWhite;
     private short* _stackBlack;
     private int _stackCapacityDim;
     private readonly ulong[] _stackKeys = new ulong[256];
     private readonly int[] _stackSlot = new int[256];
+    private readonly uint[] _stackKingInfo = new uint[256];
     private readonly NnueFinnyTable _finnyTable = new();
     private int _stackDepth = -1;
     private bool _disposed;
@@ -131,6 +133,8 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
                 {
                     NnueWeights? oldWeights = _weights;
                     _weights = loaded;
+                    _searchWeights = null;
+                    _stackDepth = -1;
                     if (_ownsWeights) oldWeights?.Dispose();
                 }
             }
@@ -229,10 +233,24 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         ActiveRootExpert = PawnTopology.ClassifyExpert(in rootBoard, Routing);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static uint PackKingInfo(in Board board, int buckets)
+    {
+        if (buckets == 1) return 0u;
+        int wKingSq = NnueAccumulator.GetWhiteKingSquare(in board);
+        int bKingSq = NnueAccumulator.GetBlackKingSquare(in board);
+        uint wBucket = (uint)NnueAccumulator.GetKingBucket((Square)wKingSq);
+        uint bBucket = (uint)NnueAccumulator.GetKingBucket((Square)(bKingSq ^ 56));
+        uint wFlip = (wKingSq & 4) != 0 ? 7u : 0u;
+        uint bFlip = (bKingSq & 4) != 0 ? 7u : 0u;
+        return wBucket | (wFlip << 5) | (bBucket << 8) | (bFlip << 13);
+    }
+
     public void InitSearch(in Board rootBoard)
     {
         SetRootTopology(in rootBoard);
         NnueWeights? weights = CurrentWeights;
+        _searchWeights = weights;
         if (weights != null)
         {
             EnsureStackCapacity(weights.HiddenDim);
@@ -240,6 +258,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             _finnyTable.RefreshBlack(in rootBoard, weights, _stackBlack);
             _stackKeys[0] = rootBoard.ZobristKey;
             _stackSlot[0] = 0;
+            _stackKingInfo[0] = PackKingInfo(in rootBoard, weights.Buckets);
             _stackDepth = 0;
         }
         else
@@ -248,36 +267,55 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         }
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public void PushMove(Move move, Piece movedPiece, Piece capturedPiece, in Board boardAfter)
     {
-        if (_stackDepth < 0 || _stackDepth >= 254) return;
-        NnueWeights? weights = CurrentWeights;
-        if (weights == null) return;
+        int depth = _stackDepth;
+        NnueWeights? weights = _searchWeights;
+        if ((uint)depth >= 254u || weights == null) return;
 
         int dim = weights.HiddenDim;
-        int curSlot = _stackSlot[_stackDepth];
-        int nextDepth = _stackDepth + 1;
+        int curSlot = _stackSlot[depth];
+        int nextDepth = depth + 1;
         short* curW = _stackWhite + (curSlot * dim);
         short* curB = _stackBlack + (curSlot * dim);
         short* nextW = _stackWhite + (nextDepth * dim);
         short* nextB = _stackBlack + (nextDepth * dim);
 
-        NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, curW, curB, nextW, nextB, in boardAfter, _finnyTable);
+        if (movedPiece.Type() != PieceType.King)
+        {
+            uint info = _stackKingInfo[depth];
+            _stackKingInfo[nextDepth] = info;
+            NnueAccumulator.UpdateNonKingMove(
+                move, movedPiece, capturedPiece, weights,
+                (int)(info & 31u), (int)((info >> 5) & 7u),
+                (int)((info >> 8) & 31u), (int)((info >> 13) & 7u),
+                curW, curB, nextW, nextB);
+        }
+        else
+        {
+            NnueAccumulator.UpdateMove(move, movedPiece, capturedPiece, weights, curW, curB, nextW, nextB, in boardAfter, _finnyTable);
+            _stackKingInfo[nextDepth] = PackKingInfo(in boardAfter, weights.Buckets);
+        }
 
         _stackSlot[nextDepth] = nextDepth;
         _stackDepth = nextDepth;
         _stackKeys[nextDepth] = boardAfter.ZobristKey;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void PushNullMove(in Board boardAfter)
     {
-        if (_stackDepth < 0 || _stackDepth >= 254 || CurrentWeights == null) return;
-        int nextDepth = _stackDepth + 1;
-        _stackSlot[nextDepth] = _stackSlot[_stackDepth];
+        int depth = _stackDepth;
+        if ((uint)depth >= 254u || _searchWeights == null) return;
+        int nextDepth = depth + 1;
+        _stackSlot[nextDepth] = _stackSlot[depth];
+        _stackKingInfo[nextDepth] = _stackKingInfo[depth];
         _stackDepth = nextDepth;
         _stackKeys[nextDepth] = boardAfter.ZobristKey;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void RollbackTo(int depth)
     {
         if (_stackDepth >= 0) _stackDepth = Math.Clamp(depth, 0, 254);
@@ -294,17 +332,19 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
         return NnueInference.EvaluateV2(whiteAcc, blackAcc, weights, board.SideToMove, bucket);
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public Value Evaluate(in Board board)
     {
-        NnueWeights? weights = CurrentWeights;
+        int depth = _stackDepth;
+        NnueWeights? weights = depth >= 0 ? _searchWeights : CurrentWeights;
         if (!UseNnue || weights == null)
         {
             return _fallbackEvaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
         }
 
-        if (_stackDepth >= 0 && _stackKeys[_stackDepth] == board.ZobristKey)
+        if (depth >= 0 && _stackKeys[depth] == board.ZobristKey)
         {
-            int offset = _stackSlot[_stackDepth] * weights.HiddenDim;
+            int offset = _stackSlot[depth] * weights.HiddenDim;
             int bucket = NnueInference.GetV2OutputBucket(in board, weights.OutputBuckets);
             int scoreCp = NnueInference.EvaluateV2(_stackWhite + offset, _stackBlack + offset, weights, board.SideToMove, bucket);
             return new Value(ScaleByHalfmoveClock(scoreCp, board.HalfmoveClock));

@@ -128,10 +128,9 @@ public sealed unsafe class TranspositionTable : IDisposable
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public void Prefetch(ulong key)
     {
-        if (System.Runtime.Intrinsics.X86.Sse.IsSupported && _clusters != null)
+        if (System.Runtime.Intrinsics.X86.Sse.IsSupported)
         {
-            ulong index = key & _mask;
-            System.Runtime.Intrinsics.X86.Sse.Prefetch0(_clusters + index);
+            System.Runtime.Intrinsics.X86.Sse.Prefetch0(_clusters + (key & _mask));
         }
     }
 

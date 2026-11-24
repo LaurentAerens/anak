@@ -453,4 +453,51 @@ public static unsafe class NnueAccumulator
         }
         for (; i < dim; i++) dstAcc[i] = (short)(srcAcc[i] - wSub1[i] - wSub2[i] + wAdd1[i] + wAdd2[i]);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+    public static void UpdateNonKingMove(
+        Move move,
+        Piece movedPiece,
+        Piece capturedPiece,
+        NnueWeights weights,
+        int wBucket,
+        int wFlip,
+        int bBucket,
+        int bFlip,
+        short* srcWhiteAcc,
+        short* srcBlackAcc,
+        short* dstWhiteAcc,
+        short* dstBlackAcc)
+    {
+        int dim = weights.HiddenDim;
+        Color us = movedPiece.Color();
+        Color them = us.Opponent();
+        PieceType movedType = movedPiece.Type();
+        Square from = move.From;
+        Square to = move.To;
+
+        short* wWeights = weights.FeatureWeights16 + (wBucket * NnueConstants.RawFeatureCount * dim);
+        short* bWeights = weights.FeatureWeights16 + (bBucket * NnueConstants.RawFeatureCount * dim);
+
+        int wfFrom = GetWhiteFeatureIndexMirrored(movedType, us, from, wFlip);
+        int bfFrom = GetBlackFeatureIndexMirrored(movedType, us, from, bFlip);
+        PieceType addedType = move.IsPromotion ? move.PromotionPieceType : movedType;
+        int wfTo = GetWhiteFeatureIndexMirrored(addedType, us, to, wFlip);
+        int bfTo = GetBlackFeatureIndexMirrored(addedType, us, to, bFlip);
+
+        if (capturedPiece != Piece.None)
+        {
+            Square capSq = move.Type == MoveType.EnPassant
+                ? SquareExtensions.Create(to.File(), from.Rank())
+                : to;
+            PieceType capType = capturedPiece.Type();
+            SubSubAddFeature16(wfFrom, GetWhiteFeatureIndexMirrored(capType, them, capSq, wFlip), wfTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
+            SubSubAddFeature16(bfFrom, GetBlackFeatureIndexMirrored(capType, them, capSq, bFlip), bfTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
+        }
+        else
+        {
+            SubAddFeature16(wfFrom, wfTo, wWeights, srcWhiteAcc, dstWhiteAcc, dim);
+            SubAddFeature16(bfFrom, bfTo, bWeights, srcBlackAcc, dstBlackAcc, dim);
+        }
+    }
 }

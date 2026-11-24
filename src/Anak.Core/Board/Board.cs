@@ -121,15 +121,15 @@ public struct Board : IEquatable<Board>
 
         // Pawns
         ulong pawnAttacks = attackerColor == Color.White
-            ? Bitboard.BlackPawnAttacks[s]
-            : Bitboard.WhitePawnAttacks[s];
+            ? Bitboard.GetBlackPawnAttacks(s)
+            : Bitboard.GetWhitePawnAttacks(s);
         if ((pawnAttacks & Pawns & attackerPieces) != 0) return true;
 
         // Knights
-        if ((Bitboard.KnightAttacks[s] & Knights & attackerPieces) != 0) return true;
+        if ((Bitboard.GetKnightAttacks(s) & Knights & attackerPieces) != 0) return true;
 
         // Kings
-        if ((Bitboard.KingAttacks[s] & Kings & attackerPieces) != 0) return true;
+        if ((Bitboard.GetKingAttacks(s) & Kings & attackerPieces) != 0) return true;
 
         // Bishops & Queens
         ulong occ = Occupied;
@@ -494,8 +494,6 @@ public struct Board : IEquatable<Board>
         HalfmoveClock = state.HalfmoveClock;
         ZobristKey = state.ZobristKey;
         PawnKey = state.PawnKey;
-        WhiteNonPawnKey = state.WhiteNonPawnKey;
-        BlackNonPawnKey = state.BlackNonPawnKey;
         WhiteNonPawnKey = state.WhiteNonPawnKey;
         BlackNonPawnKey = state.BlackNonPawnKey;
     }

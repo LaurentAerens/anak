@@ -81,7 +81,7 @@ public static class StaticExchangeEvaluator
 
         ulong diagSliders = (board.Bishops | board.Queens) & Bitboard.GetBishopRays(to);
         ulong orthSliders = (board.Rooks | board.Queens) & Bitboard.GetRookRays(to);
-        ulong attackers = GetAllAttackers(in board, to, occupied) & occupied;
+        ulong attackers = GetAllAttackersCore(in board, to, occupied, diagSliders, orthSliders) & occupied;
         Color side = them;
 
         while (true)
@@ -168,7 +168,7 @@ public static class StaticExchangeEvaluator
 
         ulong diagSliders = (board.Bishops | board.Queens) & Bitboard.GetBishopRays(to);
         ulong orthSliders = (board.Rooks | board.Queens) & Bitboard.GetRookRays(to);
-        ulong attackers = GetAllAttackers(in board, to, occupied);
+        ulong attackers = GetAllAttackersCore(in board, to, occupied, diagSliders, orthSliders);
         Color side = them;
         int d = 0;
         PieceType currentAttacker = attackerType;
@@ -219,28 +219,34 @@ public static class StaticExchangeEvaluator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetAllAttackers(in Board board, Square to, ulong occupied)
     {
+        ulong diagSliders = (board.Bishops | board.Queens) & Bitboard.GetBishopRays(to);
+        ulong orthSliders = (board.Rooks | board.Queens) & Bitboard.GetRookRays(to);
+        return GetAllAttackersCore(in board, to, occupied, diagSliders, orthSliders);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong GetAllAttackersCore(in Board board, Square to, ulong occupied, ulong diagSliders, ulong orthSliders)
+    {
         int s = (byte)to;
         ulong attackers = 0UL;
 
         // Pawns
-        attackers |= Bitboard.BlackPawnAttacks[s] & board.Pawns & board.White;
-        attackers |= Bitboard.WhitePawnAttacks[s] & board.Pawns & board.Black;
+        attackers |= Bitboard.GetBlackPawnAttacks(s) & board.Pawns & board.White;
+        attackers |= Bitboard.GetWhitePawnAttacks(s) & board.Pawns & board.Black;
 
         // Knights
-        attackers |= Bitboard.KnightAttacks[s] & board.Knights;
+        attackers |= Bitboard.GetKnightAttacks(s) & board.Knights;
 
         // Kings
-        attackers |= Bitboard.KingAttacks[s] & board.Kings;
+        attackers |= Bitboard.GetKingAttacks(s) & board.Kings;
 
         // Bishops / Queens
-        ulong diagSliders = (board.Bishops | board.Queens) & Bitboard.GetBishopRays(to);
         if (diagSliders != 0)
         {
             attackers |= MagicBitboards.GetBishopAttacks(to, occupied) & diagSliders;
         }
 
         // Rooks / Queens
-        ulong orthSliders = (board.Rooks | board.Queens) & Bitboard.GetRookRays(to);
         if (orthSliders != 0)
         {
             attackers |= MagicBitboards.GetRookAttacks(to, occupied) & orthSliders;

@@ -20,6 +20,11 @@ public static unsafe class NnueInference
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int GetV2OutputBucket(in Board board, int outputBuckets)
     {
+        if (outputBuckets == 8)
+        {
+            int idx = (BitOperations.PopCount(board.Occupied) - 2) >> 2;
+            return (uint)idx < 8u ? idx : (idx < 0 ? 0 : 7);
+        }
         if (outputBuckets <= 1) return 0;
         int pieces = BitOperations.PopCount(board.Occupied);
         int divisor = (32 + outputBuckets - 1) / outputBuckets;
@@ -42,7 +47,7 @@ public static unsafe class NnueInference
         if (weights.IsV2Pairwise)
         {
             int halfDim = dim >> 1;
-            sum = DotPairwiseV2(ourAcc, outW, halfDim) + DotPairwiseV2(theirAcc, outW + halfDim, halfDim);
+            sum = DotPairwiseDualV2(ourAcc, theirAcc, outW, halfDim);
         }
         else
         {
@@ -54,9 +59,11 @@ public static unsafe class NnueInference
     }
 
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    private static long DotPairwiseV2(short* acc, short* w, int halfDim)
+    private static long DotPairwiseDualV2(short* ourAcc, short* theirAcc, short* outW, int halfDim)
     {
-        short* accB = acc + halfDim;
+        short* ourB = ourAcc + halfDim;
+        short* theirB = theirAcc + halfDim;
+        short* wTheir = outW + halfDim;
         long total = 0;
         int i = 0;
 
@@ -66,20 +73,31 @@ public static unsafe class NnueInference
             Vector512<short> vMax = Vector512.Create(NnueConstants.V2QA);
             Vector512<int> sum0 = Vector512<int>.Zero;
             Vector512<int> sum1 = Vector512<int>.Zero;
+            Vector512<int> sum2 = Vector512<int>.Zero;
+            Vector512<int> sum3 = Vector512<int>.Zero;
 
             for (; i <= halfDim - 64; i += 64)
             {
-                Vector512<short> a0 = Vector512.Min(Vector512.Max(Vector512.Load(acc + i), vZero), vMax);
-                Vector512<short> b0 = Vector512.Min(Vector512.Max(Vector512.Load(accB + i), vZero), vMax);
-                Vector512<short> a1 = Vector512.Min(Vector512.Max(Vector512.Load(acc + i + 32), vZero), vMax);
-                Vector512<short> b1 = Vector512.Min(Vector512.Max(Vector512.Load(accB + i + 32), vZero), vMax);
-                sum0 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyLow(a0, Vector512.Load(w + i)), b0);
-                sum1 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyLow(a1, Vector512.Load(w + i + 32)), b1);
+                Vector512<short> oa0 = Vector512.Min(Vector512.Max(Vector512.Load(ourAcc + i), vZero), vMax);
+                Vector512<short> ob0 = Vector512.Min(Vector512.Max(Vector512.Load(ourB + i), vZero), vMax);
+                Vector512<short> oa1 = Vector512.Min(Vector512.Max(Vector512.Load(ourAcc + i + 32), vZero), vMax);
+                Vector512<short> ob1 = Vector512.Min(Vector512.Max(Vector512.Load(ourB + i + 32), vZero), vMax);
+                sum0 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyLow(oa0, Vector512.Load(outW + i)), ob0);
+                sum1 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyLow(oa1, Vector512.Load(outW + i + 32)), ob1);
+
+                Vector512<short> ta0 = Vector512.Min(Vector512.Max(Vector512.Load(theirAcc + i), vZero), vMax);
+                Vector512<short> tb0 = Vector512.Min(Vector512.Max(Vector512.Load(theirB + i), vZero), vMax);
+                Vector512<short> ta1 = Vector512.Min(Vector512.Max(Vector512.Load(theirAcc + i + 32), vZero), vMax);
+                Vector512<short> tb1 = Vector512.Min(Vector512.Max(Vector512.Load(theirB + i + 32), vZero), vMax);
+                sum2 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyLow(ta0, Vector512.Load(wTheir + i)), tb0);
+                sum3 += Avx512BW.MultiplyAddAdjacent(Avx512BW.MultiplyLow(ta1, Vector512.Load(wTheir + i + 32)), tb1);
             }
 
             (Vector512<long> lo0, Vector512<long> hi0) = Vector512.Widen(sum0);
             (Vector512<long> lo1, Vector512<long> hi1) = Vector512.Widen(sum1);
-            total = Vector512.Sum(lo0 + hi0 + lo1 + hi1);
+            (Vector512<long> lo2, Vector512<long> hi2) = Vector512.Widen(sum2);
+            (Vector512<long> lo3, Vector512<long> hi3) = Vector512.Widen(sum3);
+            total = Vector512.Sum((lo0 + hi0) + (lo1 + hi1) + (lo2 + hi2) + (lo3 + hi3));
         }
         else if (Avx2.IsSupported && halfDim >= 32)
         {
@@ -87,27 +105,42 @@ public static unsafe class NnueInference
             Vector256<short> vMax = Vector256.Create(NnueConstants.V2QA);
             Vector256<int> sum0 = Vector256<int>.Zero;
             Vector256<int> sum1 = Vector256<int>.Zero;
+            Vector256<int> sum2 = Vector256<int>.Zero;
+            Vector256<int> sum3 = Vector256<int>.Zero;
 
             for (; i <= halfDim - 32; i += 32)
             {
-                Vector256<short> a0 = Vector256.Min(Vector256.Max(Vector256.Load(acc + i), vZero), vMax);
-                Vector256<short> b0 = Vector256.Min(Vector256.Max(Vector256.Load(accB + i), vZero), vMax);
-                Vector256<short> a1 = Vector256.Min(Vector256.Max(Vector256.Load(acc + i + 16), vZero), vMax);
-                Vector256<short> b1 = Vector256.Min(Vector256.Max(Vector256.Load(accB + i + 16), vZero), vMax);
-                sum0 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyLow(a0, Vector256.Load(w + i)), b0);
-                sum1 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyLow(a1, Vector256.Load(w + i + 16)), b1);
+                Vector256<short> oa0 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i), vZero), vMax);
+                Vector256<short> ob0 = Vector256.Min(Vector256.Max(Vector256.Load(ourB + i), vZero), vMax);
+                Vector256<short> oa1 = Vector256.Min(Vector256.Max(Vector256.Load(ourAcc + i + 16), vZero), vMax);
+                Vector256<short> ob1 = Vector256.Min(Vector256.Max(Vector256.Load(ourB + i + 16), vZero), vMax);
+                sum0 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyLow(oa0, Vector256.Load(outW + i)), ob0);
+                sum1 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyLow(oa1, Vector256.Load(outW + i + 16)), ob1);
+
+                Vector256<short> ta0 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i), vZero), vMax);
+                Vector256<short> tb0 = Vector256.Min(Vector256.Max(Vector256.Load(theirB + i), vZero), vMax);
+                Vector256<short> ta1 = Vector256.Min(Vector256.Max(Vector256.Load(theirAcc + i + 16), vZero), vMax);
+                Vector256<short> tb1 = Vector256.Min(Vector256.Max(Vector256.Load(theirB + i + 16), vZero), vMax);
+                sum2 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyLow(ta0, Vector256.Load(wTheir + i)), tb0);
+                sum3 += Avx2.MultiplyAddAdjacent(Avx2.MultiplyLow(ta1, Vector256.Load(wTheir + i + 16)), tb1);
             }
 
             (Vector256<long> lo0, Vector256<long> hi0) = Vector256.Widen(sum0);
             (Vector256<long> lo1, Vector256<long> hi1) = Vector256.Widen(sum1);
-            total = Vector256.Sum(lo0 + hi0 + lo1 + hi1);
+            (Vector256<long> lo2, Vector256<long> hi2) = Vector256.Widen(sum2);
+            (Vector256<long> lo3, Vector256<long> hi3) = Vector256.Widen(sum3);
+            total = Vector256.Sum((lo0 + hi0) + (lo1 + hi1) + (lo2 + hi2) + (lo3 + hi3));
         }
 
         for (; i < halfDim; i++)
         {
-            int va = Math.Clamp(acc[i], (short)0, NnueConstants.V2QA);
-            int vb = Math.Clamp(accB[i], (short)0, NnueConstants.V2QA);
-            total += (long)(short)(va * w[i]) * vb;
+            int ova = Math.Clamp(ourAcc[i], (short)0, NnueConstants.V2QA);
+            int ovb = Math.Clamp(ourB[i], (short)0, NnueConstants.V2QA);
+            total += (long)(short)(ova * outW[i]) * ovb;
+
+            int tva = Math.Clamp(theirAcc[i], (short)0, NnueConstants.V2QA);
+            int tvb = Math.Clamp(theirB[i], (short)0, NnueConstants.V2QA);
+            total += (long)(short)(tva * wTheir[i]) * tvb;
         }
 
         return total;

@@ -265,6 +265,22 @@ public static class Bitboard
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static ulong GetRookRays(Square sq) =>
         Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookRays), (byte)sq);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong GetWhitePawnAttacks(int sq) =>
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(WhitePawnAttacks), (nint)sq);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong GetBlackPawnAttacks(int sq) =>
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BlackPawnAttacks), (nint)sq);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong GetKnightAttacks(int sq) =>
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(KnightAttacks), (nint)sq);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static ulong GetKingAttacks(int sq) =>
+        Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(KingAttacks), (nint)sq);
 }
 
 /// <summary>
