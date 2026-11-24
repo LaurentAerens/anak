@@ -26,8 +26,8 @@ public sealed class DefaultEvaluator : IEvaluator
     private const int QueenPhase = 4;
     private const int TotalPhase = 24;
 
-    private static readonly ulong[] AdjacentFileMasks = new ulong[8];
-    private static readonly ulong[,] PassedPawnMasks = new ulong[2, 64];
+    private static readonly ulong[] _adjacentFileMasks = new ulong[8];
+    private static readonly ulong[,] _passedPawnMasks = new ulong[2, 64];
 
     static DefaultEvaluator()
     {
@@ -36,22 +36,22 @@ public sealed class DefaultEvaluator : IEvaluator
             ulong adj = 0UL;
             if (f > 0) adj |= Bitboard.FileMasks[f - 1];
             if (f < 7) adj |= Bitboard.FileMasks[f + 1];
-            AdjacentFileMasks[f] = adj;
+            _adjacentFileMasks[f] = adj;
         }
 
         for (int sq = 0; sq < 64; sq++)
         {
             int f = sq & 7;
             int r = sq >> 3;
-            ulong files = Bitboard.FileMasks[f] | AdjacentFileMasks[f];
+            ulong files = Bitboard.FileMasks[f] | _adjacentFileMasks[f];
 
             ulong whiteAhead = 0UL;
             for (int rr = r + 1; rr < 8; rr++) whiteAhead |= Bitboard.RankMasks[rr];
-            PassedPawnMasks[(int)Color.White, sq] = files & whiteAhead;
+            _passedPawnMasks[(int)Color.White, sq] = files & whiteAhead;
 
             ulong blackAhead = 0UL;
             for (int rr = r - 1; rr >= 0; rr--) blackAhead |= Bitboard.RankMasks[rr];
-            PassedPawnMasks[(int)Color.Black, sq] = files & blackAhead;
+            _passedPawnMasks[(int)Color.Black, sq] = files & blackAhead;
         }
     }
 
@@ -334,7 +334,7 @@ public sealed class DefaultEvaluator : IEvaluator
             }
 
             // Isolated pawn penalty
-            if (count > 0 && (myPawns & AdjacentFileMasks[file]) == 0)
+            if (count > 0 && (myPawns & _adjacentFileMasks[file]) == 0)
             {
                 score -= count * 20;
             }
@@ -346,7 +346,7 @@ public sealed class DefaultEvaluator : IEvaluator
         while (tempPawns != 0)
         {
             Square sq = Bitboard.PopLsb(ref tempPawns);
-            if ((enemyPawns & PassedPawnMasks[colorIdx, (int)sq]) == 0)
+            if ((enemyPawns & _passedPawnMasks[colorIdx, (int)sq]) == 0)
             {
                 int rank = (int)sq.Rank();
                 int advanced = isWhite ? rank : 7 - rank;

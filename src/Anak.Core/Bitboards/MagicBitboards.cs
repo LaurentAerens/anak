@@ -11,8 +11,8 @@ public static unsafe class MagicBitboards
     public static readonly MagicEntry[] BishopEntries = new MagicEntry[64];
     public static readonly MagicEntry[] RookEntries = new MagicEntry[64];
 
-    private static readonly PextEntry[] BishopPextEntries = new PextEntry[64];
-    private static readonly PextEntry[] RookPextEntries = new PextEntry[64];
+    private static readonly PextEntry[] _bishopPextEntries = new PextEntry[64];
+    private static readonly PextEntry[] _rookPextEntries = new PextEntry[64];
 
     public static readonly ulong[] BishopMasks = new ulong[64];
     public static readonly ulong[] RookMasks = new ulong[64];
@@ -82,7 +82,7 @@ public static unsafe class MagicBitboards
             int bShift = 64 - bBits;
             BishopShifts[sq] = bShift;
             BishopEntries[sq] = new MagicEntry(bMask, BishopMagics[sq], bishopBase + bishopOffset, bShift);
-            BishopPextEntries[sq] = new PextEntry(bMask, bishopBase + bishopOffset);
+            _bishopPextEntries[sq] = new PextEntry(bMask, bishopBase + bishopOffset);
             bishopOffset += 1 << bBits;
 
             RookOffsets[sq] = rookOffset;
@@ -92,7 +92,7 @@ public static unsafe class MagicBitboards
             int rShift = 64 - rBits;
             RookShifts[sq] = rShift;
             RookEntries[sq] = new MagicEntry(rMask, RookMagics[sq], rookBase + rookOffset, rShift);
-            RookPextEntries[sq] = new PextEntry(rMask, rookBase + rookOffset);
+            _rookPextEntries[sq] = new PextEntry(rMask, rookBase + rookOffset);
             rookOffset += 1 << rBits;
         }
 
@@ -147,7 +147,7 @@ public static unsafe class MagicBitboards
         nuint sq = (byte)square;
         if (Bmi2.X64.IsSupported)
         {
-            ref readonly PextEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(BishopPextEntries), sq);
+            ref readonly PextEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_bishopPextEntries), sq);
             nuint index = (nuint)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
             return entry.TablePtr[index];
         }
@@ -166,7 +166,7 @@ public static unsafe class MagicBitboards
         nuint sq = (byte)square;
         if (Bmi2.X64.IsSupported)
         {
-            ref readonly PextEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(RookPextEntries), sq);
+            ref readonly PextEntry entry = ref Unsafe.Add(ref MemoryMarshal.GetArrayDataReference(_rookPextEntries), sq);
             nuint index = (nuint)Bmi2.X64.ParallelBitExtract(occupancy, entry.Mask);
             return entry.TablePtr[index];
         }
