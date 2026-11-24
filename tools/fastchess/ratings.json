@@ -1152,6 +1152,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.1.22_20261123_224306.pgn",
       "notes": "Milestone Release v1.2.0: ArchV2 (0x0004) Pairwise-1024 INT16 NNUE with true horizontal mirroring, 8 material-phase output buckets, Finny tables, removal of legacy v1/MoE code, native RTX 4090 CUDA trainer, SPSA-tuned CorrectionHistory (+5.91 Elo), and all v1.1.1-v1.1.22 cumulative gains (+299 Elo since v1.1.0)"
+    },
+    "v1.2.2": {
+      "version": "v1.2.2",
+      "date": "2026-11-25",
+      "estimated_elo": 3264,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.2.0 (+0.83 nElo / +2.65 logistic in 8,000 games; +0 Elo within error margin)",
+      "score": "4030.5 / 8000",
+      "wins": 2675,
+      "losses": 2614,
+      "draws": 2711,
+      "perf_percent": 50.38,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.0_20261124_225534.pgn",
+      "notes": "Zero-search-impact NNUE, Core, QS, and Search NPS optimizations (+11.85% NPS; +0 Elo within error margin over 8,000 games vs v1.2.0)"
     }
   }
 }

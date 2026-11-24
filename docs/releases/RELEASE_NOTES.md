@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.1` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.2` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.2` (2026-11-25) — Zero-Search-Impact NNUE, Core, QS & Search NPS Optimizations (+11.85% NPS)
+- **Category:** Performance / Throughput (Patch Release; Full Notes: [`RELEASE_v1.2.2.md`](RELEASE_v1.2.2.md))
+- **Estimated Elo:** **3264 &plusmn; 5** (+0 Elo vs `v1.2.0` — within error margin in 8,000 games)
+- **Validation (`v1.2.2` vs `v1.2.0`, 8,000 games at `1+0.01`):** `4030.5 / 8000` (`50.38%`, `2675W / 2614L / 2711D`), `+0.83 ± 5.38` nElo / `+2.65 ± 6.19` logistic Elo (**+0 Elo** within error margin).
+- **Highlights:**
+  - **+11.85% NPS Throughput (`e50a623`):** Zero-search-impact optimizations across NNUE (`MultiTierNnueEvaluator.cs`, `NnueAccumulator.cs`, `NnueInference.cs`), Core (`Bitboard.cs`, `Board.cs`, `SEE.cs`), and Search/QS (`AlphaBetaEngine.cs`, `MovePicker.cs`, `QuiescenceSearch.cs`, `TranspositionTable.cs`).
 
 ### `v1.2.1` (2026-11-24) — Multi-Threaded `NnuePath` Reload Fix
 - **Category:** Bugfix (Patch Release; Full Notes: [`RELEASE_v1.2.1.md`](RELEASE_v1.2.1.md))
