@@ -91,7 +91,7 @@ src/Zanak/
 ├── README.md                      # Architecture and component documentation
 ├── Zanak.csproj                   # Project configuration and AOT settings
 ├── Search/
-│   ├── ZanakNnueEvaluator.cs      # MoE NNUE evaluator and feature accumulator
+│   ├── ZanakNnueEvaluator.cs      # ArchV2 Pairwise-1024 NNUE evaluator, Finny table, and accumulator
 │   ├── ZapCrosspoint.cs           # Crosspoint struct (board, ply, shock, kind, role)
 │   ├── ZapDiagnosticsWriter.cs    # JSON diagnostics writer for search/pickup traces
 │   ├── ZapParams.cs               # Search hyper-parameters and tunable margins

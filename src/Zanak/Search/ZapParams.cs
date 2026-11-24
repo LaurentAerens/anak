@@ -11,23 +11,23 @@ public sealed class ZapParams
     /// <summary>
     /// Evaluation shock threshold in centipawns (|ΔEval| > 73 cp) that flags a ply as a discrepancy crosspoint.
     /// </summary>
-    public int ShockThresholdCp { get; set; } = 73;
+    public int ShockThresholdCp { get; set; } = 75;
 
     /// <summary>
-    /// Centipawn score deficit below the leader score (e.g. Leader - 247 cp) that classifies a root move as a dead stem.
+    /// Centipawn score deficit below the leader score (e.g. Leader - 250 cp) that classifies a root move as a dead stem.
     /// </summary>
-    public int DeadStemPruneMarginCp { get; set; } = 247;
+    public int DeadStemPruneMarginCp { get; set; } = 250;
 
     /// <summary>
-    /// Centipawn window below LeaderScore (e.g. 99 cp) for a spine to qualify for worker crosspoint generation.
+    /// Centipawn window below LeaderScore (e.g. 101 cp) for a spine to qualify for worker crosspoint generation.
     /// Spines below this margin are classified as Dead Stems with zero assigned worker agents.
     /// </summary>
-    public int HardAspirationMarginCp { get; set; } = 99;
+    public int HardAspirationMarginCp { get; set; } = 101;
 
     /// <summary>
-    /// Centipawn window below LeaderScore (e.g. 50 cp) for a qualified contender to receive Promotion Squad exploration.
+    /// Centipawn window below LeaderScore (e.g. 51 cp) for a qualified contender to receive Promotion Squad exploration.
     /// </summary>
-    public int ContenderPromotionMarginCp { get; set; } = 50;
+    public int ContenderPromotionMarginCp { get; set; } = 51;
 
     /// <summary>
     /// Static exchange evaluation (SEE) threshold for selecting winning tactical captures.
@@ -42,7 +42,7 @@ public sealed class ZapParams
     /// <summary>
     /// Centipawn margin for dynamic alpha/beta pruning during worker branch exploration.
     /// </summary>
-    public int WorkerPruneMarginCp { get; set; } = 201;
+    public int WorkerPruneMarginCp { get; set; } = 199;
 
     /// <summary>
     /// Default size of transposition table in MB.
@@ -69,7 +69,7 @@ public sealed class ZapParams
     /// Root proximity priority bias per ply closer to the root for crosspoints.
     /// Prioritizes exploring discrepancies near the root before deep leaf discrepancies.
     /// </summary>
-    public int CrosspointRootBiasWeight { get; set; } = 23;
+    public int CrosspointRootBiasWeight { get; set; } = 26;
 
     /// <summary>
     /// Finite priority bonus for the first batch of a ply-1 adversarial refutation.
@@ -98,7 +98,7 @@ public sealed class ZapParams
     /// <summary>
     /// Maximum number of new sibling spines per pickup. Unfinished siblings remain queued.
     /// </summary>
-    public int MaxSiblingExploration { get; set; } = 8;
+    public int MaxSiblingExploration { get; set; } = 4;
 
     public bool InterleaveRootSeeding { get; set; }
 
@@ -118,27 +118,27 @@ public sealed class ZapParams
     /// <summary>
     /// Obsolete: spines are no longer abandoned by the probe (agents prune them). Kept for tuner compatibility.
     /// </summary>
-    public int SpineAbandonThresholdCp { get; set; } = 250;
+    public int SpineAbandonThresholdCp { get; set; } = 251;
 
     /// <summary>
     /// Minimum mover gain (cp) at ply 1 for an eval swing to create responsibility debt.
     /// </summary>
-    public int AdaptiveShockBaseCp { get; set; } = 52;
+    public int AdaptiveShockBaseCp { get; set; } = 51;
 
     /// <summary>
     /// Increase in the responsibility swing threshold per ply deeper into the spine.
     /// </summary>
-    public int AdaptiveShockSlopeCp { get; set; } = 13;
+    public int AdaptiveShockSlopeCp { get; set; } = 11;
 
     /// <summary>
     /// Score bonus given to immediate recaptures on the destination square of the opponent's prior move.
     /// </summary>
-    public int RecaptureBonus { get; set; } = 2500;
+    public int RecaptureBonus { get; set; } = 2498;
 
     /// <summary>
     /// Penalty applied when leaving a friendly piece en prise to attack by lower-value pieces.
     /// </summary>
-    public int EnPriseThreatPenalty { get; set; } = 4001;
+    public int EnPriseThreatPenalty { get; set; } = 4000;
 
     /// <summary>
     /// Root pre-filter margin (cp): a 1-ply move is discarded before spine generation only if the opponent's best

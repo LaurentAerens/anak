@@ -344,7 +344,7 @@ public sealed class ZapWorkQueueTests
 
         queue.Enqueue(new ZapCrosspoint(board, 0, 1, 0, shockMagnitude: 50, CrosspointKind.Opportunity, 5, Move.Null));
         queue.Enqueue(new ZapCrosspoint(board, 0, 2, 0, shockMagnitude: 250, CrosspointKind.AdversarialRefutation, 5, Move.Null));
-        queue.Enqueue(new ZapCrosspoint(board, 0, 3, 0, shockMagnitude: 120, CrosspointKind.Opportunity, 5, Move.Null));
+        queue.Enqueue(new ZapCrosspoint(board, 0, 3, 0, shockMagnitude: 150, CrosspointKind.Opportunity, 5, Move.Null));
 
         Assert.Equal(3, queue.Count);
 
@@ -352,7 +352,7 @@ public sealed class ZapWorkQueueTests
         Assert.Equal(250, first.ShockMagnitude);
 
         Assert.True(queue.TryDequeue(out var second));
-        Assert.Equal(120, second.ShockMagnitude);
+        Assert.Equal(150, second.ShockMagnitude);
 
         Assert.True(queue.TryDequeue(out var third));
         Assert.Equal(50, third.ShockMagnitude);
