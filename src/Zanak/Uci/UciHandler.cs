@@ -136,7 +136,7 @@ public sealed class UciHandler : IDisposable
 
     private void HandleUci()
     {
-        SendLine("id name Zanak 1.0.0");
+        SendLine("id name Zanak 1.1.1");
         SendLine("id author Anak Team");
         SendLine($"option name Threads type spin default {_params.DefaultThreads} min 1 max 128");
         SendLine("option name Hash type spin default 64 min 1 max 65536");

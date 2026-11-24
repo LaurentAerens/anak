@@ -35,7 +35,27 @@ public static class ZapRootFilter
         for (int i = 0; i < moves.Length; i++) keep[i] = true;
         lossOut.Clear();
         nullLossOut = 0;
-        if (marginCp <= 0 || moves.Length <= 1 || root.IsInCheck()) return 0;
+        if (marginCp <= 0 || moves.Length <= 1) return 0;
+
+        if (root.IsInCheck())
+        {
+            int inCheckRejected = 0;
+            for (int i = 0; i < moves.Length; i++)
+            {
+                if (ZapPolicy.AllowsMateIn1(in root, moves[i]))
+                {
+                    keep[i] = false;
+                    inCheckRejected++;
+                }
+            }
+
+            if (inCheckRejected == moves.Length)
+            {
+                for (int i = 0; i < moves.Length; i++) keep[i] = true;
+                return 0;
+            }
+            return inCheckRejected;
+        }
 
         // Null-move baseline: what can the opponent win if we simply pass?
         int nullLoss = 0;

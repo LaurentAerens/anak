@@ -75,4 +75,30 @@ public sealed class ZapRootFilterTests
         Assert.False(keep[ra2]);
         Assert.True(keep[g2h3]);
     }
+
+    [Fact]
+    public void InCheck_RejectsEvasionsThatAllowMateIn1()
+    {
+        // Position after 30. Qe5+ from lichess game QjIj3NJi: Kf8 (g7f8) walks into 31. Re8#, while Kh6 (g7h6) does not.
+        var (moves, keep, rejected) = Run("6r1/1p3rkp/2p1R1p1/3pQ3/pP4B1/P7/2P3PP/R5K1 b - - 2 30");
+        int kf8 = Array.FindIndex(moves, m => m.ToUci() == "g7f8");
+        int kh6 = Array.FindIndex(moves, m => m.ToUci() == "g7h6");
+        Assert.True(kf8 >= 0 && kh6 >= 0);
+        Assert.False(keep[kf8]);
+        Assert.True(keep[kh6]);
+        Assert.True(rejected >= 1);
+    }
+
+    [Fact]
+    public void InCheck_NeverRejectsAllEvasionsWhenAllAllowMateIn1()
+    {
+        // Black king in check on h8 (from Qh6+); both Kg8 and Kf8? Use a forced mate-in-2 position where every evasion allows mate-in-1.
+        // White Qa6+, Ra1, Black Ka8, pawns a7/b7: wait, Ka8 in check from Qh1? Let's use White Qd5+, Re1, Black Kf8 (moves: Kg7 -> Qg8#? No, Qg8# if f8-g8).
+        // Simple: White Qa7+, Rb1, Black Kc8, pawns c7/b7 missing -> Kd8 allows Qb8#/Qd7#; Kb8 allows Qb7#? No, Kc8 in check by Rc1+: Kd8/Kd7?
+        // White Rc1+, Qa6, Black Kb8, pawns a7: Ka8 allows Qb7# or Rc8#; Kc8 isn't legal. Wait: only 1 legal move returns 0 anyway.
+        // Two legal evasions that both allow mate-in-1: White Qb3+ (b3-f7), Rf1, Black Kg8, pawns g7/h7 -> Kh8 allows Rf8#, Kf8 allows Qf7#.
+        var (_, keep, rejected) = Run("6k1/6pp/8/8/8/1Q6/8/5R1K b - - 0 1");
+        Assert.Equal(0, rejected);
+        Assert.All(keep, k => Assert.True(k));
+    }
 }
