@@ -252,4 +252,45 @@ public unsafe class NnueV2Tests
             }
         }
     }
+
+    [Fact]
+    public void MultiTierNnueEvaluator_ReloadAfterWorkerCreation_UpdatesWorkerWeightsAndFinnyTableSafely()
+    {
+        string tempRoot = Path.Combine(Path.GetTempPath(), $"anak_nnue_reload_{Guid.NewGuid():N}");
+        string dir1 = Path.Combine(tempRoot, "net1");
+        string dir2 = Path.Combine(tempRoot, "net2");
+        Directory.CreateDirectory(dir1);
+        Directory.CreateDirectory(dir2);
+
+        try
+        {
+            System.IO.File.WriteAllBytes(Path.Combine(dir1, "anak.nnue"), BuildSyntheticV2Network(hiddenDim: 256, kingBuckets: 16, outputBuckets: 8, seed: 101));
+            System.IO.File.WriteAllBytes(Path.Combine(dir2, "anak.nnue"), BuildSyntheticV2Network(hiddenDim: 256, kingBuckets: 16, outputBuckets: 8, seed: 202));
+
+            using var parent = new MultiTierNnueEvaluator(dir1);
+            using var worker = (MultiTierNnueEvaluator)parent.CreateWorkerInstance();
+            Board board = Fen.Parse("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+
+            worker.InitSearch(in board);
+            Value evalBefore = worker.Evaluate(in board);
+
+            Assert.True(parent.LoadFromDirectory(dir2));
+            Assert.Same(parent.ActiveWeights, worker.ActiveWeights);
+
+            parent.InitSearch(in board);
+            worker.InitSearch(in board);
+
+            Value parentEvalAfter = parent.Evaluate(in board);
+            Value workerEvalAfter = worker.Evaluate(in board);
+            Assert.Equal(parentEvalAfter, workerEvalAfter);
+            Assert.NotEqual(evalBefore, workerEvalAfter);
+        }
+        finally
+        {
+            if (Directory.Exists(tempRoot))
+            {
+                Directory.Delete(tempRoot, recursive: true);
+            }
+        }
+    }
 }

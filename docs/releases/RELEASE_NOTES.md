@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.0` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.1` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,12 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.1` (2026-11-24) — Multi-Threaded `NnuePath` Reload Fix
+- **Category:** Bugfix (Patch Release; Full Notes: [`RELEASE_v1.2.1.md`](RELEASE_v1.2.1.md))
+- **Highlights:**
+  - **Fixed `AccessViolationException` in `NnueFinnyTable.EnsureInitialized` (`MultiTierNnueEvaluator.cs`):** Worker evaluator instances previously copied `_weights` by value during `CreateWorkerInstance()`. Sending `setoption name NnuePath` after `Threads > 1` disposed the old `NnueWeights` native memory on the parent while helper threads (`RunHelperSearch`) still held the freed reference. Worker evaluators now read `CurrentWeights`, `UseNnue`, `NnueDirectory`, `Tablebase`, and `Routing` from their parent evaluator, and old weights are disposed only after the volatile reference is swapped.
+  - **Regression Tests (`NnueV2Tests.cs`, `AlphaBetaTests.cs`):** Added unit and UCI multi-threaded (`Threads=4`) regression tests covering `NnuePath` reloads after worker creation.
 
 ### `v1.2.0` (2026-11-24) — Milestone Release (`ArchV2` Pairwise-1024 INT16 NNUE, Finny Tables & `v1.1.0` → `v1.2.0` Consolidation)
 - **Category:** Major Milestone Release (Full Notes: [`RELEASE_v1.2.0.md`](RELEASE_v1.2.0.md))

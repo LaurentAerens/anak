@@ -352,4 +352,26 @@ public class AlphaBetaTests
         int rHigher = engine.GetLmrReduction(10, 10);
         Assert.True(rHigher >= rDefault);
     }
+
+    [Fact]
+    public async Task Uci_SetNnuePathAfterThreadsGreaterThanOne_SearchesWithoutCrash()
+    {
+        var completed = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var adapter = new UciEngineAdapter(line =>
+        {
+            if (line.StartsWith("bestmove ", StringComparison.Ordinal))
+            {
+                completed.TrySetResult(line);
+            }
+        });
+
+        adapter.Options.TrySetValue("OwnBook", "false");
+        adapter.Options.TrySetValue("Threads", "4");
+        adapter.Options.TrySetValue("NnuePath", "./networks");
+        adapter.StartSearch(new SearchLimits { Depth = 4 });
+
+        string bestMoveLine = await completed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.StartsWith("bestmove ", bestMoveLine);
+        adapter.StopSearch();
+    }
 }

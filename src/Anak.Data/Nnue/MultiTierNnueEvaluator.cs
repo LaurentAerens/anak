@@ -18,7 +18,8 @@ namespace Anak.Data.Nnue;
 [SkipLocalsInit]
 public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrementalEvaluator, IDisposable
 {
-    private NnueWeights? _weights;
+    private readonly MultiTierNnueEvaluator? _parent;
+    private volatile NnueWeights? _weights;
     private readonly DefaultEvaluator _fallbackEvaluator;
     private short* _stackWhite;
     private short* _stackBlack;
@@ -29,45 +30,67 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     private int _stackDepth = -1;
     private bool _disposed;
     private readonly bool _ownsWeights = true;
-
-    public bool UseNnue { get; set; } = true;
-    public string NnueDirectory { get; set; } = "./networks";
-    public SyzygyTablebase? Tablebase { get; set; }
-    public ExpertRouting Routing { get => _routing; set => _routing = value ?? ExpertRouting.Default; }
+    private volatile bool _useNnue = true;
+    private string _nnueDirectory = "./networks";
+    private SyzygyTablebase? _tablebase;
     private volatile ExpertRouting _routing = ExpertRouting.Default;
+
+    private NnueWeights? CurrentWeights => _parent != null ? _parent._weights : _weights;
+
+    public bool UseNnue
+    {
+        get => _parent != null ? _parent.UseNnue : _useNnue;
+        set { if (_parent != null) _parent.UseNnue = value; else _useNnue = value; }
+    }
+    public string NnueDirectory
+    {
+        get => _parent != null ? _parent.NnueDirectory : _nnueDirectory;
+        set { if (_parent != null) _parent.NnueDirectory = value; else _nnueDirectory = value; }
+    }
+    public SyzygyTablebase? Tablebase
+    {
+        get => _parent != null ? _parent.Tablebase : _tablebase;
+        set { if (_parent != null) _parent.Tablebase = value; else _tablebase = value; }
+    }
+    public ExpertRouting Routing
+    {
+        get => _parent != null ? _parent.Routing : _routing;
+        set
+        {
+            ExpertRouting next = value ?? ExpertRouting.Default;
+            if (_parent != null) _parent.Routing = next;
+            else _routing = next;
+        }
+    }
 
     public NnueExpertType ActiveRootExpert { get; private set; } = NnueExpertType.Closed;
 
-    public bool IsUnifiedMoE => _weights != null;
-    public bool HasMoeModel => _weights != null;
-    public bool HasOpenModel => _weights != null;
-    public bool HasClosedModel => _weights != null;
-    public bool HasEndgameModel => _weights != null;
-    public bool HasQueenlessModel => _weights != null;
-    public bool HasImbalanceModel => _weights != null;
-    public bool HasAttackModel => _weights != null;
-    public bool IsActive => UseNnue && _weights != null;
-    public NnueWeights? ActiveWeights => _weights;
+    public bool IsUnifiedMoE => CurrentWeights != null;
+    public bool HasMoeModel => CurrentWeights != null;
+    public bool HasOpenModel => CurrentWeights != null;
+    public bool HasClosedModel => CurrentWeights != null;
+    public bool HasEndgameModel => CurrentWeights != null;
+    public bool HasQueenlessModel => CurrentWeights != null;
+    public bool HasImbalanceModel => CurrentWeights != null;
+    public bool HasAttackModel => CurrentWeights != null;
+    public bool IsActive => UseNnue && CurrentWeights != null;
+    public NnueWeights? ActiveWeights => CurrentWeights;
 
     public MultiTierNnueEvaluator(string? networkDir = null)
     {
         _fallbackEvaluator = new DefaultEvaluator();
         string dirToLoad = !string.IsNullOrWhiteSpace(networkDir) ? networkDir : NnueDirectory;
         LoadFromDirectory(dirToLoad);
-        EnsureStackCapacity(_weights?.HiddenDim ?? NnueConstants.V2DefaultHiddenDim);
+        EnsureStackCapacity(CurrentWeights?.HiddenDim ?? NnueConstants.V2DefaultHiddenDim);
     }
 
     private MultiTierNnueEvaluator(MultiTierNnueEvaluator parent)
     {
+        _parent = parent;
         _ownsWeights = false;
-        _weights = parent._weights;
         _fallbackEvaluator = parent._fallbackEvaluator;
-        UseNnue = parent.UseNnue;
-        NnueDirectory = parent.NnueDirectory;
-        Tablebase = parent.Tablebase;
         ActiveRootExpert = parent.ActiveRootExpert;
-        Routing = parent.Routing;
-        EnsureStackCapacity(_weights?.HiddenDim ?? NnueConstants.V2DefaultHiddenDim);
+        EnsureStackCapacity(CurrentWeights?.HiddenDim ?? NnueConstants.V2DefaultHiddenDim);
     }
 
     public IIncrementalEvaluator CreateWorkerInstance() => new MultiTierNnueEvaluator(this);
@@ -91,6 +114,11 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     /// </summary>
     public bool LoadFromDirectory(string directoryPath)
     {
+        if (_parent != null)
+        {
+            return _parent.LoadFromDirectory(directoryPath);
+        }
+
         string? resolvedDir = ResolveDirectory(directoryPath);
         if (resolvedDir != null)
         {
@@ -101,15 +129,21 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
                 NnueWeights? loaded = NnueWeights.LoadFromFile(anakPath);
                 if (loaded != null)
                 {
-                    if (_ownsWeights) _weights?.Dispose();
+                    NnueWeights? oldWeights = _weights;
                     _weights = loaded;
+                    if (_ownsWeights) oldWeights?.Dispose();
                 }
             }
         }
 
         if (_weights == null)
         {
-            TryLoadEmbeddedModel("anak.nnue", ref _weights);
+            NnueWeights? embedded = null;
+            TryLoadEmbeddedModel("anak.nnue", ref embedded);
+            if (embedded != null)
+            {
+                _weights = embedded;
+            }
         }
 
         if (resolvedDir == null && IsActive)
@@ -185,20 +219,20 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public NnueExpertType ClassifyBoard(in Board board) => PawnTopology.ClassifyExpert(in board, _routing);
+    public NnueExpertType ClassifyBoard(in Board board) => PawnTopology.ClassifyExpert(in board, Routing);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public NnueWeights? GetExpertWeights(NnueExpertType expert, in Board board) => _weights;
+    public NnueWeights? GetExpertWeights(NnueExpertType expert, in Board board) => CurrentWeights;
 
     public void SetRootTopology(in Board rootBoard)
     {
-        ActiveRootExpert = PawnTopology.ClassifyExpert(in rootBoard, _routing);
+        ActiveRootExpert = PawnTopology.ClassifyExpert(in rootBoard, Routing);
     }
 
     public void InitSearch(in Board rootBoard)
     {
         SetRootTopology(in rootBoard);
-        NnueWeights? weights = _weights;
+        NnueWeights? weights = CurrentWeights;
         if (weights != null)
         {
             EnsureStackCapacity(weights.HiddenDim);
@@ -217,7 +251,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
     public void PushMove(Move move, Piece movedPiece, Piece capturedPiece, in Board boardAfter)
     {
         if (_stackDepth < 0 || _stackDepth >= 254) return;
-        NnueWeights? weights = _weights;
+        NnueWeights? weights = CurrentWeights;
         if (weights == null) return;
 
         int dim = weights.HiddenDim;
@@ -237,7 +271,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
     public void PushNullMove(in Board boardAfter)
     {
-        if (_stackDepth < 0 || _stackDepth >= 254 || _weights == null) return;
+        if (_stackDepth < 0 || _stackDepth >= 254 || CurrentWeights == null) return;
         int nextDepth = _stackDepth + 1;
         _stackSlot[nextDepth] = _stackSlot[_stackDepth];
         _stackDepth = nextDepth;
@@ -262,7 +296,7 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
 
     public Value Evaluate(in Board board)
     {
-        NnueWeights? weights = _weights;
+        NnueWeights? weights = CurrentWeights;
         if (!UseNnue || weights == null)
         {
             return _fallbackEvaluator.Evaluate(in board, ReadOnlySpan<Move>.Empty);
@@ -293,7 +327,11 @@ public sealed unsafe class MultiTierNnueEvaluator : IMultiTierEvaluator, IIncrem
             if (_stackWhite != null) { NativeMemory.AlignedFree(_stackWhite); _stackWhite = null; }
             if (_stackBlack != null) { NativeMemory.AlignedFree(_stackBlack); _stackBlack = null; }
             _finnyTable.Dispose();
-            if (_ownsWeights) _weights?.Dispose();
+            if (_ownsWeights)
+            {
+                _weights?.Dispose();
+                _weights = null;
+            }
             _disposed = true;
         }
     }
