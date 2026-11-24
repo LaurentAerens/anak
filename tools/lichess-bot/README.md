@@ -10,7 +10,7 @@ Containerized [`lichess-bot`](https://github.com/lichess-bot-devs/lichess-bot) r
 ## Files
 
 - [`Dockerfile`](Dockerfile) — Multi-stage build: compiles `src/Zanak/Zanak.csproj` for `linux-x64` on `.NET 11` and packages it with `lichess-bot`, `networks/*.nnue`, `syzygy/`, and `book.bin`.
-- [`config.yml.template`](config.yml.template) — `lichess-bot` configuration tuned for Zanak (`ponder: false`, `Threads: 2`, `Hash: 128`, PolyGlot `book.bin`, Syzygy 3–4 piece tablebases).
+- [`config.yml.template`](config.yml.template) — `lichess-bot` configuration tuned for Zanak (`ponder: false`, `Threads: 2`, `Hash: 128`, PolyGlot `rodent.bin` + `book.bin` with `uniform_random` selection up to 6 moves, Syzygy 3–4 piece tablebases).
 - [`entrypoint.sh`](entrypoint.sh) — Injects `LICHESS_BOT_TOKEN` into `config.yml` at startup and launches `lichess-bot.py`.
 - [`deploy-aci.ps1`](deploy-aci.ps1) — One-command Azure deployment using `az acr build` + `az container create`.
 

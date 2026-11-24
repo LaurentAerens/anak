@@ -15,10 +15,11 @@ engine:
     enabled: true
     book:
       standard:
+        - "/app/engine/rodent.bin"
         - "/app/engine/book.bin"
     min_weight: 1
-    selection: "weighted_random"
-    max_depth: 8
+    selection: "uniform_random"
+    max_depth: 6
     normalization: "none"
 
   uci_options:

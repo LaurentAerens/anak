@@ -39,9 +39,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 https://github.com/lichess-bot-devs/lichess-bot.git /app/lichess-bot \
     && pip install --no-cache-dir -r /app/lichess-bot/requirements.txt
 
-# Copy published Zanak engine (includes networks/*.nnue), book, and Syzygy tablebases
+# Copy published Zanak engine (includes networks/*.nnue), books, and Syzygy tablebases
 COPY --from=build /out/engine /app/engine
 COPY book.bin /app/engine/book.bin
+RUN python3 -c "import urllib.request; urllib.request.urlretrieve('https://raw.githubusercontent.com/michaeldv/donna_opening_books/master/rodent.bin', '/app/engine/rodent.bin')"
 COPY syzygy/ /app/engine/syzygy/
 
 # Copy bot configuration template and entrypoint
