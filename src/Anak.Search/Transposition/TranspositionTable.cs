@@ -8,19 +8,38 @@ namespace Anak.Search;
 /// <summary>
 /// Packed 20-byte raw slot in a 64-byte TT cluster, using lockless XOR checksums
 /// to prevent torn reads/writes under 100+ concurrent threads.
+/// Stored as 32-bit words so every field is 4-byte aligned across all 3 slots
+/// (Slot1 starts at byte offset 20, which would fault 64-bit LDAR/STLR on ARM64).
 /// </summary>
 [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 20)]
 public struct TTRawSlot
 {
-    public ulong KeyXor;
-    public ulong DataLo;
+    public uint KeyXorLo;
+    public uint KeyXorHi;
+    public uint DataLo0;
+    public uint DataLo1;
     public uint DataHi;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static ulong ReadVolatileUInt64(in uint lo, in uint hi)
+    {
+        ulong low = Volatile.Read(ref Unsafe.AsRef(in lo));
+        ulong high = Volatile.Read(ref Unsafe.AsRef(in hi));
+        return low | (high << 32);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void WriteVolatileUInt64(ref uint lo, ref uint hi, ulong value)
+    {
+        Volatile.Write(ref lo, (uint)value);
+        Volatile.Write(ref hi, (uint)(value >> 32));
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly bool TryRead(ulong key, out TTEntry entry)
     {
-        ulong keyXor = Volatile.Read(ref Unsafe.AsRef(in KeyXor));
-        ulong dataLo = Volatile.Read(ref Unsafe.AsRef(in DataLo));
+        ulong keyXor = ReadVolatileUInt64(in KeyXorLo, in KeyXorHi);
+        ulong dataLo = ReadVolatileUInt64(in DataLo0, in DataLo1);
         uint dataHi = Volatile.Read(ref Unsafe.AsRef(in DataHi));
 
         if ((keyXor ^ dataLo ^ dataHi) == key)
@@ -41,8 +60,8 @@ public struct TTRawSlot
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public readonly bool TryReadRaw(out ulong key, out ulong dataLo, out uint dataHi)
     {
-        ulong keyXor = Volatile.Read(ref Unsafe.AsRef(in KeyXor));
-        dataLo = Volatile.Read(ref Unsafe.AsRef(in DataLo));
+        ulong keyXor = ReadVolatileUInt64(in KeyXorLo, in KeyXorHi);
+        dataLo = ReadVolatileUInt64(in DataLo0, in DataLo1);
         dataHi = Volatile.Read(ref Unsafe.AsRef(in DataHi));
         key = keyXor ^ dataLo ^ dataHi;
         byte depth = (byte)(dataLo >> 48);
@@ -54,9 +73,9 @@ public struct TTRawSlot
     public void Write(ulong key, Move bestMove, byte depth, short score, byte age, TTFlags flags, byte expertId, short staticEval)
     {
         TTEntry.Pack(key, bestMove, depth, score, age, flags, expertId, staticEval, out ulong keyXor, out ulong dataLo, out uint dataHi);
-        Volatile.Write(ref DataLo, dataLo);
+        WriteVolatileUInt64(ref DataLo0, ref DataLo1, dataLo);
         Volatile.Write(ref DataHi, dataHi);
-        Volatile.Write(ref KeyXor, keyXor);
+        WriteVolatileUInt64(ref KeyXorLo, ref KeyXorHi, keyXor);
     }
 }
 
