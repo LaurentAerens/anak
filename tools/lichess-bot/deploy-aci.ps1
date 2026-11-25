@@ -11,13 +11,15 @@
 #>
 [CmdletBinding()]
 param(
+    [ValidateSet("zanak", "anak")]
+    [string]$Engine = "zanak",
     [string]$Subscription = "",
     [string]$ResourceGroup = "zanak-bot-rg",
     [string]$Location = "westeurope",
     [Parameter(Mandatory = $true)]
     [string]$AcrName,
-    [string]$ContainerName = "zanak-lichess-bot",
-    [string]$ImageTag = "zanak-lichess-bot:latest",
+    [string]$ContainerName = "",
+    [string]$ImageTag = "",
     [double]$Cpu = 2,
     [double]$MemoryGb = 1.5,
     [switch]$LocalBuild,
@@ -26,6 +28,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($ContainerName)) {
+    $ContainerName = "$Engine-lichess-bot"
+}
+if ([string]::IsNullOrWhiteSpace($ImageTag)) {
+    $ImageTag = "${Engine}-lichess-bot:latest"
+}
 
 $SubArgs = @()
 if (-not [string]::IsNullOrWhiteSpace($Subscription)) {
@@ -46,8 +55,8 @@ $AcrUser = az acr credential show @SubArgs --name $AcrName --query username -o t
 $AcrPassword = az acr credential show @SubArgs --name $AcrName --query "passwords[0].value" -o tsv --only-show-errors
 
 if ($LocalBuild) {
-    Write-Host "3/4 Building and pushing '$AcrServer/$ImageTag' locally via Docker..."
-    docker build -f (Join-Path $RepoRoot "tools\lichess-bot\Dockerfile") -t "$AcrServer/$ImageTag" $RepoRoot
+    Write-Host "3/4 Building and pushing '$AcrServer/$ImageTag' (engine=$Engine) locally via Docker..."
+    docker build -f (Join-Path $RepoRoot "tools\lichess-bot\Dockerfile") --build-arg ENGINE=$Engine -t "$AcrServer/$ImageTag" $RepoRoot
     if ($LASTEXITCODE -ne 0) { throw "docker build failed." }
 
     $AcrPassword | docker login $AcrServer --username $AcrUser --password-stdin
@@ -57,10 +66,11 @@ if ($LocalBuild) {
     if ($LASTEXITCODE -ne 0) { throw "docker push failed." }
 }
 else {
-    Write-Host "3/4 Building container image '$ImageTag' in ACR (no local Docker daemon required)..."
+    Write-Host "3/4 Building container image '$ImageTag' (engine=$Engine) in ACR (no local Docker daemon required)..."
     az acr build @SubArgs `
         --registry $AcrName `
         --image $ImageTag `
+        --build-arg "ENGINE=$Engine" `
         --file (Join-Path $RepoRoot "tools\lichess-bot\Dockerfile") `
         --only-show-errors `
         $RepoRoot

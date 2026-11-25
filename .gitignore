@@ -112,6 +112,8 @@ build/
 .ipynb_checkpoints/
 
 # Temporary / Scratch Files
+.env
+.env.*
 scratch/
 tmp/
 temp/
@@ -130,6 +132,14 @@ weakness_report.html
 weakness_report.md
 campaign_state.json
 *spsa_progress*.json
+config.json
+tools/reference_engines/
+tools/tuning/routing_run*/
+tools/tuning/threshold_spsa/
+tools/tuning/spsa_*.json
+tools/zanak_policy/spine_dump.jsonl
+tools/zanak_policy/telemetry_results.*
+tools/zanak_policy/telemetry_summary.md
 
 ## OS-generated files
 .DS_Store

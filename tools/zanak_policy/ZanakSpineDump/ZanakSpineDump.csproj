@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ZanakSpineDump</RootNamespace>
+    <AssemblyName>ZanakSpineDump</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\Zanak\Zanak.csproj" />
+    <ProjectReference Include="..\..\..\src\Anak.Core\Anak.Core.csproj" />
+    <ProjectReference Include="..\..\..\src\Anak.Data\Anak.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\..\networks\*.nnue" Link="networks\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" Condition="Exists('..\..\..\networks')" />
+  </ItemGroup>
+
+</Project>

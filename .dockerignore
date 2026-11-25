@@ -9,6 +9,7 @@
 !src/
 !src/Anak.Core/**
 !src/Anak.Data/**
+!src/Anak.Protocol/**
 !src/Anak.Search/**
 !src/Zanak/**
 !tools/

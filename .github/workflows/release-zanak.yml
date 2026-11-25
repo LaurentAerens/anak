@@ -28,7 +28,6 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '11.0.x'
-          dotnet-quality: 'preview'
 
       - name: Restore dependencies
         run: dotnet restore tests/Anak.Tests/Anak.Tests.csproj
@@ -85,7 +84,6 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '11.0.x'
-          dotnet-quality: 'preview'
 
       - name: Install Linux NativeAOT prerequisites
         if: runner.os == 'Linux'
