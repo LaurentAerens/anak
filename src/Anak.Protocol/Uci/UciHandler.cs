@@ -249,8 +249,8 @@ public sealed class UciHandler
             }
             else if (token == "ponder")
             {
-                // Ponder mode: runs until stop or ponderhit
-                limits.Infinite = true;
+                // Ponder mode: runs until stop or ponderhit (which arms the saved clock budget)
+                limits.Ponder = true;
             }
             else if (i + 1 < tokens.Length)
             {

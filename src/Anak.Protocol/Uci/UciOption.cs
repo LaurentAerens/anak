@@ -315,8 +315,8 @@ public sealed class UciOptionRegistry
     public UciOptionRegistry()
     {
         SearchTraceFile = new StringOption("SearchTraceFile", defaultValue: string.Empty);
-        Hash = new SpinOption("Hash", defaultValue: 64, min: 1, max: 65536);
-        Threads = new SpinOption("Threads", defaultValue: 1, min: 1, max: 256);
+        Hash = new SpinOption("Hash", defaultValue: 64, min: 1, max: 4194304);
+        Threads = new SpinOption("Threads", defaultValue: 1, min: 1, max: 1024);
         OwnBook = new CheckOption("OwnBook", defaultValue: true);
         BookFile = new StringOption("BookFile", defaultValue: "book.bin");
         BookMode = new ComboOption("BookMode", defaultValue: "WeightedRandom", ["WeightedRandom", "BestMove", "UniformRandom"]);

@@ -16,6 +16,7 @@ public sealed class TimeManager
     private long _baseHardLimitMs;
     private long _maxAllowedMs;
     private bool _hasTimeLimit;
+    private volatile bool _isPondering;
     private Move _lastBestMove = Move.Null;
     private int _stableMoveDepths;
     private bool _hadFailLowThisIter;
@@ -67,6 +68,7 @@ public sealed class TimeManager
         _lastBestMove = Move.Null;
         _stableMoveDepths = 0;
         _hadFailLowThisIter = false;
+        _isPondering = limits.Ponder;
 
         if (limits.Infinite)
         {
@@ -270,12 +272,24 @@ public sealed class TimeManager
     }
 
     /// <summary>
+    /// Transitions out of ponder mode on UCI 'ponderhit', restarting the clock for the budgeted time.
+    /// </summary>
+    public void PonderHit()
+    {
+        if (_isPondering)
+        {
+            _stopwatch.Restart();
+            _isPondering = false;
+        }
+    }
+
+    /// <summary>
     /// Checks periodically whether the hard time limit has been exceeded.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool ShouldStop(ulong nodes)
     {
-        if (!_hasTimeLimit) return false;
+        if (!_hasTimeLimit || _isPondering) return false;
         if ((nodes & CheckMask) != 0) return false;
 
         return _stopwatch.ElapsedMilliseconds >= _hardLimitMs;
@@ -287,7 +301,7 @@ public sealed class TimeManager
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsSoftTimeUp()
     {
-        if (!_hasTimeLimit) return false;
+        if (!_hasTimeLimit || _isPondering) return false;
         return _stopwatch.ElapsedMilliseconds >= _softLimitMs;
     }
 
@@ -297,7 +311,7 @@ public sealed class TimeManager
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsHardTimeUp()
     {
-        if (!_hasTimeLimit) return false;
+        if (!_hasTimeLimit || _isPondering) return false;
         return _stopwatch.ElapsedMilliseconds >= _hardLimitMs;
     }
 }

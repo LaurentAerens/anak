@@ -27,7 +27,7 @@ namespace Anak.Search;
 /// - Lock-free Lazy SMP multi-threaded search sharing the Transposition Table
 /// </summary>
 [SkipLocalsInit]
-public sealed class AlphaBetaEngine : ISearchEngine
+public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
 {
     public const int MaxSearchDepth = 128;
     public const int MaxStackSize = 256;
@@ -39,6 +39,11 @@ public sealed class AlphaBetaEngine : ISearchEngine
     private int _threads = 1;
     private volatile bool _stopped;
     private SearchWorker[] _workers;
+    private Board _sharedSearchBoard;
+    private SearchLimits _sharedSearchLimits;
+    private CancellationToken _sharedSearchToken;
+    private int _activeHelpers;
+    private readonly ManualResetEventSlim _helpersDoneEvent = new(true);
 
     private int _lmrBase = SearchHeuristics.TunedLmrBase;
     private int _lmrDivision = SearchHeuristics.TunedLmrDivision;
@@ -86,6 +91,8 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsTimeUp() => _stopped || _timeManager.IsHardTimeUp();
+
+    public void PonderHit() => _timeManager.PonderHit();
 
     public int LmrBase
     {
@@ -327,12 +334,37 @@ public sealed class AlphaBetaEngine : ISearchEngine
 
     private void InitWorkers(int count)
     {
+        if (_workers != null)
+        {
+            foreach (var oldWorker in _workers)
+            {
+                oldWorker.Dispose();
+            }
+        }
+
         var workers = new SearchWorker[count];
         for (int i = 0; i < count; i++)
         {
             workers[i] = new SearchWorker(i, this, _evaluator, _tt);
+            if (i > 0)
+            {
+                workers[i].StartHelperThread();
+            }
         }
         _workers = workers;
+    }
+
+    public void Dispose()
+    {
+        if (_workers != null)
+        {
+            foreach (var worker in _workers)
+            {
+                worker.Dispose();
+            }
+            _workers = [];
+        }
+        _helpersDoneEvent.Dispose();
     }
 
     /// <summary>
@@ -453,26 +485,24 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 return singleMove;
             }
 
-            if (_timeManager.HasTimeLimit && !limits.Infinite && !limits.HasDepthLimit && !limits.HasNodeLimit)
+            if (_timeManager.HasTimeLimit && !limits.Infinite && !limits.Ponder && !limits.HasDepthLimit && !limits.HasNodeLimit)
             {
                 _timeManager.CapForSingleMove(maxSoftMs: 5, maxHardMs: 10);
             }
         }
 
-        // 6. Launch Lazy SMP helper threads if Threads > 1
-        Task[]? helperTasks = null;
-        if (_threads > 1)
+        // 6. Wake persistent Lazy SMP helper threads if Threads > 1
+        bool hasHelpers = _threads > 1;
+        if (hasHelpers)
         {
-            SearchLimits searchLimits = limits;
-            helperTasks = new Task[_threads - 1];
+            _sharedSearchBoard = board;
+            _sharedSearchLimits = limits;
+            _sharedSearchToken = cancellationToken;
+            Volatile.Write(ref _activeHelpers, _threads - 1);
+            _helpersDoneEvent.Reset();
             for (int i = 1; i < _threads; i++)
             {
-                int workerId = i;
-                Board helperBoard = board;
-                helperTasks[i - 1] = Task.Run(() =>
-                {
-                    _workers[workerId].RunHelperSearch(in helperBoard, in searchLimits, cancellationToken);
-                }, cancellationToken);
+                _workers[i].Wake();
             }
         }
 
@@ -484,20 +514,12 @@ public sealed class AlphaBetaEngine : ISearchEngine
         }
         finally
         {
-            // A trace must not be closed while a helper is still writing, even on cancellation/error.
+            // Wait unconditionally for all helpers to finish so neither traces nor TT/worker state
+            // can be mutated or freed while a helper is still unwinding.
             _stopped = true;
-            if (helperTasks != null)
+            if (hasHelpers)
             {
-                try
-                {
-                    if (_searchTrace != null) Task.WaitAll(helperTasks);
-                    else Task.WaitAll(helperTasks, 500);
-                }
-                catch
-                {
-                    // Helper worker task exceptions or cancellations are safely swallowed.
-                    // Trace I/O failures are retained by the writer and rethrown at disposal.
-                }
+                _helpersDoneEvent.Wait();
             }
         }
 
@@ -617,7 +639,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
     /// Internal search worker containing per-thread state, stacks, and history tables.
     /// Pre-allocated once to guarantee zero heap allocations during search.
     /// </summary>
-    private sealed class SearchWorker
+    private sealed class SearchWorker : IDisposable
     {
         public readonly int Id;
         private readonly AlphaBetaEngine _engine;
@@ -626,6 +648,9 @@ public sealed class AlphaBetaEngine : ISearchEngine
         private readonly TranspositionTable _tt;
         internal readonly QuiescenceSearch _qsearch;
         private byte _activeExpertId;
+        private Thread? _thread;
+        private AutoResetEvent? _wakeEvent;
+        private volatile bool _disposing;
 
         public ulong Nodes;
         public ulong TbHits;
@@ -678,6 +703,57 @@ public sealed class AlphaBetaEngine : ISearchEngine
             _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval, engine.IsTimeUp);
             _qsearch.DeltaSafetyMargin = engine.QsDeltaMargin;
             _qsearch.EnableQsChecks = engine.EnableQsChecks;
+        }
+
+        public void StartHelperThread()
+        {
+            if (Id == 0 || _thread != null) return;
+            _wakeEvent = new AutoResetEvent(false);
+            _thread = new Thread(HelperThreadLoop)
+            {
+                Name = $"AnakWorker-{Id}",
+                IsBackground = true
+            };
+            _thread.Start();
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void Wake() => _wakeEvent?.Set();
+
+        private void HelperThreadLoop()
+        {
+            while (true)
+            {
+                _wakeEvent!.WaitOne();
+                if (_disposing) break;
+
+                try
+                {
+                    RunHelperSearch(in _engine._sharedSearchBoard, in _engine._sharedSearchLimits, _engine._sharedSearchToken);
+                }
+                catch
+                {
+                    // Helper worker exceptions or cancellations are safely swallowed.
+                }
+                finally
+                {
+                    if (Interlocked.Decrement(ref _engine._activeHelpers) == 0)
+                    {
+                        _engine._helpersDoneEvent.Set();
+                    }
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposing) return;
+            _disposing = true;
+            _wakeEvent?.Set();
+            _thread?.Join();
+            _wakeEvent?.Dispose();
+            _wakeEvent = null;
+            _thread = null;
         }
 
         public void SetQsDeltaMargin(int margin)
@@ -1380,7 +1456,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 if (_engine._stopped ||
                     cancellationToken.IsCancellationRequested ||
                     _engine._timeManager.IsHardTimeUp() ||
-                    (_engine._nodeLimit > 0 && _engine.GetTotalNodes() >= _engine._nodeLimit))
+                    (_engine._nodeLimit > 0 && (Id == 0 ? _engine.GetTotalNodes() >= _engine._nodeLimit : Nodes >= _engine._nodeLimit)))
                 {
                     _engine._stopped = true;
                     return 0;
@@ -1414,7 +1490,7 @@ public sealed class AlphaBetaEngine : ISearchEngine
                 BitOperations.PopCount(board.Occupied) <= _engine.Tablebase.MaxPieces &&
                 _stack[ply].ExcludedMove.IsNull)
             {
-                if (_engine.Tablebase.TryProbeWdl(in board, out int wdl))
+                if (_engine.Tablebase.TryProbeWdlNoCount(in board, out int wdl))
                 {
                     TbHits++;
                     int tbScore = wdl switch

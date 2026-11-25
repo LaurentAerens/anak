@@ -25,6 +25,12 @@ public interface ITablebaseProber
     bool TryProbeWdl(in Board board, out int wdl);
 
     /// <summary>
+    /// Probes the Win-Draw-Loss value without updating shared atomic hit counters.
+    /// Used by multi-threaded search workers that track per-worker TbHits locally.
+    /// </summary>
+    bool TryProbeWdlNoCount(in Board board, out int wdl) => TryProbeWdl(in board, out wdl);
+
+    /// <summary>
     /// Probes the root position: returns the tablebase-best move and the DTZ of the position.
     /// </summary>
     /// <param name="board">Board position to probe.</param>

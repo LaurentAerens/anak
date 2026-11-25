@@ -102,6 +102,9 @@ public sealed class SyzygyTablebase : ITablebaseProber
         return false;
     }
 
+    /// <inheritdoc />
+    public bool TryProbeWdlNoCount(in Board board, out int wdl) => _prober.TryProbeWdl(in board, out wdl);
+
     /// <summary>
     /// Probes the root position: returns the tablebase-best move and the DTZ of the position
     /// (positive = winning side to move, negative = losing, 0 = draw).

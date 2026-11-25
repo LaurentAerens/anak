@@ -415,13 +415,13 @@ public sealed class UciEngineAdapter
         {
             try
             {
-                // Await search task completion with a brief timeout to avoid deadlocks
-                if (_searchHasTrace) _searchTask.GetAwaiter().GetResult();
-                else _searchTask.Wait(500);
+                // Always wait for the active search task to exit before returning so subsequent
+                // NewGame / SetPosition / Hash Resize calls cannot race with unwinding helpers.
+                _searchTask.GetAwaiter().GetResult();
             }
             catch
             {
-                // Task cancellation or timeout exceptions are safely ignored
+                // Task cancellation exceptions are safely ignored
             }
             _searchTask = null;
         }
@@ -432,7 +432,7 @@ public sealed class UciEngineAdapter
     /// </summary>
     public void PonderHit()
     {
-        // When ponderhit arrives, search continues normally under existing clock limits
+        _alphaBetaEngine.PonderHit();
     }
 
     /// <summary>

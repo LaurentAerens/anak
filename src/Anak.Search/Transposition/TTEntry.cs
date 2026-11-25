@@ -128,6 +128,43 @@ public struct TTEntry
     public static short ClampEval(int rawEval)
         => rawEval != -Value.InfiniteValue ? (short)Math.Clamp(rawEval, -30000, 30000) : short.MinValue;
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void Pack(
+        ulong key,
+        Move bestMove,
+        byte depth,
+        short score,
+        byte age,
+        TTFlags flags,
+        byte expertId,
+        short staticEval,
+        out ulong keyXor,
+        out ulong dataLo,
+        out uint dataHi)
+    {
+        dataLo = (uint)(ushort)score
+            | ((ulong)(ushort)staticEval << 16)
+            | ((ulong)bestMove.RawValue << 32)
+            | ((ulong)depth << 48)
+            | ((ulong)age << 56);
+        dataHi = (uint)(byte)flags | ((uint)expertId << 8);
+        keyXor = key ^ dataLo ^ dataHi;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static TTEntry Unpack(ulong key, ulong dataLo, uint dataHi)
+    {
+        return new TTEntry(
+            key,
+            new Move((ushort)(dataLo >> 32)),
+            (byte)(dataLo >> 48),
+            (short)(ushort)dataLo,
+            (byte)(dataLo >> 56),
+            (TTFlags)(byte)dataHi,
+            (byte)(dataHi >> 8),
+            (short)(ushort)(dataLo >> 16));
+    }
+
     /// <summary>
     /// Resets the entry.
     /// </summary>

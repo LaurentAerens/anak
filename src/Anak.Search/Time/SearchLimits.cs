@@ -53,6 +53,11 @@ public struct SearchLimits
     /// </summary>
     public bool Infinite;
 
+    /// <summary>
+    /// True if search started in ponder mode (clock starts on ponderhit).
+    /// </summary>
+    public bool Ponder;
+
     public SearchLimits()
     {
         WhiteTime = -1;
@@ -64,6 +69,7 @@ public struct SearchLimits
         Depth = -1;
         Nodes = 0;
         Infinite = false;
+        Ponder = false;
     }
 
     /// <summary>
