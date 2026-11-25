@@ -30,7 +30,6 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '11.0.x'
-          dotnet-quality: 'preview'
 
       - name: dotnet restore
         run: dotnet restore
@@ -40,7 +39,7 @@ jobs:
         run: dotnet format --verify-no-changes
 
       - name: dotnet build -c Release --no-restore
-        run: dotnet build -c Release --no-restore
+        run: dotnet build -c Release --no-restore -p:DebugType=portable -p:DebugSymbols=true
 
       - name: dotnet test with coverage
         run: dotnet test -c Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
