@@ -137,6 +137,12 @@ public sealed unsafe class TranspositionTable : IDisposable
     /// Dynamically resizes the Transposition Table.
     /// </summary>
     /// <param name="sizeMb">Target size in Megabytes.</param>
+    /// <summary>
+    /// Number of threads used when clearing large transposition tables (&gt; 256 MB).
+    /// Defaults to 1 so single-threaded searches never spin up ThreadPool workers.
+    /// </summary>
+    public int ClearThreads { get; set; } = 1;
+
     public void Resize(int sizeMb)
     {
         if (sizeMb <= 0) sizeMb = DefaultSizeMb;
@@ -163,7 +169,7 @@ public sealed unsafe class TranspositionTable : IDisposable
         _mask = count - 1;
         nuint byteSize = (nuint)(count * 64);
         _clusters = (TTCluster*)NativeMemory.AlignedAlloc(byteSize, 64);
-        ParallelClear(_clusters, count);
+        ParallelClear(_clusters, count, ClearThreads);
         _currentAge = 1;
     }
 
@@ -184,20 +190,20 @@ public sealed unsafe class TranspositionTable : IDisposable
     {
         if (_clusters != null && _clusterCount > 0)
         {
-            ParallelClear(_clusters, _clusterCount);
+            ParallelClear(_clusters, _clusterCount, ClearThreads);
         }
     }
 
-    private static void ParallelClear(TTCluster* clusters, ulong clusterCount)
+    private static void ParallelClear(TTCluster* clusters, ulong clusterCount, int clearThreads)
     {
-        // For small tables (<= 4 MB), single-threaded clear avoids ThreadPool overhead
-        if (clusterCount <= 65536)
+        // For single-threaded mode or tables <= 256 MB, single-threaded clear avoids ThreadPool overhead
+        if (clearThreads <= 1 || clusterCount <= 4_194_304)
         {
             NativeMemory.Clear(clusters, (nuint)(clusterCount * 64));
             return;
         }
 
-        int workers = Math.Clamp(Environment.ProcessorCount, 1, 256);
+        int workers = Math.Clamp(clearThreads, 1, Math.Min(Environment.ProcessorCount, 256));
         ulong chunk = (clusterCount + (ulong)workers - 1) / (ulong)workers;
         Parallel.For(0, workers, i =>
         {

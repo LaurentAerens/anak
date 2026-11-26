@@ -1167,6 +1167,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.0_20261124_225534.pgn",
       "notes": "Zero-search-impact NNUE, Core, QS, and Search NPS optimizations (+11.85% NPS; +0 Elo within error margin over 8,000 games vs v1.2.0)"
+    },
+    "v1.2.3": {
+      "version": "v1.2.3",
+      "date": "2026-11-26",
+      "estimated_elo": 3264,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.2.2 (1T: +0.43 logistic in 8k; 4T: +6.69 logistic / +9.32 nElo in 8k, 99.18% LOS)",
+      "score": "4077.0 / 8000 (4T) | 4005.0 / 8000 (1T)",
+      "wins": 2525,
+      "losses": 2371,
+      "draws": 3104,
+      "perf_percent": 50.96,
+      "tc": "1+0.01 (4T / 1T)",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.2_20261125_202411.pgn",
+      "notes": "Lockless XOR-checksummed TT (TTRawSlot), persistent SMP workers, ClearThreads-gated ParallelClear, TryProbeWdlNoCount, PonderHit, and 1024-thread / 4TB hash scaling (+6.69 Elo at 4T, +0 Elo at 1T)"
     }
   }
 }

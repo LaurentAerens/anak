@@ -299,6 +299,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
             if (_threads != t)
             {
                 _threads = t;
+                _tt.ClearThreads = t;
                 InitWorkers(t);
             }
         }

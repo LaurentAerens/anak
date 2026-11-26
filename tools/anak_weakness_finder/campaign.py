@@ -164,12 +164,15 @@ def run_full_campaign(
 
             # Check if an existing PGN archive already exists for this tier (e.g. from interrupted run)
             existing_pgns = sorted(
-                RESULTS_DIR.glob(f"weakness_ladder_sf{current_elo}_*.pgn"),
+                list(RESULTS_DIR.glob(f"weakness_ladder_stockfish_{current_elo}_*.pgn"))
+                + list(RESULTS_DIR.glob(f"weakness_ladder_sf{current_elo}_*.pgn")),
                 key=lambda p: p.stat().st_mtime,
                 reverse=True
             )
 
             pgn_output = None
+            opp_name = f"Stockfish-{current_elo}"
+            actual_elo = current_elo
             if existing_pgns and resume:
                 candidate = existing_pgns[0]
                 # Verify file has substantial size (> 500 KB)
@@ -179,7 +182,7 @@ def run_full_campaign(
                     pgn_output = candidate
 
             if pgn_output is None:
-                pgn_output = run_tier_match(
+                pgn_output, opp_name, actual_elo = run_tier_match(
                     target_elo=current_elo,
                     total_games=games_per_tier,
                     tc=tc,
@@ -195,8 +198,8 @@ def run_full_campaign(
             games_ingested, plies_ingested = ingest_pgn_file(
                 pgn_path=pgn_output,
                 match_id=match_id,
-                opponent_name=f"Stockfish-{current_elo}",
-                stockfish_elo=current_elo,
+                opponent_name=opp_name,
+                stockfish_elo=actual_elo,
                 time_control=tc,
                 db_path=db_path
             )

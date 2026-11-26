@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.2` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.3` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored** | **+6.69 Elo at 4T**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,16 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.3` (2026-11-26) — Lockless TT, Persistent SMP Workers & 1024-Thread / 4TB Hash Scaling
+- **Category:** Multi-Threading / Scalability (Patch Release; Full Notes: [`RELEASE_v1.2.3.md`](RELEASE_v1.2.3.md))
+- **Estimated Elo:** **3264 &plusmn; 5** (1T: `+0.43 ± 5.70` logistic / **+0 Elo** vs `v1.2.2`) | **`+6.69 ± 5.47` logistic Elo at `Threads=4`** (`99.18%` LOS)
+- **Validation:**
+  - **4T (`v1.2.3` vs `v1.2.2`, 8,000 games at `1+0.01`):** `4077.0 / 8000` (`50.96%`, `2525W / 2371L / 3104D`), **`+6.69 ± 5.47` logistic Elo** (`+9.32 ± 7.61` fastchess nElo, `99.18%` LOS, `0` timeouts vs `9`).
+  - **1T (`v1.2.3` vs `v1.2.2`, 8,000 games at `1+0.01`):** `4005.0 / 8000` (`50.06%`, `2643W / 2633L / 2724D`), `+0.43 ± 5.70` logistic Elo (**+0 Elo** within error margin).
+- **Highlights:**
+  - **Lockless XOR-Checksummed TT (`TranspositionTable.cs`, `TTEntry.cs`):** 32-bit word-aligned `TTRawSlot` prevents torn TT reads/writes across 1024 threads and unaligned 64-bit faults on ARM64.
+  - **Persistent SMP Workers & `ClearThreads` (`AlphaBetaEngine.cs`, `TranspositionTable.cs`):** Persistent `AutoResetEvent` worker threads, `ClearThreads`-gated `ParallelClear` (`Threads > 1` & `Hash > 256 MB`), `TryProbeWdlNoCount` per-worker `TbHits`, `PonderHit()`, and `1024` threads / `4 TB` hash UCI limits.
 
 ### `v1.2.2` (2026-11-25) — Zero-Search-Impact NNUE, Core, QS & Search NPS Optimizations (+11.85% NPS)
 - **Category:** Performance / Throughput (Patch Release; Full Notes: [`RELEASE_v1.2.2.md`](RELEASE_v1.2.2.md))
