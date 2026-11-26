@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.3` (Estimated Rating: **3264 Elo (1T) — Ordo CCRL-Anchored** | **+6.69 Elo at 4T**)  
+> **Current Active Version:** `v1.2.4` (Estimated Rating: **3265 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,14 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.4` (2026-11-27) — Quiescence Search Time-Up TT Corruption Fix & Exact QS Node Accounting
+- **Category:** Bugfix / Search Correctness (Patch Release; Full Notes: [`RELEASE_v1.2.4.md`](RELEASE_v1.2.4.md))
+- **Estimated Elo:** **3265 &plusmn; 5** (`+1.22 ± 5.69` logistic Elo / `+1.63 ± 7.61` fastchess nElo vs `v1.2.3` in 8,000 games)
+- **Validation (`v1.2.4` vs `v1.2.3`, 8,000 games at `1+0.01`):** `4014.0 / 8000` (`50.18%`, `2585W / 2557L / 2858D`, `66.24%` LOS, `Ptnml(0-2): [335, 868, 1578, 872, 347]`).
+- **Highlights:**
+  - **QS Abort TT Poisoning Fix (`QuiescenceSearch.cs`, `AlphaBetaEngine.cs`):** Latches `_stopped = true` inside `IsTimeUp()` and unwinds `QuiescenceSearch` via `_aborted` without writing partial or `0 >= beta` poisoned entries into the persistent Transposition Table, eliminating the exact `0.00` evaluation blunders identified by the Weakness Finder.
+  - **Single-Counted QS Nodes (`QuiescenceSearch.cs`, `AlphaBetaTests.cs`):** Eliminates the duplicate `++_qsNodes` increment per quiescence move while maintaining 100% bit-identical fixed-depth `BestMove` and `ScoreCp`.
 
 ### `v1.2.3` (2026-11-26) — Lockless TT, Persistent SMP Workers & 1024-Thread / 4TB Hash Scaling
 - **Category:** Multi-Threading / Scalability (Patch Release; Full Notes: [`RELEASE_v1.2.3.md`](RELEASE_v1.2.3.md))

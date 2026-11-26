@@ -37,7 +37,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
     private readonly TimeManager _timeManager;
 
     private int _threads = 1;
-    private volatile bool _stopped;
+    internal volatile bool _stopped;
     private SearchWorker[] _workers;
     private Board _sharedSearchBoard;
     private SearchLimits _sharedSearchLimits;
@@ -89,8 +89,23 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
         }
     }
 
+    public bool IsStopped
+    {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        get => _stopped;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool IsTimeUp() => _stopped || _timeManager.IsHardTimeUp();
+    public bool IsTimeUp()
+    {
+        if (_stopped) return true;
+        if (_timeManager.IsHardTimeUp())
+        {
+            _stopped = true;
+            return true;
+        }
+        return false;
+    }
 
     public void PonderHit() => _timeManager.PonderHit();
 
@@ -701,7 +716,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
             _continuationHistory = new ContinuationHistory();
             _correctionHistory = new CorrectionHistory();
             _counterMoves = new Move[16 * 64];
-            _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval, engine.IsTimeUp);
+            _qsearch = new QuiescenceSearch(_evaluator, tt, _correctionHistory, _incEval, engine.IsTimeUp, engine);
             _qsearch.DeltaSafetyMargin = engine.QsDeltaMargin;
             _qsearch.EnableQsChecks = engine.EnableQsChecks;
         }
@@ -1277,12 +1292,12 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
                     int searchDepth = Math.Max(0, nextDepth - r);
                     score = -AlphaBeta(ref board, searchDepth, -alpha - 1, -alpha, ply: 1, isPv: false, cancellationToken);
 
-                    if (score > alpha && searchDepth < nextDepth)
+                    if (!_engine._stopped && score > alpha && searchDepth < nextDepth)
                     {
                         score = -AlphaBeta(ref board, nextDepth, -alpha - 1, -alpha, ply: 1, isPv: false, cancellationToken);
                     }
 
-                    if (score > alpha)
+                    if (!_engine._stopped && score > alpha)
                     {
                         // Full window re-search on PVS fail-high
                         score = -AlphaBeta(ref board, nextDepth, -beta, -alpha, ply: 1, isPv: true, cancellationToken);
@@ -1885,7 +1900,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
                     int searchDepth = Math.Max(0, nextDepth - r);
                     score = -AlphaBeta(ref board, searchDepth, -alpha - 1, -alpha, ply + 1, isPv: false, cancellationToken, givesCheckState);
 
-                    if (score > alpha && searchDepth < nextDepth)
+                    if (!_engine._stopped && score > alpha && searchDepth < nextDepth)
                     {
                         bool doDeeperSearch = score > bestScore + 50 + 2 * nextDepth;
                         bool doShallowerSearch = score < bestScore + nextDepth;
@@ -1896,7 +1911,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
                         }
                     }
 
-                    if (isPv && score > alpha)
+                    if (!_engine._stopped && isPv && score > alpha)
                     {
                         // PVS re-search with full window on fail-high
                         score = -AlphaBeta(ref board, nextDepth, -beta, -alpha, ply + 1, isPv: true, cancellationToken, givesCheckState);

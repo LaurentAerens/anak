@@ -21,8 +21,11 @@ public sealed class QuiescenceSearch
     private readonly CorrectionHistory? _correctionHistory;
     private readonly IIncrementalEvaluator? _incEval;
     private readonly Func<bool>? _isTimeUp;
+    private readonly AlphaBetaEngine? _engine;
     private ulong _qsNodes;
+    private bool _aborted;
     public ulong Nodes { get => _qsNodes; set => _qsNodes = value; }
+    public bool IsAborted => _aborted;
     public SearchTraceWriter? SearchTrace { get; set; }
 
     public const int MaxQsDepth = 128;
@@ -40,13 +43,15 @@ public sealed class QuiescenceSearch
         TranspositionTable? tt = null,
         CorrectionHistory? correctionHistory = null,
         IIncrementalEvaluator? incEval = null,
-        Func<bool>? isTimeUp = null)
+        Func<bool>? isTimeUp = null,
+        AlphaBetaEngine? engine = null)
     {
         _evaluator = evaluator;
         _tt = tt;
         _correctionHistory = correctionHistory;
         _incEval = incEval ?? (evaluator as IIncrementalEvaluator);
         _isTimeUp = isTimeUp;
+        _engine = engine;
     }
 
     /// <summary>
@@ -55,8 +60,22 @@ public sealed class QuiescenceSearch
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public int Search(ref Board board, int alpha, int beta, int ply = 0, int qsDepth = 0, int knownInCheck = -1)
     {
-        if ((++_qsNodes & 511) == 0 && _isTimeUp != null && _isTimeUp())
+        if (qsDepth == 0)
         {
+            _aborted = _engine != null && _engine._stopped;
+            if (_aborted)
+            {
+                return 0;
+            }
+            if (_engine == null && _isTimeUp != null && _isTimeUp())
+            {
+                _aborted = true;
+                return 0;
+            }
+        }
+        else if (_aborted || (_engine != null && _engine._stopped))
+        {
+            _aborted = true;
             return 0;
         }
 
@@ -313,9 +332,11 @@ public sealed class QuiescenceSearch
 
             if (bestSlot < 0 || bestScore == int.MinValue) break;
 
-            if ((++_qsNodes & 511) == 0 && _isTimeUp != null && _isTimeUp())
+            ulong checkMask = _engine != null ? _engine.TimeManager.CheckMask : 511UL;
+            if (((++_qsNodes) & checkMask) == 0 && _isTimeUp != null && _isTimeUp())
             {
-                break;
+                _aborted = true;
+                return 0;
             }
 
             Move move = moves[candidateIndices[bestSlot]];
@@ -331,6 +352,12 @@ public sealed class QuiescenceSearch
 
             board.UnmakeMove(move, in state, movedPiece);
             _incEval?.RollbackTo(ply);
+
+            if (_aborted || (_engine != null && _engine._stopped))
+            {
+                _aborted = true;
+                return 0;
+            }
 
             if (score >= beta)
             {

@@ -374,4 +374,38 @@ public class AlphaBetaTests
         Assert.StartsWith("bestmove ", bestMoveLine);
         adapter.StopSearch();
     }
+
+    [Fact]
+    public void QuiescenceSearch_AbortOnTimeUp_DoesNotPoisonTranspositionTable()
+    {
+        // White is down a knight (-320 cp) with a 2-ply capture sequence (1. dxc5 dxc5); negative window [-150, -149]
+        // previously caused a child time-up at qsDepth=1 (returning 0) to trigger score(0) >= beta(-149) and store a fake LowerBound in TT.
+        var board = Fen.Parse("4k3/8/3p4/2n5/3P4/8/8/4K3 w - - 0 1");
+        using var tt = new TranspositionTable(1);
+        var eval = new Anak.Data.Evaluation.DefaultEvaluator();
+        int calls = 0;
+        var qsChildAbort = new QuiescenceSearch(eval, tt, isTimeUp: () => ++calls >= 2)
+        {
+            Nodes = 510,
+            EnableQsChecks = false
+        };
+
+        _ = qsChildAbort.Search(ref board, alpha: -150, beta: -149);
+
+        Assert.True(qsChildAbort.IsAborted);
+        Assert.False(tt.TryGet(board.ZobristKey, out _), "Aborted QuiescenceSearch must never write partial/0 scores into TT");
+    }
+
+    [Fact]
+    public void QuiescenceSearch_CountsExactlyOneNodePerCaptureSearched()
+    {
+        // Simple single non-checking capture position: White Rook on e1 captures undefended Black Queen on e2, then quiet.
+        var board = Fen.Parse("k7/8/8/8/8/8/4q3/4R1K1 w - - 0 1");
+        var eval = new Anak.Data.Evaluation.DefaultEvaluator();
+        var qs = new QuiescenceSearch(eval) { EnableQsChecks = false };
+
+        _ = qs.Search(ref board, -Value.InfiniteValue, Value.InfiniteValue);
+
+        Assert.Equal(1UL, qs.Nodes);
+    }
 }

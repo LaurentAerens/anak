@@ -1182,6 +1182,21 @@
       "tc": "1+0.01 (4T / 1T)",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.2_20261125_202411.pgn",
       "notes": "Lockless XOR-checksummed TT (TTRawSlot), persistent SMP workers, ClearThreads-gated ParallelClear, TryProbeWdlNoCount, PonderHit, and 1024-thread / 4TB hash scaling (+6.69 Elo at 4T, +0 Elo at 1T)"
+    },
+    "v1.2.4": {
+      "version": "v1.2.4",
+      "date": "2026-11-27",
+      "estimated_elo": 3265,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.2.3 (+1.22 logistic / +1.63 nElo in 8,000 games, 66.24% LOS)",
+      "score": "4014.0 / 8000",
+      "wins": 2585,
+      "losses": 2557,
+      "draws": 2858,
+      "perf_percent": 50.18,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.3_20261126_225113.pgn",
+      "notes": "QuiescenceSearch time-up TT corruption fix (_aborted propagation + latching IsTimeUp) and single-counted QS node accounting (+1.22 logistic Elo over 8,000 games vs v1.2.3)"
     }
   }
 }
