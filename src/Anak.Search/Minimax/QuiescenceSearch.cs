@@ -79,9 +79,11 @@ public sealed class QuiescenceSearch
             return 0;
         }
 
-        if (qsDepth > 0 && board.HalfmoveClock >= 4)
+        bool hasPriorOccurrence = false;
+        if (board.HalfmoveClock >= 4)
         {
-            if (board.IsFiftyMoveRule() || board.IsRepetition(ply))
+            bool isRep = board.IsRepetition(ply, out hasPriorOccurrence);
+            if (qsDepth > 0 && (board.IsFiftyMoveRule() || isRep))
             {
                 return 0;
             }
@@ -95,7 +97,7 @@ public sealed class QuiescenceSearch
         TTEntry entry = default;
         bool ttHit = _tt != null && _tt.TryGet(key, out entry);
         Move ttMove = ttHit ? entry.BestMove : Move.Null;
-        if (ttHit && entry.ExpertId == ActiveExpertId)
+        if (ttHit && !hasPriorOccurrence && entry.ExpertId == ActiveExpertId)
         {
             int ttScore = TTEntry.ScoreFromTt(entry.Score, ply);
             if (entry.Flags == TTFlags.Exact) return ttScore;

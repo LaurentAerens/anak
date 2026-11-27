@@ -1227,6 +1227,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.5_20261127_111059.pgn",
       "notes": "Bullet soft-limit double-contraction fix and configurable Move Overhead UCI option (0-5000ms, default 40ms) (+2.17 logistic Elo over 8,000 games vs v1.2.5)"
+    },
+    "v1.2.7": {
+      "version": "v1.2.7",
+      "date": "2026-11-27",
+      "estimated_elo": 3270,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.2.6 (+3.21 logistic / +4.33 nElo in 8,000 games, 86.74% LOS)",
+      "score": "4037.0 / 8000",
+      "wins": 2605,
+      "losses": 2531,
+      "draws": 2864,
+      "perf_percent": 50.46,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.6_20261127_122729.pgn",
+      "notes": "GHI / 2nd-occurrence repetition TT-cutoff guard in Board.IsRepetition, AlphaBetaEngine, and QuiescenceSearch (+3.21 logistic Elo over 8,000 games vs v1.2.6)"
     }
   }
 }

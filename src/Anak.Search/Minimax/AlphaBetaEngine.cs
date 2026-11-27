@@ -1533,6 +1533,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
 
             // 1. Repetition & Fifty-move draw detection
             // Must run before Quiescence Search so leaf moves (depth == 0) that repeat are scored as 0.
+            bool hasPriorOccurrence = false;
             if (ply > 0 && board.HalfmoveClock >= 4)
             {
                 if (board.IsFiftyMoveRule())
@@ -1543,7 +1544,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
                     }
                     return -Value.MateValue + ply;
                 }
-                if (board.IsRepetition(ply))
+                if (board.IsRepetition(ply, out hasPriorOccurrence))
                 {
                     return 0;
                 }
@@ -1649,8 +1650,8 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
             int ttScore = ttHit ? TTEntry.ScoreFromTt(entry.Score, ply) : 0;
             bool ttExpertMatch = ttHit && entry.ExpertId == _activeExpertId;
 
-            // TT Cutoff for non-PV nodes (only when evaluation expert matches active root expert)
-            if (!isPv && ttExpertMatch && entry.Depth >= depth && _stack[ply].ExcludedMove.IsNull)
+            // TT Cutoff for non-PV nodes (only when evaluation expert matches active root expert and no prior game-history occurrence)
+            if (!isPv && !hasPriorOccurrence && ttExpertMatch && entry.Depth >= depth && _stack[ply].ExcludedMove.IsNull)
             {
                 if (entry.Flags == TTFlags.Exact) return ttScore;
                 if (entry.Flags == TTFlags.LowerBound && ttScore >= beta) return ttScore;

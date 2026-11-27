@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.6` (Estimated Rating: **3267 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.7` (Estimated Rating: **3270 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.7` (2026-11-27) — GHI / 2nd-Occurrence Repetition TT-Cutoff Guard
+- **Category:** Search Correctness / Endgame (Patch Release; Full Notes: [`RELEASE_v1.2.7.md`](RELEASE_v1.2.7.md))
+- **Estimated Elo:** **3270 &plusmn; 5** (`+3.21 ± 5.65` logistic Elo / `+4.33 ± 7.61` fastchess nElo vs `v1.2.6` in 8,000 games)
+- **Validation (`v1.2.7` vs `v1.2.6`, 8,000 games at `1+0.01`):** `4037.0 / 8000` (`50.46%`, `2605W / 2531L / 2864D`, `86.74%` LOS, `Ptnml(0-2): [322, 859, 1586, 889, 344]`).
+- **Highlights:**
+  - **2nd-Occurrence Repetition TT Guard (`Board.cs`, `AlphaBetaEngine.cs`, `QuiescenceSearch.cs`):** Reports prior game-history occurrences (`hasPriorOccurrence`) in a single pass of `Board.IsRepetition(searchPly, out bool hasPriorOccurrence)` and disables direct TT score cutoffs (while retaining TT move ordering) on 2nd-occurrence positions where Graph History Interaction (GHI) can mask 3-fold repetition draws or false wins.
 
 ### `v1.2.6` (2026-11-27) — Bullet Soft-Limit Contraction Fix & `Move Overhead` UCI Option
 - **Category:** Time Management / UCI Compliance (Patch Release; Full Notes: [`RELEASE_v1.2.6.md`](RELEASE_v1.2.6.md))

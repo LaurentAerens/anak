@@ -573,8 +573,17 @@ public struct Board : IEquatable<Board>
     /// (3-fold repetition total) are required to avoid false draw declarations on game history.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public readonly bool IsRepetition(int searchPly)
+    public readonly bool IsRepetition(int searchPly) => IsRepetition(searchPly, out _);
+
+    /// <summary>
+    /// Checks for draw by repetition and reports whether a single prior occurrence exists
+    /// before the search root (<paramref name="hasPriorOccurrence"/>), indicating a 2nd occurrence
+    /// where TT cutoffs are vulnerable to Graph History Interaction (GHI).
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public readonly bool IsRepetition(int searchPly, out bool hasPriorOccurrence)
     {
+        hasPriorOccurrence = false;
         if (HalfmoveClock < 4) return false;
         int count = 0;
         int start = Math.Max(0, (_gamePly - 1) - HalfmoveClock);
@@ -602,6 +611,7 @@ public struct Board : IEquatable<Board>
             }
         }
 
+        hasPriorOccurrence = count == 1;
         return false;
     }
 

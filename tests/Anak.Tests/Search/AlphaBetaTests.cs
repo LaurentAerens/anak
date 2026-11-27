@@ -450,4 +450,33 @@ public class AlphaBetaTests
         Move bestMove = engine.Search(in board, new SearchLimits { Depth = 2 });
         Assert.False(bestMove.IsNull);
     }
+
+    [Fact]
+    public void Board_IsRepetition_FlagsPriorGameHistoryOccurrenceForGhiGuard()
+    {
+        var board = Fen.Parse("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        // Shuffle knights out and back once -> 2nd occurrence in game history
+        Move[] cycle =
+        [
+            new Move(Square.G1, Square.F3),
+            new Move(Square.G8, Square.F6),
+            new Move(Square.F3, Square.G1),
+            new Move(Square.F6, Square.G8)
+        ];
+        foreach (Move m in cycle)
+        {
+            board.MakeMove(m, out _);
+        }
+
+        Assert.False(board.IsRepetition(searchPly: 0, out bool hasPriorOccurrence));
+        Assert.True(hasPriorOccurrence);
+
+        // Shuffle once more inside search -> 3rd occurrence (or 2-fold in tree)
+        foreach (Move m in cycle)
+        {
+            board.MakeMove(m, out _);
+        }
+
+        Assert.True(board.IsRepetition(searchPly: 4, out _));
+    }
 }
