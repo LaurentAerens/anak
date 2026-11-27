@@ -1242,6 +1242,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.6_20261127_122729.pgn",
       "notes": "GHI / 2nd-occurrence repetition TT-cutoff guard in Board.IsRepetition, AlphaBetaEngine, and QuiescenceSearch (+3.21 logistic Elo over 8,000 games vs v1.2.6)"
+    },
+    "v1.2.8": {
+      "version": "v1.2.8",
+      "date": "2026-11-27",
+      "estimated_elo": 3271,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.2.7 (+1.39 logistic / +1.82 nElo in 8,000 games, 68.03% LOS)",
+      "score": "4016.0 / 8000",
+      "wins": 2588,
+      "losses": 2556,
+      "draws": 2856,
+      "perf_percent": 50.2,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.7_20261127_134449.pgn",
+      "notes": "Full multi-table CorrectionHistory (pawn, white/black non-pawn, continuation) in QuiescenceSearch and SearchRoot (+1.39 logistic Elo over 8,000 games vs v1.2.7)"
     }
   }
 }

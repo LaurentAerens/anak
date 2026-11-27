@@ -1328,7 +1328,7 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
                 int rawEval = (ttHit && entry.ExpertId == _activeExpertId && entry.StaticEval != short.MinValue)
                     ? entry.StaticEval
                     : _evaluator.Evaluate(in board).Raw;
-                _stack[0].StaticEval = _correctionHistory.GetAdjustedEval(board.SideToMove, board.PawnKey, rawEval);
+                _stack[0].StaticEval = _correctionHistory.GetAdjustedEval(in board, Piece.None, Square.None, rawEval);
             }
 
             // Root move picker
@@ -1562,7 +1562,9 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
             // 2. Quiescence Search at leaf nodes (inCheck is guaranteed false here)
             if (depth <= 0)
             {
-                return _qsearch.Search(ref board, alpha, beta, ply, knownInCheck: 0);
+                Piece qPrev1Piece = ply >= 1 ? _stack[ply - 1].MovedPiece : Piece.None;
+                Square qPrev1To = ply >= 1 && !_stack[ply - 1].CurrentMove.IsNull ? _stack[ply - 1].CurrentMove.To : Square.None;
+                return _qsearch.Search(ref board, alpha, beta, ply, qsDepth: 0, knownInCheck: 0, qPrev1Piece, qPrev1To);
             }
 
             // Stack limit safety

@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.7` (Estimated Rating: **3270 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.8` (Estimated Rating: **3271 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,13 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.8` (2026-11-27) — Full Multi-Table `CorrectionHistory` in QuiescenceSearch & SearchRoot
+- **Category:** Search / Static Eval Correction (Patch Release; Full Notes: [`RELEASE_v1.2.8.md`](RELEASE_v1.2.8.md))
+- **Estimated Elo:** **3271 &plusmn; 5** (`+1.39 ± 5.81` logistic Elo / `+1.82 ± 7.61` fastchess nElo vs `v1.2.7` in 8,000 games)
+- **Validation (`v1.2.8` vs `v1.2.7`, 8,000 games at `1+0.01`):** `4016.0 / 8000` (`50.20%`, `2588W / 2556L / 2856D`, `68.03%` LOS, `Ptnml(0-2): [346, 911, 1476, 899, 368]`).
+- **Highlights:**
+  - **Unified Multi-Table `CorrectionHistory` (`QuiescenceSearch.cs`, `AlphaBetaEngine.cs`):** Upgrades `QuiescenceSearch` stand-pat and `SearchRoot` static evaluation from the pawn-only `GetAdjustedEval(sideToMove, pawnKey, rawEval)` overload to the full 4-table `GetAdjustedEval(in board, prev1Piece, prev1To, rawEval)` (pawn + white/black non-pawn + continuation correction), threading `(movedPiece, move.To)` from `AlphaBeta` into `QuiescenceSearch` and across QS capture plies.
 
 ### `v1.2.7` (2026-11-27) — GHI / 2nd-Occurrence Repetition TT-Cutoff Guard
 - **Category:** Search Correctness / Endgame (Patch Release; Full Notes: [`RELEASE_v1.2.7.md`](RELEASE_v1.2.7.md))

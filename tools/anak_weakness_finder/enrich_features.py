@@ -653,19 +653,19 @@ def _run_oracle_enrichment(
                 fen, game_id, ply_num, played_move, side, expert, elo, anak_eval, is_throw_flag, is_blunder_flag, eval_delta = r
                 sf9, sf20, dt = fut.result()
 
-                is_white = (side.lower() == "white")
-                sf9_pawns_white = sf9["eval"] if is_white else -sf9["eval"]
-                sf9_cp = int(round(sf9_pawns_white * 100))
-                sf20_pawns_white = sf20["eval"] if is_white else -sf20["eval"]
+                # Both anak_eval and Stockfish UCI scores are side-to-move (STM) perspective
+                sf9_eval_stm = sf9["eval"]
+                sf9_cp = int(round(sf9_eval_stm * 100))
+                sf20_eval_stm = sf20["eval"]
 
-                eval_err = round(abs(anak_eval - sf20_pawns_white), 2)
+                eval_err = round(abs(anak_eval - sf20_eval_stm), 2)
                 is_blunder_move = (played_move != sf20["best_move"] and abs(sf20["eval"]) >= 1.5)
 
                 if is_throw_flag:
                     mis_type = f"Lead Blown ({expert})"
-                elif anak_eval >= 1.0 and sf20_pawns_white <= -1.0:
+                elif anak_eval >= 1.0 and sf20_eval_stm <= -1.0:
                     mis_type = f"False Optimism ({expert})"
-                elif anak_eval <= -1.0 and sf20_pawns_white >= 0.5:
+                elif anak_eval <= -1.0 and sf20_eval_stm >= 0.5:
                     mis_type = f"Blind Panic ({expert})"
                 elif abs(eval_delta or 0.0) >= 2.0:
                     mis_type = f"Blunder {eval_delta:+.1f} ({expert})"
@@ -681,7 +681,7 @@ def _run_oracle_enrichment(
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """, (
                     fen, game_id, ply_num, expert, round(anak_eval, 2),
-                    sf9_pawns_white, sf9_cp, sf9["best_move"] or "", sf20_pawns_white,
+                    sf9_eval_stm, sf9_cp, sf9["best_move"] or "", sf20_eval_stm,
                     eval_err, mis_type
                 ))
 

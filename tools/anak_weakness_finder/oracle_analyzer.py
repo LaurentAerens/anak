@@ -225,12 +225,12 @@ def run_oracle_audit(
                 fen, game_id, ply_num, played_move, anak_eval, side, expert, archetype, disagreement, is_throw, eval_delta = r
                 sf9, sf20, dt = fut.result()
 
-                is_white = (side.lower() == "white")
-                sf9_eval_white = sf9["eval"] if is_white else -sf9["eval"]
-                sf9_cp = int(round(sf9_eval_white * 100))
-                sf20_eval_white = sf20["eval"] if is_white else -sf20["eval"]
+                # Both anak_eval and Stockfish UCI scores are side-to-move (STM) perspective
+                sf9_eval_stm = sf9["eval"]
+                sf9_cp = int(round(sf9_eval_stm * 100))
+                sf20_eval_stm = sf20["eval"]
 
-                eval_error = round((anak_eval or 0.0) - sf9["eval"], 2)
+                eval_error = round((anak_eval or 0.0) - sf9_eval_stm, 2)
                 is_objective_blunder = (played_move != sf20["best_move"] and abs(eval_error) >= 1.5)
                 mis_type = "throw" if eval_error <= -2.0 else ("disagreement" if disagreement >= 1.5 else archetype)
 
@@ -242,7 +242,7 @@ def run_oracle_audit(
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                 """, (
                     fen, game_id, ply_num, expert, anak_eval or 0.0,
-                    sf9_eval_white, sf9_cp, sf9["best_move"] or "", sf20_eval_white,
+                    sf9_eval_stm, sf9_cp, sf9["best_move"] or "", sf20_eval_stm,
                     eval_error, mis_type
                 ))
 

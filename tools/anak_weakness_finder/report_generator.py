@@ -188,6 +188,33 @@ def generate_reports(db_path: Optional[Path] = None,
     except Exception:
         pass
 
+    # 9b. ArchV2 Output Bucket Breakdown ((piece_count - 2) / 4, buckets 0-7)
+    archv2_bucket_stats = []
+    try:
+        archv2_bucket_stats = conn.execute("""
+            WITH move_buckets AS (
+                SELECT
+                    LEAST(7, GREATEST(0, CAST((length(regexp_replace(split_part(p.fen_before, ' ', 1), '[^pnbrqkPNBRQK]', '', 'g')) - 2) / 4 AS INTEGER))) AS bucket,
+                    p.is_blunder,
+                    p.is_throw,
+                    p.eval_delta
+                FROM plies p
+                WHERE p.is_anak_move = TRUE AND p.fen_before IS NOT NULL
+            )
+            SELECT
+                bucket,
+                count(*) AS total_moves,
+                sum(CASE WHEN is_blunder THEN 1 ELSE 0 END) AS blunders,
+                round(100.0 * sum(CASE WHEN is_blunder THEN 1 ELSE 0 END) / count(*), 2) AS blunder_rate_pct,
+                sum(CASE WHEN is_throw THEN 1 ELSE 0 END) AS throws,
+                round(avg(CASE WHEN is_blunder THEN eval_delta ELSE NULL END), 2) AS avg_blunder_drop
+            FROM move_buckets
+            GROUP BY bucket
+            ORDER BY bucket ASC;
+        """).fetchall()
+    except Exception:
+        pass
+
     # 13. Stockfish Oracle Ground-Truth Audit & Training Data
     oracle_rows = conn.execute("""
         SELECT 
@@ -204,7 +231,8 @@ def generate_reports(db_path: Optional[Path] = None,
     _render_markdown(
         md_path, matches, color_stats, loss_archetypes, endgame_stats,
         blunder_motifs, lead_bleed_stats, transition_stats, switch_frequency_stats, search_deficit_stats,
-        nnue_stats, loss_phases, opening_families, worst_fens, oracle_rows
+        nnue_stats, loss_phases, opening_families, worst_fens, oracle_rows,
+        archv2_bucket_stats=archv2_bucket_stats
     )
     _render_html(
         html_path, matches, color_stats, loss_archetypes, endgame_stats,
@@ -220,7 +248,8 @@ def generate_reports(db_path: Optional[Path] = None,
 def _render_markdown(
     out_path, matches, color_stats, loss_archetypes, endgame_stats,
     blunder_motifs, lead_bleed_stats, transition_stats, switch_frequency_stats, search_deficit_stats,
-    nnue_stats, loss_phases, opening_families, worst_fens, oracle_rows
+    nnue_stats, loss_phases, opening_families, worst_fens, oracle_rows,
+    archv2_bucket_stats=None
 ):
     md = []
     md.append("# Anak Weakness Finder — Comprehensive Diagnostic & Big-Data Report\n")
@@ -387,6 +416,18 @@ def _render_markdown(
         cr = f"{n[9]:,}" if n[9] is not None else "0"
         md.append(f"| **{n[0]}** | {n[1]:,} | **{n[5]}%** | {n[2]:,} | {n[3]:,} | {n[4]:,} | {n[6]:,} | **{n[7]:,}** | {th} | {cr} |")
     md.append("\n")
+
+    if archv2_bucket_stats:
+        md.append("### ArchV2 Output Bucket Vulnerability Breakdown (`(piece_count - 2) / 4`)\n")
+        md.append("| Output Bucket | Piece Range | Anak Moves | Blunders | Blunder Rate % | Thrown Wins | Avg Blunder Drop |")
+        md.append("| :---: | :---: | :---: | :---: | :---: | :---: | :---: |")
+        for b in archv2_bucket_stats:
+            b_idx = b[0]
+            lo_p = b_idx * 4 + 2
+            hi_p = min(32, lo_p + 3) if b_idx < 7 else 32
+            avg_drop = f"`{b[5]:+.2f}`" if b[5] is not None else "-"
+            md.append(f"| **Bucket {b_idx}** | {lo_p}–{hi_p} pieces | {b[1]:,} | {b[2]:,} | **{b[3]}%** | {b[4]:,} | {avg_drop} |")
+        md.append("\n")
 
     # 10. Loss Phase Breakdown
     if loss_phases:

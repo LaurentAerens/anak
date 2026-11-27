@@ -58,7 +58,7 @@ public sealed class QuiescenceSearch
     /// Searches captures and promotions until a quiet position is reached.
     /// </summary>
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-    public int Search(ref Board board, int alpha, int beta, int ply = 0, int qsDepth = 0, int knownInCheck = -1)
+    public int Search(ref Board board, int alpha, int beta, int ply = 0, int qsDepth = 0, int knownInCheck = -1, Piece prev1Piece = Piece.None, Square prev1To = Square.None)
     {
         if (qsDepth == 0)
         {
@@ -122,7 +122,7 @@ public sealed class QuiescenceSearch
             }
 
             standPat = _correctionHistory != null
-                ? _correctionHistory.GetAdjustedEval(board.SideToMove, board.PawnKey, rawEval)
+                ? _correctionHistory.GetAdjustedEval(in board, prev1Piece, prev1To, rawEval)
                 : rawEval;
 
             if (ttHit && entry.ExpertId == ActiveExpertId && entry.Flags == TTFlags.LowerBound)
@@ -350,7 +350,7 @@ public sealed class QuiescenceSearch
             _tt?.Prefetch(board.ZobristKey);
             _incEval?.PushMove(move, movedPiece, state.CapturedPiece, in board);
 
-            int score = -Search(ref board, -beta, -alpha, ply + 1, qsDepth + 1);
+            int score = -Search(ref board, -beta, -alpha, ply + 1, qsDepth + 1, -1, movedPiece, move.To);
 
             board.UnmakeMove(move, in state, movedPiece);
             _incEval?.RollbackTo(ply);
