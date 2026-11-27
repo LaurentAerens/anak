@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.4` (Estimated Rating: **3265 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.5` (Estimated Rating: **3265 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,14 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.5` (2026-11-27) — Root Syzygy WDL Draw Filter & Zero-HalfmoveClock In-Tree Probing
+- **Category:** Endgame / Syzygy Optimization (Patch Release; Full Notes: [`RELEASE_v1.2.5.md`](RELEASE_v1.2.5.md))
+- **Estimated Elo:** **3265 &plusmn; 5** (`-1.39 ± 5.55` logistic Elo / `-1.91 ± 7.61` fastchess nElo vs `v1.2.4` in 8,000 games — within error margin)
+- **Validation (`v1.2.5` vs `v1.2.4`, 8,000 games at `1+0.01`):** `3984.0 / 8000` (`49.80%`, `2586W / 2618L / 2796D`), `-1.39 ± 5.55` logistic Elo (**+0 Elo** within error margin); Tier 1: `129.5 / 250` (`51.80%`, `+12.51 ± 35.93` Elo).
+- **Highlights:**
+  - **Zero-HalfmoveClock In-Tree Syzygy Gating (`AlphaBetaEngine.cs`):** Eliminates 7×–32× disk I/O NPS collapses on reversible `<= 5`-piece endgame plies while preserving exact 50-move WDL semantics.
+  - **Root Syzygy WDL Draw Filter (`AlphaBetaEngine.cs`):** Prunes losing root blunders in drawn `<= MaxPieces` tablebase endgames (`bestWdl <= 0`) without constraining winning conversions.
 
 ### `v1.2.4` (2026-11-27) — Quiescence Search Time-Up TT Corruption Fix & Exact QS Node Accounting
 - **Category:** Bugfix / Search Correctness (Patch Release; Full Notes: [`RELEASE_v1.2.4.md`](RELEASE_v1.2.4.md))

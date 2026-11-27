@@ -63,8 +63,24 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
     private int _seeCaptureMargin = SearchHeuristics.TunedSeeCaptureMargin;
     private int _seeQuietMargin = SearchHeuristics.TunedSeeQuietMargin;
     private readonly int[] _lmrTable = new int[MaxSearchDepth * 128];
+    private readonly Move[] _rootAllowedMoves = new Move[MoveList.MaxMoves];
+    private int _rootAllowedCount;
+    private bool _hasRootAllowedMoves;
     private NnueExpertType? _lastRootExpert;
     private ulong _nodeLimit;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool IsRootMoveAllowed(Move m)
+    {
+        if (!_hasRootAllowedMoves) return true;
+        int count = _rootAllowedCount;
+        Move[] allowed = _rootAllowedMoves;
+        for (int i = 0; i < count; i++)
+        {
+            if (allowed[i] == m) return true;
+        }
+        return false;
+    }
 
     public TranspositionTable TranspositionTable => _tt;
     public TimeManager TimeManager => _timeManager;
@@ -482,17 +498,30 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
             return Move.Null;
         }
 
-        if (legalMoves.Count == 1)
+        // 5b. Root Syzygy WDL Draw Filter (isolated in NoInlining helper to keep SearchCore stack frame tiny)
+        _hasRootAllowedMoves = false;
+        _rootAllowedCount = 0;
+        if (legalMoves.Count > 1 &&
+            board.Castling == CastlingRights.None &&
+            Tablebase is { MaxPieces: > 0 } tb &&
+            BitOperations.PopCount(board.Occupied) <= tb.MaxPieces)
         {
-            // Only one legal move: if time limit or shallow search requested, we can still report depth 1
+            TryFilterRootSyzygyDraws(in board, in legalMoves, tb);
+        }
+
+        int effectiveLegalCount = _hasRootAllowedMoves ? _rootAllowedCount : legalMoves.Count;
+        if (effectiveLegalCount == 1)
+        {
+            // Only one legal (or WDL-optimal) move: if time limit or shallow search requested, we can still report depth 1
+            Move singleMove = _hasRootAllowedMoves ? _rootAllowedMoves[0] : legalMoves[0];
             if (limits.HasDepthLimit && limits.Depth == 1)
             {
-                Move singleMove = legalMoves[0];
                 infoCallback?.Invoke(new SearchStatistics
                 {
                     Depth = 1,
                     SelDepth = 1,
                     Nodes = 1,
+                    TbHits = _workers[0].TbHits,
                     BestMove = singleMove,
                     Pv = [singleMove],
                     ScoreCp = 0,
@@ -540,6 +569,70 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
         }
 
         return _threads > 1 ? SelectBestThread(mainBestMove) : mainBestMove;
+    }
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private void TryFilterRootSyzygyDraws(in Board board, in MoveList legalMoves, ITablebaseProber tb)
+    {
+        int count = legalMoves.Count;
+        Span<sbyte> moveWdls = stackalloc sbyte[count];
+        int bestWdl = int.MinValue;
+        Board work = board;
+        ulong rootTbHits = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            Move m = legalMoves[i];
+            Piece moved = work.GetPieceAt(m.From);
+            work.MakeMove(m, out BoardState st, moved);
+
+            int ourWdl;
+            MoveList replies = default;
+            MoveGenerator.GenerateLegalMoves(in work, ref replies);
+            if (replies.Count == 0)
+            {
+                ourWdl = work.IsInCheck() ? 2 : 0;
+            }
+            else if (work.IsFiftyMoveRule() || work.IsThreefoldRepetition() || work.HasInsufficientMaterial())
+            {
+                ourWdl = 0;
+            }
+            else if (tb.TryProbeWdlNoCount(in work, out int oppWdl))
+            {
+                rootTbHits++;
+                ourWdl = -oppWdl;
+            }
+            else
+            {
+                work.UnmakeMove(m, in st, moved);
+                return;
+            }
+
+            work.UnmakeMove(m, in st, moved);
+            moveWdls[i] = (sbyte)ourWdl;
+            if (ourWdl > bestWdl)
+            {
+                bestWdl = ourWdl;
+            }
+        }
+
+        if (bestWdl <= 0)
+        {
+            _workers[0].TbHits += rootTbHits;
+            int allowedIdx = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (moveWdls[i] == bestWdl)
+                {
+                    _rootAllowedMoves[allowedIdx++] = legalMoves[i];
+                }
+            }
+            _rootAllowedCount = allowedIdx;
+            if (allowedIdx > 0 && allowedIdx < count)
+            {
+                _hasRootAllowedMoves = true;
+            }
+        }
     }
 
     private Move SelectBestThread(Move mainBestMove)
@@ -822,8 +915,8 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
             int bestScore = 0;
             int prevScore = 0;
 
-            // Probe TT for root move initially
-            if (_tt.TryGet(board.ZobristKey, out TTEntry rootEntry) && !rootEntry.BestMove.IsNull)
+            // Probe TT for root move initially (must pass root WDL filter if active)
+            if (_tt.TryGet(board.ZobristKey, out TTEntry rootEntry) && !rootEntry.BestMove.IsNull && _engine.IsRootMoveAllowed(rootEntry.BestMove))
             {
                 bestMove = rootEntry.BestMove;
             }
@@ -831,11 +924,18 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
             // Fallback move if TT has no entry yet
             if (bestMove.IsNull)
             {
-                MoveList legal = default;
-                MoveGenerator.GenerateLegalMoves(in board, ref legal);
-                if (legal.Count > 0)
+                if (_engine._hasRootAllowedMoves && _engine._rootAllowedCount > 0)
                 {
-                    bestMove = legal[0];
+                    bestMove = _engine._rootAllowedMoves[0];
+                }
+                else
+                {
+                    MoveList legal = default;
+                    MoveGenerator.GenerateLegalMoves(in board, ref legal);
+                    if (legal.Count > 0)
+                    {
+                        bestMove = legal[0];
+                    }
                 }
             }
 
@@ -1256,6 +1356,11 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
 
             while (picker.Next(out Move move))
             {
+                if (_engine._hasRootAllowedMoves && !_engine.IsRootMoveAllowed(move))
+                {
+                    continue;
+                }
+
                 ulong nodesBefore = Nodes;
                 Piece movedPiece = board.GetPieceAt(move.From);
                 board.MakeMove(move, out BoardState state, movedPiece);
@@ -1498,22 +1603,25 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
                 return 0;
             }
 
-            // 3b. Syzygy Tablebase WDL Probe
-            if (_engine.Tablebase != null &&
-                depth >= _engine.Tablebase.SyzygyProbeDepth &&
-                ply > 0 &&
+            // 3b. Syzygy Tablebase WDL Probe (register-first check + strictly on zero HalfmoveClock right after captures/pawn pushes
+            // so 50-move WDL semantics are exact and non-zeroing shuffling plies never stall on disk I/O)
+            if (board.HalfmoveClock == 0 &&
                 board.Castling == CastlingRights.None &&
-                BitOperations.PopCount(board.Occupied) <= _engine.Tablebase.MaxPieces &&
+                BitOperations.PopCount(board.Occupied) <= 7 &&
+                ply > 0 &&
+                _engine.Tablebase is { MaxPieces: > 0 } inTreeTb &&
+                depth >= inTreeTb.SyzygyProbeDepth &&
+                BitOperations.PopCount(board.Occupied) <= inTreeTb.MaxPieces &&
                 _stack[ply].ExcludedMove.IsNull)
             {
-                if (_engine.Tablebase.TryProbeWdlNoCount(in board, out int wdl))
+                if (inTreeTb.TryProbeWdlNoCount(in board, out int wdl))
                 {
                     TbHits++;
                     int tbScore = wdl switch
                     {
                         2 => 20000 - ply,
-                        1 => 100, // Cursed win
-                        0 => 0,   // Draw
+                        1 => 100,   // Cursed win
+                        0 => 0,     // Draw
                         -1 => -100, // Blessed loss
                         -2 => -(20000 - ply),
                         _ => 0

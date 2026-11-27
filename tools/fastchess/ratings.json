@@ -1197,6 +1197,21 @@
       "tc": "1+0.01",
       "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.3_20261126_225113.pgn",
       "notes": "QuiescenceSearch time-up TT corruption fix (_aborted propagation + latching IsTimeUp) and single-counted QS node accounting (+1.22 logistic Elo over 8,000 games vs v1.2.3)"
+    },
+    "v1.2.5": {
+      "version": "v1.2.5",
+      "date": "2026-11-27",
+      "estimated_elo": 3265,
+      "elo_margin": 5,
+      "baseline_opponent": "Anak v1.2.4 (-1.39 logistic / -1.91 nElo in 8,000 games; +0 Elo within error margin)",
+      "score": "3984.0 / 8000",
+      "wins": 2586,
+      "losses": 2618,
+      "draws": 2796,
+      "perf_percent": 49.8,
+      "tc": "1+0.01",
+      "pgn": "tools/fastchess/results/anak_dev_vs_v1.2.4_20261127_085624.pgn",
+      "notes": "Root Syzygy WDL Draw Filter (bestWdl <= 0) and HalfmoveClock==0 gated in-tree Syzygy probing (-1.39 logistic Elo over 8,000 games vs v1.2.4; eliminates 7x-32x reversible endgame I/O NPS collapse)"
     }
   }
 }

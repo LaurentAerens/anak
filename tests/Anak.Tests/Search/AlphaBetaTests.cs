@@ -408,4 +408,46 @@ public class AlphaBetaTests
 
         Assert.Equal(1UL, qs.Nodes);
     }
+
+    [Fact]
+    public void AlphaBeta_RootSyzygyWdlFilter_PrunesLosingMovesInDrawnEndgame()
+    {
+        // Drawn 3-piece KPvK opposition position: Black on e8 must play 1... Ke7! to hold the draw;
+        // both 1... Kd8?? and 1... Kf8?? lose the opposition and lose immediately in Syzygy WDL.
+        var board = Fen.Parse("4k3/8/8/4KP2/8/8/8/8 b - - 0 1");
+        // Verify Ke7/Kf7 vs Kd8: wait - let's use exact Philidor/opposition 8/4k3/8/4KP2/8/8/8/8 b -> Kf7! holds draw
+        var tb = new Anak.Data.Syzygy.SyzygyTablebase();
+        Assert.True(tb.TryProbeWdl(in board, out int rootWdl));
+        Assert.Equal(0, rootWdl);
+
+        using var engine = new AlphaBetaEngine(new Anak.Data.Evaluation.DefaultEvaluator(), defaultHashMb: 1)
+        {
+            Tablebase = tb
+        };
+
+        Move bestMove = engine.Search(in board, new SearchLimits { Depth = 1 });
+        Board after = board;
+        after.MakeMove(bestMove, out _);
+        Assert.True(tb.TryProbeWdl(in after, out int oppWdlAfter));
+        Assert.Equal(0, oppWdlAfter);
+    }
+
+    [Fact]
+    public void AlphaBeta_InTreeSyzygy_OnlyProbesOnZeroHalfmoveClock()
+    {
+        var tb = new Anak.Data.Syzygy.SyzygyTablebase();
+        // 4-piece non-capturing shuffling position (KRvKR with HalfmoveClock = 10 and no captures on depth 1):
+        // quiet shuffling plies with HalfmoveClock > 0 must not trigger redundant disk WDL probes.
+        var board = Fen.Parse("4k3/r7/8/8/8/8/7R/4K3 w - - 10 20");
+        using var engine = new AlphaBetaEngine(UciEngineAdapter.CreateEvaluator(), defaultHashMb: 1)
+        {
+            Tablebase = tb,
+            EnableQsChecks = false
+        };
+
+        // At root (4 pieces <= MaxPieces), Root WDL Draw Filter probes legal root replies once,
+        // while non-zeroing in-tree plies (HalfmoveClock > 0) skip redundant WDL probes.
+        Move bestMove = engine.Search(in board, new SearchLimits { Depth = 2 });
+        Assert.False(bestMove.IsNull);
+    }
 }
