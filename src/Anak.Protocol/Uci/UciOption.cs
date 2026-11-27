@@ -298,6 +298,7 @@ public sealed class UciOptionRegistry
     public SpinOption LmpMultiplier { get; }
     public SpinOption SeeCaptureMargin { get; }
     public SpinOption SeeQuietMargin { get; }
+    public SpinOption MoveOverhead { get; }
     public SpinOption TimeMovesToGo { get; }
     public SpinOption TimeIncFactor { get; }
     public SpinOption TimeHardMultiplier { get; }
@@ -347,6 +348,7 @@ public sealed class UciOptionRegistry
         LmpMultiplier = new SpinOption("LmpMultiplier", defaultValue: SearchHeuristics.TunedLmpMultiplier, min: 1, max: 6);
         SeeCaptureMargin = new SpinOption("SeeCaptureMargin", defaultValue: SearchHeuristics.TunedSeeCaptureMargin, min: 10, max: 200);
         SeeQuietMargin = new SpinOption("SeeQuietMargin", defaultValue: SearchHeuristics.TunedSeeQuietMargin, min: 10, max: 150);
+        MoveOverhead = new SpinOption("Move Overhead", defaultValue: TimeManager.SafetyLagMs, min: 0, max: 5000);
         TimeMovesToGo = new SpinOption("TimeMovesToGo", defaultValue: 38, min: 15, max: 65);
         TimeIncFactor = new SpinOption("TimeIncFactor", defaultValue: 73, min: 20, max: 100);
         TimeHardMultiplier = new SpinOption("TimeHardMultiplier", defaultValue: 181, min: 110, max: 260);
@@ -396,6 +398,7 @@ public sealed class UciOptionRegistry
         Register(LmpMultiplier);
         Register(SeeCaptureMargin);
         Register(SeeQuietMargin);
+        Register(MoveOverhead);
         Register(TimeMovesToGo);
         Register(TimeIncFactor);
         Register(TimeHardMultiplier);

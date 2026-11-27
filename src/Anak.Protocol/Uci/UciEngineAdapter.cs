@@ -136,6 +136,7 @@ public sealed class UciEngineAdapter
         _alphaBetaEngine.LmpMultiplier = _options.LmpMultiplier.Value;
         _alphaBetaEngine.SeeCaptureMargin = _options.SeeCaptureMargin.Value;
         _alphaBetaEngine.SeeQuietMargin = _options.SeeQuietMargin.Value;
+        _alphaBetaEngine.MoveOverheadMs = _options.MoveOverhead.Value;
         _alphaBetaEngine.TimeMovesToGo = _options.TimeMovesToGo.Value;
         _alphaBetaEngine.TimeIncFactor = _options.TimeIncFactor.Value;
         _alphaBetaEngine.TimeHardMultiplier = _options.TimeHardMultiplier.Value;
@@ -168,6 +169,7 @@ public sealed class UciEngineAdapter
         _options.HistoryMaxMalus.ValueChanged += val => HistoryTable.MaxMalus = val;
         _options.CorrHistDivisor.ValueChanged += val => CorrectionHistory.WeightDivisor = val;
         _options.CorrHistMax.ValueChanged += val => CorrectionHistory.MaxCorrection = val;
+        _options.MoveOverhead.ValueChanged += val => _alphaBetaEngine.MoveOverheadMs = val;
         _options.TimeMovesToGo.ValueChanged += val => _alphaBetaEngine.TimeMovesToGo = val;
         _options.TimeIncFactor.ValueChanged += val => _alphaBetaEngine.TimeIncFactor = val;
         _options.TimeHardMultiplier.ValueChanged += val => _alphaBetaEngine.TimeHardMultiplier = val;

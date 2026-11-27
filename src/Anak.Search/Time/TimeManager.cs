@@ -23,6 +23,7 @@ public sealed class TimeManager
 
     public const int CheckInterval = 512;
     public const int SafetyLagMs = 40;
+    public int MoveOverheadMs { get; set; } = SafetyLagMs;
 
     public ulong CheckMask { get; private set; } = 1023;
     public long ElapsedMilliseconds => _stopwatch.ElapsedMilliseconds;
@@ -84,7 +85,7 @@ public sealed class TimeManager
         if (limits.MoveTime > 0)
         {
             _hasTimeLimit = true;
-            _softLimitMs = Math.Max(1, limits.MoveTime - SafetyLagMs);
+            _softLimitMs = Math.Max(1, limits.MoveTime - MoveOverheadMs);
             _hardLimitMs = limits.MoveTime;
             _baseSoftLimitMs = _softLimitMs;
             _baseHardLimitMs = _hardLimitMs;
@@ -120,7 +121,7 @@ public sealed class TimeManager
 
         _hasTimeLimit = true;
 
-        int safetyLag = remainingTime < 500 ? Math.Clamp(remainingTime / 5, 25, 45) : SafetyLagMs;
+        int safetyLag = remainingTime < 500 ? Math.Min(MoveOverheadMs, Math.Max(10, remainingTime / 5)) : MoveOverheadMs;
 
         // Emergency low-time handling (< 150ms)
         if (remainingTime < 150)
@@ -161,8 +162,10 @@ public sealed class TimeManager
         long targetHard = (long)(_softLimitMs * hardMultiplier);
         _hardLimitMs = Math.Clamp(targetHard, _softLimitMs, maxAllowed);
 
-        // Soft limit starts at TimeSoftHardRatio% of hard limit, leaving headroom to expand up to 80% on fail-low / instability
-        _softLimitMs = Math.Min(_softLimitMs, Math.Max(5, (long)(_hardLimitMs * (TimeSoftHardRatio / 100.0f))));
+        // Soft limit starts with headroom below hard limit to expand on fail-low / instability;
+        // avoid contracting bullet soft limit to 0.90 * allocated when hardMultiplier is 1.5x.
+        float softCapRatio = remainingTime < 2000 ? 0.80f : (TimeSoftHardRatio / 100.0f);
+        _softLimitMs = Math.Min(_softLimitMs, Math.Max(5, (long)(_hardLimitMs * softCapRatio)));
         _baseSoftLimitMs = _softLimitMs;
         _baseHardLimitMs = _hardLimitMs;
 

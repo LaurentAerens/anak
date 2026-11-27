@@ -2,7 +2,7 @@
 
 This document provides a consolidated history of all official releases, validated optimizations, benchmark results, and architectural advancements in the Anak Chess Engine.
 
-> **Current Active Version:** `v1.2.5` (Estimated Rating: **3265 Elo (1T) — Ordo CCRL-Anchored**)  
+> **Current Active Version:** `v1.2.6` (Estimated Rating: **3267 Elo (1T) — Ordo CCRL-Anchored**)  
 > **Benchmark Archive & Progression:** [`BENCHMARKS.md`](../BENCHMARKS.md)  
 > **Benchmarking Protocol:** [`docs/BENCHMARKING_POLICY.md`](../BENCHMARKING_POLICY.md)  
 > **Failed Experiments & Archive:** [`docs/FAILED_IDEAS.md`](../FAILED_IDEAS.md)
@@ -10,6 +10,14 @@ This document provides a consolidated history of all official releases, validate
 ---
 
 ## 🌟 Releases & Optimization History
+
+### `v1.2.6` (2026-11-27) — Bullet Soft-Limit Contraction Fix & `Move Overhead` UCI Option
+- **Category:** Time Management / UCI Compliance (Patch Release; Full Notes: [`RELEASE_v1.2.6.md`](RELEASE_v1.2.6.md))
+- **Estimated Elo:** **3267 &plusmn; 5** (`+2.17 ± 5.62` logistic Elo / `+2.94 ± 7.61` fastchess nElo vs `v1.2.5` in 8,000 games)
+- **Validation (`v1.2.6` vs `v1.2.5`, 8,000 games at `1+0.01`):** `4025.0 / 8000` (`50.31%`, `2603W / 2553L / 2844D`, `77.57%` LOS, `Ptnml(0-2): [305, 884, 1620, 838, 353]`).
+- **Highlights:**
+  - **Bullet Soft-Limit Contraction Fix (`TimeManager.cs`):** Removes the unintended `0.90 × allocated` contraction when `remainingTime < 2000` (`hardMultiplier = 1.5f` combined with `TimeSoftHardRatio = 60%`), preserving full `allocated` soft limits while retaining 20% fail-low headroom (`0.80 × _hardLimitMs`).
+  - **UCI `Move Overhead` Option (`UciOption.cs`, `UciEngineAdapter.cs`, `TimeManager.cs`):** Exposes `Move Overhead` (`spin`, default `40`, min `0`, max `5000` ms) wired to `TimeManager.MoveOverheadMs` for `movetime` and clock safety lag.
 
 ### `v1.2.5` (2026-11-27) — Root Syzygy WDL Draw Filter & Zero-HalfmoveClock In-Tree Probing
 - **Category:** Endgame / Syzygy Optimization (Patch Release; Full Notes: [`RELEASE_v1.2.5.md`](RELEASE_v1.2.5.md))

@@ -251,6 +251,12 @@ public sealed class AlphaBetaEngine : ISearchEngine, IDisposable
         set => _seeQuietMargin = value;
     }
 
+    public int MoveOverheadMs
+    {
+        get => _timeManager.MoveOverheadMs;
+        set => _timeManager.MoveOverheadMs = value;
+    }
+
     public int TimeMovesToGo
     {
         get => _timeManager.TimeMovesToGo;
